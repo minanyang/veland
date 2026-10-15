@@ -81,6 +81,14 @@ expect "red-proof refuses a dirty tree" 2 cutter-red-proof T1
 expect "verify passes on a dirty tree that stands still" 0 cutter-verify T1
 rm "$wt/scratch.txt"
 
+# agent memory written into the worktree while red-proof runs is neither a dirty tree nor reverted
+m1="$wt/.claude/agent-memory/cutter-x"
+mkdir -p "$m1" && echo committed >"$m1/kept.md" && git -C "$wt" add .claude && git -C "$wt" commit -qm "chore(memory): x"
+echo edited >"$m1/kept.md"; echo new >"$m1/new.md"
+expect "red-proof runs with uncommitted agent memory" 1 cutter-red-proof T1
+grep -q '^GREEN  src/noop.test.mjs' "$tmp/out" && [ "$(cat "$m1/kept.md")" = edited ] && [ -f "$m1/new.md" ] && ok "red-proof leaves agent memory alone" || bad "red-proof leaves agent memory alone"
+git -C "$wt" checkout -q -- .claude/agent-memory; rm "$m1/new.md"
+
 # a failing gate
 echo 'export const mul = (a, b) => a + b' >"$wt/src/mul.mjs"
 git -C "$wt" commit -qam "break mul"
@@ -115,6 +123,10 @@ echo '{ "gates": ["touch moved.txt"] }' >.claude/cutter.json
 expect "verify fails when a gate moves the tree" 1 cutter-verify T1
 grep -q '^MOVED' .cutter/T1/verify/summary.txt && ok "summary says MOVED" || bad "summary says MOVED"
 rm "$wt/moved.txt"
+echo '{ "gates": ["mkdir -p .claude/agent-memory/cutter-y && echo n >.claude/agent-memory/cutter-y/n.md"] }' >.claude/cutter.json
+expect "verify passes when a gate writes agent memory" 0 cutter-verify T1
+! grep -q '^MOVED' .cutter/T1/verify/summary.txt && ok "agent memory does not move the tree" || bad "agent memory does not move the tree"
+rm "$wt/.claude/agent-memory/cutter-y/n.md"
 
 # review packet
 expect "review packet" 0 cutter-review-packet T1

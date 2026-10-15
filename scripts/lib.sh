@@ -119,6 +119,11 @@ ensure_excluded() {
   done
 }
 
+# Agents may write their memory into a worktree while it is frozen; it is committed later
+# (cutter-worktree memory), so it never counts as a change to the tree under test.
+MEMORY_EXCLUDE=':(exclude).claude/agent-memory'
+tree_status() { git -C "$1" status --porcelain -- . "$MEMORY_EXCLUDE"; } # <dir>
+
 # Ticket-level lock shared by verify and red-proof, so a test run never overlaps a tree rewrite.
 take_lock() { # <id>
   local lock
