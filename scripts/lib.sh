@@ -65,11 +65,27 @@ base_branch() {
   printf '%s\n' "${b:-main}"
 }
 
-# A ref to diff against: origin/<base> when the remote has it, else the local branch.
+# A ref to start from and diff against: origin/<base> when the remote has it, else the local branch.
+# In `close: local` mode the local base wins when it contains origin/<base>: tickets squashed onto it
+# but not pushed yet are part of the base.
 base_ref() {
   local b
   b="$(base_branch)"
-  if git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$b"; then printf 'origin/%s\n' "$b"; else printf '%s\n' "$b"; fi
+  if ! git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$b"; then printf '%s\n' "$b"
+  elif [ "$(cfg close pr)" = local ] && git -C "$ROOT" merge-base --is-ancestor "refs/remotes/origin/$b" "refs/heads/$b" 2>/dev/null; then printf '%s\n' "$b"
+  else printf 'origin/%s\n' "$b"
+  fi
+}
+
+# In `close: local` mode, true when the local base and origin/<base> each have commits the other lacks.
+base_diverged() {
+  local b
+  b="$(base_branch)"
+  [ "$(cfg close pr)" = local ] || return 1
+  git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$b" || return 1
+  git -C "$ROOT" show-ref --verify --quiet "refs/heads/$b" || return 1
+  ! git -C "$ROOT" merge-base --is-ancestor "refs/remotes/origin/$b" "refs/heads/$b" &&
+    ! git -C "$ROOT" merge-base --is-ancestor "refs/heads/$b" "refs/remotes/origin/$b"
 }
 
 # Package manager from the lockfile in <dir>.
