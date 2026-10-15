@@ -7,7 +7,6 @@ allowed-tools:
   - Bash(cutter-worktree add *)
   - Bash(cutter-worktree memory *)
   - Bash(cutter-ticket *)
-  - Bash(cutter-land comment *)
   - Bash(cutter-red-proof *)
   - Bash(cutter-review-packet *)
   - Bash(cutter-verify *)
@@ -80,7 +79,7 @@ Show the plan, and `comment.md` verbatim when there is one, and **stop**. On app
 cutter-land comment <id>
 ```
 
-It renames `comment.md` to `comment.posted.md`, so a comment is never posted twice; a new `comment.md`, written by a later grill, is posted as a new comment. Then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
+It is not in this skill's `allowed-tools` on purpose: posting a public comment always asks for permission. It renames `comment.md` to `comment.posted.md`, so a comment is never posted twice; a new `comment.md`, written by a later grill, is posted as a new comment. Then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
 
 ## Step 2 — Worktree
 
@@ -189,3 +188,4 @@ Report: the branch and commits, the memory files committed and their diff, the f
 - Never write to the worktree while a reviewer, `cutter-verify` or `cutter-red-proof` is running in it.
 - Never spawn an agent just to run the test suite — `cutter-verify` does it without a model waiting.
 - Never stop with a `blocker` or `major` neither fixed nor explained.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.

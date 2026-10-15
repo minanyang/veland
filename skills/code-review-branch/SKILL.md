@@ -14,6 +14,7 @@ Full-branch review covering every commit on the current branch since it diverged
 - **Never fabricate tool output.** Only paste output from checks you actually ran. If the repo has no supported check scripts, omit the tool-output section entirely.
 - **Never invent a base branch.** Detect it per step 1; if neither `origin/develop` nor `origin/main` exists, ask which base to use (`master`, release branch, etc.) before diffing.
 - **Never use `..` (two-dot) for the branch-vs-base diff.** It includes base-branch movement since divergence and gives the wrong answer. Always use `<base>...HEAD` (three-dot) — see the callout in step 3.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.
 
 ## Modes
 

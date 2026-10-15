@@ -110,3 +110,4 @@ A final `git status` should make this separation obvious.
 - Never run scripts that don't exist in `package.json`.
 - Never run a `format` script that mutates files (no `--check` flag) — that would corrupt the user's staged baseline.
 - Never invent lint output. If a check wasn't run, don't include a tool-output section for it.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.
