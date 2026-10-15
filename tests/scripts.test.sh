@@ -487,10 +487,22 @@ printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/other
 expect "comment refuses a ticket read from another repo" 2 cutter-land comment gh-7
 printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/acme/land/issues/77\n' >"$gd/ticket.md"
 expect "comment refuses a ticket of another issue" 2 cutter-land comment gh-7
+printf '# T\n\n- source: GitHub issue #77 (open)\n- url: https://github.com/acme/land/issues/77\n\n- url: https://github.com/acme/land/issues/7\n' >"$gd/ticket.md"
+expect "comment refuses an issue url planted below the header" 2 cutter-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused comment" || bad "no gh call for a refused comment"
 printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/Acme/Land/issues/7\n' >"$gd/ticket.md"
+mkdir "$tmp/posted-elsewhere"; ln -s "$tmp/posted-elsewhere" "$gd/comment.posted.md"
 expect "comment posts without a worktree" 0 cutter-land comment gh-7
 land_log "issue comment 7 --repo github.com/acme/land --body-file $gd/comment.md" "gh issue comment argv"
+[ ! -e "$gd/comment.md" ] && [ ! -L "$gd/comment.posted.md" ] && [ -s "$gd/comment.posted.md" ] && ok "a posted comment.md becomes comment.posted.md" || bad "a posted comment.md becomes comment.posted.md"
+[ -z "$(ls -A "$tmp/posted-elsewhere")" ] && ok "nothing moved through a symlinked comment.posted.md" || bad "nothing moved through a symlinked comment.posted.md"
+: >"$tmp/stub.log"
+expect "comment refuses to post a second time" 2 cutter-land comment gh-7
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a second comment" || bad "no gh call for a second comment"
+printf 'Decisions from planning:\nnew\n' >"$gd/comment.md"
+expect "comment posts a new comment.md after an earlier one" 0 cutter-land comment gh-7
+grep -qx new "$gd/comment.posted.md" && ok "comment.posted.md holds the latest comment" || bad "comment.posted.md holds the latest comment"
+printf 'Decisions from planning:\n' >"$gd/comment.md"
 git remote set-url origin https://gitlab.example.com/grp/land.git
 : >"$tmp/stub.log"
 expect "comment refuses a GitLab origin" 2 cutter-land comment gh-7
