@@ -86,6 +86,25 @@ echo 'export const mul = (a, b) => a + b' >"$wt/src/mul.mjs"
 git -C "$wt" commit -qam "break mul"
 expect "verify fails on a red test" 1 cutter-verify T1
 grep -q FAIL .cutter/T1/verify/summary.txt && ok "summary shows FAIL" || bad "summary shows FAIL"
+head=$(git -C "$wt" rev-parse HEAD)
+expect "red-proof refuses a test that fails at HEAD" 2 cutter-red-proof T1
+grep -q 'src/mul.test.mjs: fails' "$tmp/out" && ok "red-proof names the file failing at HEAD" || bad "red-proof names the file failing at HEAD"
+[ -z "$(git -C "$wt" status --porcelain)" ] && [ "$(git -C "$wt" rev-parse HEAD)" = "$head" ] && ok "tree untouched after the HEAD refusal" || bad "tree untouched after the HEAD refusal"
+
+# a runner red-proof does not detect (mocha globals) falls through to node --test and cannot pass at HEAD
+expect "worktree add T5" 0 cutter-worktree add T5 --no-setup
+wt5="$tmp/repo/.worktrees/T5"
+echo 'export const div = (a, b) => a / b' >"$wt5/src/div.mjs"
+cat >"$wt5/src/div.test.mjs" <<'EOF'
+import assert from 'node:assert'
+import { div } from './div.mjs'
+describe('div', () => { it('divides', () => assert.equal(div(6, 3), 2)) })
+EOF
+git -C "$wt5" add -A && git -C "$wt5" commit -qm "feat: add div"
+expect "red-proof refuses an unsupported runner" 2 cutter-red-proof T5
+grep -q 'src/div.test.mjs: fails' "$tmp/out" && ok "red-proof names the unsupported file" || bad "red-proof names the unsupported file"
+[ -z "$(git -C "$wt5" status --porcelain)" ] && [ -f "$wt5/src/div.mjs" ] && ok "tree untouched for an unsupported runner" || bad "tree untouched for an unsupported runner"
+expect "rm T5" 0 cutter-worktree rm T5
 
 # config gates
 mkdir -p .claude

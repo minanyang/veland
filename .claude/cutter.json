@@ -6,6 +6,7 @@
     "bash tests/guard-bash.test.sh",
     "bash tests/context-gate.test.sh",
     "bash tests/scripts.test.sh",
+    "bash tests/red-proof-runners.test.sh",
     "claude plugin validate ."
   ],
   "close": "pr-merge",
