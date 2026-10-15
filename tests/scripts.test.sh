@@ -225,6 +225,15 @@ head8="$(git -C "$wt8" rev-parse HEAD)"
 expect "memory: conflict stops" 2 cutter-worktree memory T8
 grep -qF "$m/kept.md" "$tmp/out" && [ "$(cat "$m/kept.md")" = main-side ] && [ "$(cat "$wt8/$m/kept.md")" = wt-side ] && [ "$(git -C "$wt8" rev-parse HEAD)" = "$head8" ] && ok "memory: conflict named, neither side touched, no commit" || bad "memory: conflict named, neither side touched, no commit"
 git checkout -q -- "$m/kept.md"; git -C "$wt8" checkout -q -- "$m/kept.md"; git -C "$wt8" reset -q unrelated.txt; rm "$wt8/unrelated.txt"
+echo secret >"$tmp/secret"; ln -s "$tmp/secret" "$m/link.md"
+expect "memory: a symlink in the main checkout stops" 2 cutter-worktree memory T8
+grep -qF "$m/link.md" "$tmp/out" && [ -L "$m/link.md" ] && [ ! -e "$wt8/$m/link.md" ] && [ "$(git -C "$wt8" rev-parse HEAD)" = "$head8" ] && ok "memory: symlink named, nothing copied, no commit" || bad "memory: symlink named, nothing copied, no commit"
+rm "$m/link.md"
+mkdir "$tmp/outside" && ln -s "$tmp/outside" "$wt8/.claude/agent-memory/cutter-c"
+mkdir -p .claude/agent-memory/cutter-c && echo x >.claude/agent-memory/cutter-c/MEMORY.md
+expect "memory: a symlinked directory in the worktree stops" 2 cutter-worktree memory T8
+[ -z "$(ls "$tmp/outside")" ] && [ -f .claude/agent-memory/cutter-c/MEMORY.md ] && ok "memory: nothing written through the worktree's symlink" || bad "memory: nothing written through the worktree's symlink"
+rm "$wt8/.claude/agent-memory/cutter-c" .claude/agent-memory/cutter-c/MEMORY.md; rmdir .claude/agent-memory/cutter-c
 expect "rm T8" 0 cutter-worktree rm T8
 
 # remove

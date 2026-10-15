@@ -24,8 +24,8 @@
 # `memory` commits agent memory (.claude/agent-memory/) on the ticket branch: new or changed files
 # in the main checkout, where agents write it, are moved into the worktree (a new file is removed
 # from the main checkout, a tracked one restored there), then those and the worktree's own memory
-# changes go in one commit, nothing else. A path changed differently in both places stops it
-# before anything moves. Prints each committed path.
+# changes go in one commit, nothing else. A path changed differently in both places, or a symlink
+# on either side, stops it before anything moves. Prints each committed path.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -182,6 +182,13 @@ case "$cmd" in
     while IFS= read -r -d '' line; do
       st="${line:0:2}"; f="${line:3}"
       [ "$st" = "??" ] || [[ "$st" == *[MA]* ]] || continue
+      # A symlink would be copied as its target's content, or written through outside the worktree.
+      { [ -f "$ROOT/$f" ] && [ ! -L "$ROOT/$f" ]; } || die "$f in the main checkout is not a regular file; nothing moved"
+      d="$f"
+      while [ "$d" != . ]; do
+        [ ! -L "$path/$d" ] || die "$d in the worktree is a symlink; nothing moved"
+        d="$(dirname "$d")"
+      done
       if [ -e "$path/$f" ] && ! cmp -s "$ROOT/$f" "$path/$f" && [ -n "$(git -C "$path" status --porcelain -- "$f")" ]; then
         die "$f is changed differently in the main checkout and the worktree; nothing moved — reconcile it yourself"
       fi
