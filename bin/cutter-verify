@@ -37,8 +37,7 @@ base_cfg="$out/base-cutter.json"
 # At the merge-base, not the base's tip: a gate the base gained since the cut is not the ticket's change.
 fork="$(git -C "$path" merge-base "$(base_ref)" HEAD 2>/dev/null)"
 { [ -n "$fork" ] && git -C "$path" show "$fork:.claude/cutter.json" >"$base_cfg" 2>/dev/null; } || : >"$base_cfg"
-gate_set() { [ -s "$1" ] && cfg_in "$1" gates | sed '/^$/d' | sort -u; }
-changes="$(comm -3 <(gate_set "$base_cfg") <(gate_set "$path/.claude/cutter.json") | awk -F'\t' '{ print ($1 == "" ? "  + " $2 : "  - " $1) }')"
+changes="$(gate_changes "$base_cfg" "$path/.claude/cutter.json")"
 rm -f "$base_cfg"
 [ -z "$changes" ] || printf 'gates differ from %s:\n%s\n' "$(base_ref)" "$changes" | tee -a "$summary"
 

@@ -20,7 +20,9 @@
 # already has the branch (never a plain force-push). It refuses the base branch.
 # `merge` squash-merges the branch's open PR/MR (gh for github.com, glab for a GitLab host) after
 # checking that its base is the configured base and that it is not a fork's; pinned to origin's repo
-# and to the worktree's HEAD sha (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
+# and to the worktree's HEAD sha (--match-head-commit / --sha). On GitHub it also refuses unless the PR's head is
+# the worktree's HEAD and its checks are all green (a pending, failed or still-expected run is named); no checks
+# at all is a refusal only when a workflow under .github/workflows/ on the branch mentions pull_request. Never --admin, never the delete-branch flags.
 # `squash` (local mode) lands the ticket branch on the base as one commit with .cutter/<id>/commit-msg as its
 # message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
 # fast-forwards it, keeping uncommitted changes to files the squash does not touch.
@@ -100,6 +102,24 @@ gh_view() {
   gh pr view "$branch" --repo "$repo" --json baseRefName,state,isCrossRepository \
     --jq '.baseRefName + " " + .state + " " + (.isCrossRepository | tostring)'
 }
+# One line per check on the PR that is not green, "head" if its head is not the worktree's HEAD, and "none" if it
+# has no checks at all. Empty output means all green.
+gh_checks() {
+  gh pr view "$branch" --repo "$repo" --json headRefOid,statusCheckRollup \
+    | node -e '
+      const r = JSON.parse(require("fs").readFileSync(0, "utf8")), head = process.argv[1]
+      if (r.headRefOid !== head) { console.log("head " + r.headRefOid); process.exit(0) }
+      const rollup = r.statusCheckRollup || []
+      if (!rollup.length) { console.log("none"); process.exit(0) }
+      for (const c of rollup) {
+        const name = c.name || c.context
+        if (c.__typename === "StatusContext") {
+          if (c.state !== "SUCCESS") console.log("check " + name + ": " + c.state)
+        } else if (c.status !== "COMPLETED") console.log("check " + name + ": " + c.status)
+        else if (!["SUCCESS", "SKIPPED", "NEUTRAL"].includes(c.conclusion)) console.log("check " + name + ": " + c.conclusion)
+      }
+    ' "$(git -C "$path" rev-parse HEAD)"
+}
 glab_view() {
   glab mr view "$branch" -R "$repo" --output json \
     | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (Number.isInteger(m.source_project_id) && m.source_project_id === m.target_project_id))'
@@ -152,6 +172,15 @@ case "$cmd" in
         repo="$(gh_repo)"
         got="$(gh_view)" || die "no PR found for $branch"
         [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
+        bad="$(gh_checks)" || die "could not read the checks of $branch"
+        case "$bad" in
+          head\ *) die "PR head ${bad#head } is not the worktree's HEAD — push first" ;;
+          none) if git -C "$path" grep -q pull_request HEAD -- .github/workflows 2>/dev/null; then
+                  die "PR of $branch has no checks yet but a workflow runs on pull_request — still pending; run /cutter:close again once CI finishes"
+                fi ;;
+          "") ;;
+          *) die "checks of $branch are not green:"$'\n'"$bad" ;;
+        esac
         gh pr merge "$branch" --repo "$repo" --squash --match-head-commit "$(git -C "$path" rev-parse HEAD)"
         ;;
       *gitlab*)

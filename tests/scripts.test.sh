@@ -221,6 +221,7 @@ git remote add origin "$tmp/github.com/land.git" && git push -q -u origin main
 cat >"$tmp/stub/gh" <<'STUB'
 #!/bin/bash
 echo "$*" >>"$STUB_LOG"
+case "$*" in *headRefOid*) echo "${STUB_CHECKS-}"; exit 0 ;; esac
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
@@ -295,9 +296,43 @@ STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 c
 STUB_VIEW="main OPEN true" expect "merge refuses a fork's PR" 2 cutter-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a fork's PR" || bad "no merge call for a fork's PR"
 lwsha="$(git -C "$lw" rev-parse HEAD)"
+checks() { printf '{"headRefOid":"%s","statusCheckRollup":%s}' "$lwsha" "$1"; }
+STUB_CHECKS="$(checks '[]')"; export STUB_CHECKS
 STUB_VIEW="main OPEN false" expect "merge" 0 cutter-land merge L1
 grep -qxF 'pr view feat/L1 --repo github.com/acme/land --json baseRefName,state,isCrossRepository --jq .baseRefName + " " + .state + " " + (.isCrossRepository | tostring)' "$tmp/stub.log" && ok "gh pr view pinned to origin's repo" || bad "gh pr view pinned to origin's repo"
 grep -qxF 'pr merge feat/L1 --repo github.com/acme/land --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>"
+# merge: the PR's checks on the verified head must be green
+merge_checks() { # <description> <exit> <rollup json> — the merge call is made only on exit 0
+  : >"$tmp/stub.log"
+  STUB_VIEW="main OPEN false" STUB_CHECKS="$(checks "$3")" expect "merge: $1" "$2" cutter-land merge L1
+  if [ "$2" -eq 0 ]; then grep -q 'pr merge' "$tmp/stub.log" && ok "merge: $1: merge called" || bad "merge: $1: merge called"
+  else ! grep -q 'pr merge' "$tmp/stub.log" && ok "merge: $1: no merge call" || bad "merge: $1: no merge call"; fi
+}
+merge_checks "all checks green" 0 '[{"__typename":"CheckRun","name":"gates (ubuntu-latest)","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"StatusContext","context":"legacy","state":"SUCCESS"}]'
+merge_checks "a failed check" 2 '[{"__typename":"CheckRun","name":"gates (ubuntu-latest)","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"gates (macos-latest)","status":"COMPLETED","conclusion":"FAILURE"}]'
+grep -q 'gates (macos-latest): FAILURE' "$tmp/out" && ok "merge: names the failed check" || bad "merge: names the failed check"
+merge_checks "a check in progress" 2 '[{"__typename":"CheckRun","name":"gates (macos-latest)","status":"IN_PROGRESS","conclusion":""}]'
+grep -q 'gates (macos-latest): IN_PROGRESS' "$tmp/out" && ok "merge: names the pending check" || bad "merge: names the pending check"
+merge_checks "a pending status context" 2 '[{"__typename":"StatusContext","context":"legacy","state":"PENDING"}]'
+grep -q 'legacy: PENDING' "$tmp/out" && ok "merge: names the pending context" || bad "merge: names the pending context"
+merge_checks "a failed status context" 2 '[{"__typename":"StatusContext","context":"legacy","state":"ERROR"}]'
+merge_checks "neutral and skipped checks" 0 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"NEUTRAL"},{"__typename":"CheckRun","name":"b","status":"COMPLETED","conclusion":"SKIPPED"}]'
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN false" STUB_CHECKS='{"headRefOid":"0000000000000000000000000000000000000000","statusCheckRollup":[]}' expect "merge: PR head is not the worktree's HEAD" 2 cutter-land merge L1
+grep -q 'push first' "$tmp/out" && ! grep -q 'pr merge' "$tmp/stub.log" && ok "merge: says push first, no merge call" || bad "merge: says push first, no merge call"
+merge_checks "no checks, no workflow file" 0 '[]'
+mkdir -p "$lw/.github/workflows"
+printf 'on:\n  pull_request:\n' >"$lw/.github/workflows/ci.yml"
+git -C "$lw" add -A && git -C "$lw" commit -qm "ci: workflow"
+lwsha="$(git -C "$lw" rev-parse HEAD)"
+merge_checks "no checks, a pull_request workflow on the branch" 2 '[]'
+grep -q 'still pending' "$tmp/out" && ok "merge: no checks yet is still pending" || bad "merge: no checks yet is still pending"
+printf 'on:\n  push:\n' >"$lw/.github/workflows/ci.yml"
+git -C "$lw" commit -qam "ci: push only"
+lwsha="$(git -C "$lw" rev-parse HEAD)"
+merge_checks "no checks, a workflow without pull_request" 0 '[]'
+STUB_CHECKS="$(checks '[]')"; export STUB_CHECKS
+
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 STUB_VIEW="main OPEN false" expect "merge refuses a host that only contains github.com" 2 cutter-land merge L1
@@ -594,6 +629,35 @@ before=$(git rev-parse main)
 expect "sync-base with local commits" 0 cutter-worktree sync-base
 grep -q 'not updated: main has commits origin/main does not' "$tmp/out" && ok "diverged base: left behind" || bad "diverged base: left behind"
 [ "$(git rev-parse main)" = "$before" ] && ok "diverged base untouched" || bad "diverged base untouched"
+
+# ci-gates.sh: every gate runs, a table lands in the summary, gate changes against a base are listed
+cig="$(cd "$BIN/.." && pwd)/scripts/ci-gates.sh"
+cg="$tmp/cig"
+git -c init.defaultBranch=main init -q "$cg"
+mkdir "$cg/.claude"
+cat >"$cg/.claude/cutter.json" <<'EOF'
+{ "gates": ["echo gate-one", "echo gate-bad >&2; exit 3", "echo gate-three"] }
+EOF
+git -C "$cg" add -A && git -C "$cg" -c user.email=t@t -c user.name=t commit -qm "init"
+cgbase="$(git -C "$cg" rev-parse HEAD)"
+cd "$cg" || exit 2
+GITHUB_STEP_SUMMARY="$tmp/cig-summary" expect "ci-gates: a failing gate fails the run" 1 "$cig"
+grep -q 'gate-three' "$tmp/out" && ok "ci-gates: runs the gates after a failed one" || bad "ci-gates: runs the gates after a failed one"
+grep -c '^::group::' "$tmp/out" | grep -qx 3 && grep -c '^::endgroup::' "$tmp/out" | grep -qx 3 && ok "ci-gates: one group per gate" || bad "ci-gates: one group per gate"
+grep -q '^| `echo gate-one` | pass |' "$tmp/cig-summary" && grep -q 'exit 3` | FAIL |' "$tmp/cig-summary" && grep -q '`echo gate-three` | pass |' "$tmp/cig-summary" && ok "ci-gates: summary has pass and FAIL rows" || bad "ci-gates: summary has pass and FAIL rows"
+[ "$(grep -n 'gate-one' "$tmp/cig-summary" | cut -d: -f1)" -lt "$(grep -n 'gate-three' "$tmp/cig-summary" | cut -d: -f1)" ] && ok "ci-gates: gate order kept" || bad "ci-gates: gate order kept"
+expect "ci-gates: writes the table to stdout without GITHUB_STEP_SUMMARY" 1 env -u GITHUB_STEP_SUMMARY "$cig"
+grep -q '^| gate | result | secs |' "$tmp/out" && ok "ci-gates: table on stdout" || bad "ci-gates: table on stdout"
+echo '{ "gates": ["echo gate-one", "echo gate-added"] }' >.claude/cutter.json
+git add -A && git -c user.email=t@t -c user.name=t commit -qm "chore: gates"
+: >"$tmp/cig-summary"
+GITHUB_STEP_SUMMARY="$tmp/cig-summary" expect "ci-gates: only passing gates" 0 "$cig"
+! grep -q 'gates differ' "$tmp/cig-summary" && ok "ci-gates: no base, no gate changes" || bad "ci-gates: no base, no gate changes"
+GITHUB_STEP_SUMMARY="$tmp/cig-summary" expect "ci-gates: with a base" 0 "$cig" "$cgbase"
+grep -qxF '  - echo gate-bad >&2; exit 3' "$tmp/cig-summary" && grep -qxF '  + echo gate-added' "$tmp/cig-summary" && grep -qxF '  - echo gate-three' "$tmp/cig-summary" && ok "ci-gates: lists added and removed gates" || bad "ci-gates: lists added and removed gates"
+! grep -qF 'gate-one' <(grep '^  [+-] ' "$tmp/cig-summary") && ok "ci-gates: kept gates not listed" || bad "ci-gates: kept gates not listed"
+echo '{}' >.claude/cutter.json
+expect "ci-gates: no gates" 2 "$cig"
 
 [ "$fail" -eq 0 ] && echo "scripts: all cases pass"
 exit "$fail"

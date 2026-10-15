@@ -1,6 +1,6 @@
 #!/bin/bash
 # cutter-red-proof with real jest and vitest, on throwaway repositories with an origin.
-# Installs jest and vitest once per run (npm's cache makes repeat runs fast); skips when it cannot.
+# Installs jest and vitest once per run (npm's cache makes repeat runs fast); skips when it cannot, fails under CI=true.
 # shellcheck disable=SC2015  # `cond && ok || bad` is safe: ok always returns 0
 set -uo pipefail
 BIN="$(cd "$(dirname "$0")/.." && pwd)/bin"
@@ -18,8 +18,9 @@ tmp=$(mktemp -d)
 trap 'rm -r "$tmp"' EXIT
 mkdir "$tmp/deps"
 if ! (cd "$tmp/deps" && npm init -y && npm install --prefer-offline --no-audit --no-fund jest@30 vitest@5) >"$tmp/install.log" 2>&1; then
-  echo "skip: could not install jest and vitest (offline?) — red-proof runner cases not run"
   tail -5 "$tmp/install.log" | sed 's/^/      /'
+  if [ "${CI:-}" = true ]; then echo "FAIL  could not install jest and vitest"; exit 1; fi
+  echo "skip: could not install jest and vitest (offline?) — red-proof runner cases not run"
   exit 0
 fi
 

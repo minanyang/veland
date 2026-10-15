@@ -10,4 +10,5 @@
 - Skills: `commit`, `code-review`, `code-review-branch`.
 - Hooks: guard against destructive Bash commands; context gate for the flow skills.
 - Project config in `.claude/cutter.json`; ticket files in `.cutter/<id>/`, kept out of git via `.git/info/exclude`.
+- CI: `.github/workflows/ci.yml` runs the project's gates (`scripts/ci-gates.sh`) on Linux and macOS for pushes to `main` and pull requests; `cutter-land merge` on GitHub refuses a PR whose head is not pushed or whose checks are not green.
 - Self-tests for the guard, the context gate and the scripts.
