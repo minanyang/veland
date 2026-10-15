@@ -73,7 +73,7 @@ cutter-worktree sync-base
 cutter-worktree rm <id>
 ```
 
-`sync-base` fast-forwards the base only when the main checkout is on it with no uncommitted tracked changes; otherwise it leaves it and says why. Never pull, reset or switch branches in the main checkout to make it go through.
+`sync-base` fast-forwards the base only when the main checkout is on it and `git merge --ff-only` allows it — uncommitted changes to files the incoming commits do not touch are kept; otherwise it leaves the base and says why. Never pull, reset or switch branches in the main checkout to make it go through.
 
 It removes the worktree and deletes the branch once its changes are on the base — merged as git sees it, or squash-merged (every file it touched is identical on `origin/<base>`) — along with the pushed branch on origin if a merged PR left it behind. A branch whose changes are not on the base is kept and reported; never delete it yourself. Keep `.cutter/<id>/` — it is the ticket's record.
 
