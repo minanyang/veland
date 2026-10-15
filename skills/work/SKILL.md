@@ -175,7 +175,7 @@ Agents write their memory (`.claude/agent-memory/`) under the session's working 
 cutter-worktree memory <id>
 ```
 
-It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 names a path changed differently in both places, or a symlink, and moves nothing: show the user both versions and ask which to keep. No reviewer reads this commit and `/cutter:close` pushes it, so show the user its full diff in the report — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
+It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, then run the command again. No reviewer reads this commit and `/cutter:close` pushes it, so show the user its full diff in the report — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
 
 Report: the branch and commits, the memory files committed and their diff, the final `cutter-verify` table, red-proof's result, both review rounds' verdicts and what was done about each finding, anything left open. Then stop. The next step is `/cutter:close <id>`.
 
