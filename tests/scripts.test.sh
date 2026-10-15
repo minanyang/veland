@@ -256,12 +256,12 @@ mkdir -p .claude && echo '{"base":"feat/L1"}' >.claude/cutter.json
 expect "push refuses the base branch" 2 cutter-land push L1
 rm -r .claude
 
-# a branch name with a leading + (a forced refspec) is refused by push and ff, origin and base untouched
+# a branch name with a leading + (a forced refspec) is refused by push and squash, origin and base untouched
 git -C "$tmp/land" branch '+feat/EVIL' main
 git -C "$tmp/land" worktree add -q "$tmp/land/.worktrees/EVIL" '+feat/EVIL'
 o_before="$(git ls-remote origin)"; b_before="$(git rev-parse main)"
 expect "push refuses a +branch" 2 cutter-land push EVIL
-expect "ff refuses a +branch" 2 cutter-land ff EVIL
+expect "squash refuses a +branch" 2 cutter-land squash EVIL
 [ "$(git ls-remote origin)" = "$o_before" ] && [ "$(git rev-parse main)" = "$b_before" ] && ok "+branch left origin and base untouched" || bad "+branch left origin and base untouched"
 expect "add refuses a bad --type" 2 cutter-worktree add L9 --type '+feat' --no-setup
 expect "add refuses a bad --slug" 2 cutter-worktree add L9 --slug 'a:b' --no-setup
@@ -381,16 +381,92 @@ expect "issue refuses a host that only contains github.com" 2 cutter-land issue 
 unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"
 
-# ff: local mode
-expect "ff fast-forwards the base" 0 cutter-land ff L1
-[ "$(git rev-parse main)" = "$(git rev-parse feat/L1)" ] && ok "base is at the ticket branch" || bad "base is at the ticket branch"
-cutter-worktree add L2 --no-setup >/dev/null
+# squash: local mode, several tickets in a row without pushing the base
+mkdir -p .claude && echo '{ "close": "local" }' >.claude/cutter.json
+git add .claude/cutter.json && git commit -qm "chore: local mode" && git push -q origin main
+echo extra >"$lw/extra.txt"; git -C "$lw" add -A; git -C "$lw" commit -qm "feat: extra"
+expect "rebase L1 in local mode" 0 cutter-land rebase L1
+expect "squash refuses without a commit message" 2 cutter-land squash L1
+: >"$td/commit-msg"
+expect "squash refuses an empty commit message" 2 cutter-land squash L1
+rm "$td/commit-msg"; echo outside >"$tmp/outside-msg"; ln -s "$tmp/outside-msg" "$td/commit-msg"
+expect "squash refuses a symlinked commit message" 2 cutter-land squash L1
+rm "$td/commit-msg"
+printf 'feat: land L1\n\nBody line.\n' >"$td/commit-msg"
+before="$(git rev-parse main)"
+expect "squash lands the branch" 0 cutter-land squash L1
+[ "$(git rev-parse main^)" = "$before" ] && ok "one commit on the base" || bad "one commit on the base"
+[ "$(git rev-parse 'main^{tree}')" = "$(git rev-parse 'feat/L1^{tree}')" ] && ok "base has the branch's tree" || bad "base has the branch's tree"
+[ "$(git log -1 --format=%B main)" = "$(printf 'feat: land L1\n\nBody line.')" ] && ok "squash commit uses commit-msg" || bad "squash commit uses commit-msg"
+[ -z "$(git status --porcelain)" ] && ok "main checkout updated with the base" || bad "main checkout updated with the base"
+expect "squash refuses a branch not rebased onto the base" 2 cutter-land squash L1
+expect "rm after a local squash" 0 cutter-worktree rm L1
+grep -q 'deleted branch feat/L1 (its changes are on main)' "$tmp/out" && ok "locally squashed branch deleted" || bad "locally squashed branch deleted"
+cutter-worktree add L0 --no-setup >/dev/null
+mkdir -p .cutter/L0 && echo "feat: nothing" >.cutter/L0/commit-msg
+expect "squash refuses a branch with nothing beyond the base" 2 cutter-land squash L0
+grep -q 'no commits beyond main' "$tmp/out" && ok "empty branch: reason given" || bad "empty branch: reason given"
+cutter-worktree rm L0 >/dev/null
+expect "add starts from the unpushed local base" 0 cutter-worktree add L2 --no-setup
+grep -q 'from main (' "$tmp/out" && ok "L2 starts from main" || bad "L2 starts from main"
 echo two >"$tmp/land/.worktrees/L2/two.txt"; git -C "$tmp/land/.worktrees/L2" add -A; git -C "$tmp/land/.worktrees/L2" commit -qm "feat: two"
-echo more >g.txt; git commit -qam "chore: base moves"
-expect "ff refuses when the base moved" 2 cutter-land ff L2
+mkdir -p .cutter/L2 && echo "feat: two" >.cutter/L2/commit-msg
 git checkout -q -b elsewhere
-echo again >g.txt; git commit -qam "chore: base moves on"
-expect "ff refuses (off the base) when the base moved" 2 cutter-land ff L2
+expect "rebase onto the unpushed local base" 0 cutter-land rebase L2
+grep -q 'onto main$' "$tmp/out" && ok "L2 rebased onto main" || bad "L2 rebased onto main"
+expect "squash off the base" 0 cutter-land squash L2
+[ "$(git rev-parse 'main^{tree}')" = "$(git rev-parse 'feat/L2^{tree}')" ] && [ "$(git rev-parse --abbrev-ref HEAD)" = elsewhere ] && ok "base ref updated, checkout untouched" || bad "base ref updated, checkout untouched"
+[ "$(git rev-list --count origin/main..main)" = 2 ] && ok "two tickets squashed in a row without a push" || bad "two tickets squashed in a row without a push"
+cutter-worktree add L3 --no-setup >/dev/null
+echo three >"$tmp/land/.worktrees/L3/three.txt"; git -C "$tmp/land/.worktrees/L3" add -A; git -C "$tmp/land/.worktrees/L3" commit -qm "feat: three"
+mkdir -p .cutter/L3 && echo "feat: three" >.cutter/L3/commit-msg
+git checkout -q main
+echo more >g.txt; git commit -qam "chore: base moves"
+expect "squash refuses when the base moved" 2 cutter-land squash L3
+git checkout -q elsewhere
+expect "squash refuses (off the base) when the base moved" 2 cutter-land squash L3
+git checkout -q main
+# the local base behind origin: start from origin/main; diverged: refuse
+git push -q origin main
+git clone -q "$tmp/github.com/land.git" "$tmp/land-other"
+echo upstream >"$tmp/land-other/up.txt"
+git -C "$tmp/land-other" add -A && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qm "feat: upstream" && git -C "$tmp/land-other" push -q origin main
+expect "add with the local base behind origin" 0 cutter-worktree add L4 --no-setup
+grep -q 'from origin/main (' "$tmp/out" && ok "behind: starts from origin/main" || bad "behind: starts from origin/main"
+echo four >"$tmp/land/.worktrees/L4/four.txt"; git -C "$tmp/land/.worktrees/L4" add -A; git -C "$tmp/land/.worktrees/L4" commit -qm "feat: four"
+mkdir -p .cutter/L4 && echo "feat: four" >.cutter/L4/commit-msg
+expect "rebase with the local base behind origin" 0 cutter-land rebase L4
+grep -q 'onto origin/main$' "$tmp/out" && ok "behind: rebased onto origin/main" || bad "behind: rebased onto origin/main"
+expect "squash with the local base behind origin" 0 cutter-land squash L4
+[ "$(git rev-parse main^)" = "$(git rev-parse origin/main)" ] && [ -z "$(git rev-list main..origin/main)" ] && ok "behind: squash lands on origin/main, not diverged" || bad "behind: squash lands on origin/main, not diverged"
+[ -z "$(git status --porcelain)" ] && [ -f up.txt ] && ok "behind: checkout has the upstream file" || bad "behind: checkout has the upstream file"
+# a dirty main checkout on the base: unrelated changes kept, a change to a file the ticket touches refused
+cutter-worktree add L7 --no-setup >/dev/null
+echo seven >"$tmp/land/.worktrees/L7/seven.txt"; echo ticket-g >"$tmp/land/.worktrees/L7/g.txt"
+git -C "$tmp/land/.worktrees/L7" add -A; git -C "$tmp/land/.worktrees/L7" commit -qm "feat: seven"
+mkdir -p .cutter/L7 && echo "feat: seven" >.cutter/L7/commit-msg
+echo mine >g.txt
+before="$(git rev-parse main)"
+expect "squash refuses over an uncommitted change to a touched file" 2 cutter-land squash L7
+grep -q 'uncommitted changes to files the ticket touches' "$tmp/out" && ! grep -q 'moved since' "$tmp/out" && ok "dirty checkout: reason given" || bad "dirty checkout: reason given"
+[ "$(git rev-parse main)" = "$before" ] && [ "$(cat g.txt)" = mine ] && ok "dirty checkout: base and change untouched" || bad "dirty checkout: base and change untouched"
+git checkout -q -- g.txt
+echo mine >>f.txt; echo staged >s.txt; git add s.txt
+expect "squash with unrelated uncommitted changes" 0 cutter-land squash L7
+[ "$(git rev-parse main^)" = "$before" ] && [ -f seven.txt ] && ok "dirty checkout: squash applied" || bad "dirty checkout: squash applied"
+[ "$(git diff --name-only)" = f.txt ] && [ "$(git diff --cached --name-only)" = s.txt ] && ok "dirty checkout: unrelated changes kept" || bad "dirty checkout: unrelated changes kept"
+git checkout -q -- f.txt; git rm -q --cached s.txt; rm s.txt
+echo upstream2 >"$tmp/land-other/up.txt"
+git -C "$tmp/land-other" pull -q && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qam "feat: upstream again" && git -C "$tmp/land-other" push -q origin main
+git fetch -q origin
+echo local >h.txt; git add h.txt && git commit -qm "chore: local only"
+expect "add refuses a diverged base" 2 cutter-worktree add L5 --no-setup
+[ ! -e "$tmp/land/.worktrees/L5" ] && ok "no worktree for a diverged base" || bad "no worktree for a diverged base"
+expect "rebase refuses a diverged base" 2 cutter-land rebase L4
+# pr mode ignores the local base
+git rm -q .claude/cutter.json && git commit -qm "chore: pr mode"
+expect "add in pr mode with an unpushed local base" 0 cutter-worktree add L6 --no-setup
+grep -q 'from origin/main (' "$tmp/out" && ok "pr mode starts from origin/main" || bad "pr mode starts from origin/main"
 cd "$tmp/repo" || exit 2
 
 # sync-base: after a merged PR, fast-forward the main checkout's base only when that is safe

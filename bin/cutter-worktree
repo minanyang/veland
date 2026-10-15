@@ -27,13 +27,14 @@ source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
 # Has <branch> landed on the base even though git does not call it merged? True when it is an
 # ancestor of the base (a rebase dropped its already-applied commits), or when every file it
-# touched is identical on the base (a squash merge).
+# touched is identical on the base (a squash merge). In local mode the base is the local base once a
+# squash put it ahead of origin (see base_ref).
 landed() {
   local base files
-  base="$(base_ref)"
   if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
     git -C "$ROOT" fetch --quiet origin "$(base_branch)" || return 1
   fi
+  base="$(base_ref)"
   git -C "$ROOT" merge-base --is-ancestor "$1" "$base" && return 0
   files="$(git -C "$ROOT" diff --name-only "$base...$1")"
   [ -n "$files" ] || return 1
@@ -79,6 +80,7 @@ case "$cmd" in
     if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
       git -C "$ROOT" fetch --quiet origin "$(base_branch)" || die "could not fetch origin/$(base_branch)"
     fi
+    ! base_diverged || die "$(base_branch) and origin/$(base_branch) have diverged — reconcile the local base first"
     start="$(base_ref)"
     if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       git -C "$ROOT" worktree add --quiet "$path" "$branch"
