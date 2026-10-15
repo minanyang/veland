@@ -1,5 +1,5 @@
 #!/bin/bash
-# The writes /cutter:close and /cutter:open need, each taking only a ticket id or a draft slug — the command
+# The writes /cutter:close, /cutter:open and /cutter:work need, each taking only a ticket id or a draft slug — the command
 # line is built here, so a permission rule for `cutter-land <sub> *` cannot be stretched into a force-push,
 # a bypass or a publish of another file or repo.
 #
@@ -10,6 +10,7 @@
 #   cutter-land squash <id>
 #   cutter-land pr     <id>
 #   cutter-land issue  <slug>
+#   cutter-land comment <id>
 #
 # `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes.
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base> (in local mode, onto the local
@@ -28,16 +29,22 @@
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
 # `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, body);
 # every label must already exist in the repo.
+# `comment` (github.com only) posts .cutter/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
+# repo, only when .cutter/<id>/ticket.md was read from that issue; it needs no worktree, since /cutter:work posts
+# it while planning.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-usage="usage: cutter-land check|rebase|push|merge|squash|pr <id> | issue <slug>"
+usage="usage: cutter-land check|rebase|push|merge|squash|pr|comment <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
 if [ "$cmd" = issue ]; then
   [[ "$id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "invalid draft slug '$id' (lowercase letters, digits, -)"
+elif [ "$cmd" = comment ]; then
+  [[ "$id" =~ ^gh-([1-9][0-9]*)$ ]] || die "comment needs a GitHub issue ticket id gh-<n>, got '$id'"
+  number="${BASH_REMATCH[1]}"
 else
   check_id "$id"
   path="$(wt_path "$id")"
@@ -243,6 +250,18 @@ case "$cmd" in
     for l in ${labels[@]+"${labels[@]}"}; do args+=(--label "$l"); done
     [ -z "$itype" ] || args+=(--type "$itype")
     gh "${args[@]}"
+    ;;
+
+  comment)
+    has_origin || die "no origin"
+    origin_parts
+    [ "$o_host" = github.com ] || die "comment needs a github.com origin"
+    td="$(task_dir "$id")"
+    need_file "$td/comment.md"; need_file "$td/ticket.md"
+    repo="$(gh_repo)"
+    # The ticket must have been read from this very issue, not #<n> of another repo.
+    grep -Fixq -- "- url: https://$repo/issues/$number" "$td/ticket.md" || die "$td/ticket.md is not issue #$number of $repo; not commenting"
+    gh issue comment "$number" --repo "$repo" --body-file "$td/comment.md"
     ;;
 
   *) die "$usage" ;;

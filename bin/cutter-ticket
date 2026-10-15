@@ -2,6 +2,9 @@
 // Print a ticket as Markdown, for /cutter:work to turn into a plan.
 //
 //   cutter-ticket github <number | issue URL>     uses `gh` (run `gh auth login` once)
+//
+// The issue is read from origin's repo only (a URL must name it), so the ticket, its branch, its PR and
+// any comment posted to it all concern the same repo.
 
 const { execFileSync } = require('node:child_process')
 
@@ -15,10 +18,35 @@ if (!source || !ref) die('usage: cutter-ticket github <number|url>')
 if (source === 'github') github(ref)
 else die(`unknown source '${source}' (github)`)
 
+// OWNER/REPO of origin, which must be on github.com (the same host and path rules as cutter-land).
+function originRepo() {
+  let url
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    die('no origin remote')
+  }
+  url = url.replace(/\/$/, '').replace(/\.git$/, '')
+  let host = '', path
+  const scheme = /^[^:/]+:\/\/([^/]*)\/(.*)$/.exec(url)
+  const scp = /^(?:[^/:]+@)?([^/:]+):(.+)$/.exec(url)
+  if (scheme) [host, path] = [scheme[1].replace(/^.*@/, '').replace(/:.*$/, ''), scheme[2]]
+  else if (scp) [host, path] = [scp[1], scp[2]]
+  if (host !== 'github.com') die(`a GitHub issue ticket needs a github.com origin, got '${url}'`)
+  const repo = path.split('/').slice(-2).join('/')
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) die('cannot derive OWNER/REPO from origin')
+  return repo
+}
+
 function github(ref) {
+  const repo = originRepo()
+  const url = /^https:\/\/github\.com\/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\/issues\/([1-9][0-9]*)\/?$/.exec(ref)
+  if (url && url[1].toLowerCase() !== repo.toLowerCase())
+    die(`issue ${ref} is not in origin's repo ${repo}; describe the task in words instead`)
+  const number = url ? url[2] : /^[1-9][0-9]*$/.test(ref) ? ref : die(`'${ref}' is neither an issue number nor an issue URL of ${repo}`)
   let raw
   try {
-    raw = execFileSync('gh', ['issue', 'view', ref, '--json', 'number,title,body,url,state,labels,issueType,comments'], {
+    raw = execFileSync('gh', ['issue', 'view', number, '--repo', `github.com/${repo}`, '--json', 'number,title,body,url,state,labels,issueType,comments'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })

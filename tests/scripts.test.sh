@@ -206,6 +206,7 @@ echo "$*" >>"$STUB_LOG"
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
+  "issue view") echo '{"number":7,"title":"T","body":"b","url":"https://github.com/acme/land/issues/7","state":"OPEN","labels":[],"issueType":null,"comments":[]}' ;;
 esac
 exit 0
 STUB
@@ -373,10 +374,55 @@ rm "$tmp/land/.cutter/drafts"; mv "$tmp/drafts-elsewhere" "$tmp/land/.cutter/dra
 ln "$tmp/real-body.md" "$td/pr-body.md"
 expect "pr refuses a hard-linked body" 2 cutter-land pr L1
 rm "$td/pr-body.md"; printf 'Closes #1\n' >"$td/pr-body.md"
+
+# comment: posts .cutter/gh-<n>/comment.md on issue <n> of origin's repo, without a worktree
+mkdir -p "$tmp/land/.cutter/gh-7"
+gd="$(cd "$tmp/land/.cutter/gh-7" && pwd -P)"
+: >"$tmp/stub.log"
+expect "comment refuses a missing comment.md" 2 cutter-land comment gh-7
+: >"$gd/comment.md"
+expect "comment refuses an empty comment.md" 2 cutter-land comment gh-7
+printf 'Decisions from planning:\n' >"$tmp/real-comment.md"; rm "$gd/comment.md"; ln -s "$tmp/real-comment.md" "$gd/comment.md"
+expect "comment refuses a symlinked comment.md" 2 cutter-land comment gh-7
+rm "$gd/comment.md"; printf 'Decisions from planning:\n' >"$gd/comment.md"
+expect "comment rejects a non-gh id" 2 cutter-land comment L1
+expect "comment rejects gh-0" 2 cutter-land comment gh-0
+expect "comment rejects extra arguments" 2 cutter-land comment gh-7 --repo evil/land
+expect "comment refuses without ticket.md" 2 cutter-land comment gh-7
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/other/land/issues/7\n' >"$gd/ticket.md"
+expect "comment refuses a ticket read from another repo" 2 cutter-land comment gh-7
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/acme/land/issues/77\n' >"$gd/ticket.md"
+expect "comment refuses a ticket of another issue" 2 cutter-land comment gh-7
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused comment" || bad "no gh call for a refused comment"
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/Acme/Land/issues/7\n' >"$gd/ticket.md"
+expect "comment posts without a worktree" 0 cutter-land comment gh-7
+land_log "issue comment 7 --repo github.com/acme/land --body-file $gd/comment.md" "gh issue comment argv"
+git remote set-url origin https://gitlab.example.com/grp/land.git
+: >"$tmp/stub.log"
+expect "comment refuses a GitLab origin" 2 cutter-land comment gh-7
+git remote set-url origin git@github.com:acme/land.git
+
+# cutter-ticket reads the issue from origin's repo only
+: >"$tmp/stub.log"
+expect "ticket by number" 0 cutter-ticket github 7
+land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,state,labels,issueType,comments" "gh issue view pinned to origin's repo"
+: >"$tmp/stub.log"
+expect "ticket by origin's URL" 0 cutter-ticket github https://github.com/Acme/land/issues/7
+land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,state,labels,issueType,comments" "a URL is read as its number in origin's repo"
+: >"$tmp/stub.log"
+expect "ticket refuses another repo's URL" 2 cutter-ticket github https://github.com/other/land/issues/7
+expect "ticket refuses a URL on a look-alike host" 2 cutter-ticket github https://github.com.evil/acme/land/issues/7
+expect "ticket refuses a flag" 2 cutter-ticket github --web
+expect "ticket refuses a repo-qualified ref" 2 cutter-ticket github other/land#7
+git remote set-url origin https://notgithub.com/acme/land.git
+expect "ticket refuses a non-github.com origin" 2 cutter-ticket github 7
+git remote set-url origin git@github.com:acme/land.git
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused ticket" || bad "no gh call for a refused ticket"
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1
 expect "issue refuses a host that only contains github.com" 2 cutter-land issue thing
+expect "comment refuses a host that only contains github.com" 2 cutter-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host" || bad "no gh call for a look-alike host"
 unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"
