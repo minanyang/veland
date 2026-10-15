@@ -1,0 +1,1 @@
+- [Review packet verify table](review_packet_verify_table.md) — packet's verify table predates HEAD by design (verify runs concurrently); don't flag it
