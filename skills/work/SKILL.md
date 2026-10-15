@@ -92,7 +92,7 @@ In the worktree: stage the changed paths explicitly (`git add -- <paths>`, never
 cutter-red-proof <id>
 ```
 
-Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs JavaScript/TypeScript tests; on other stacks it says unsupported — then state in the report that red-proof did not run.)
+Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs JavaScript/TypeScript tests; on other stacks it says unsupported — then state in the report that red-proof did not run.) Exit 2 naming test files that do not pass at HEAD is not a pass either: the test is broken, its environment is missing, or the runner is one red-proof does not support — fix it, or state in the report that red-proof could not run and why.
 
 ## Step 6 — Verify and review, concurrently
 

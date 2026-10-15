@@ -101,7 +101,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal):
 |---|---|
 | `cutter-worktree init\|add\|list\|path\|rm <id>\|sync-base` | one worktree per ticket; `init` keeps `.cutter/` out of git before anything is written there; `rm` deletes the branch only if git sees it merged; `sync-base` fast-forwards the main checkout's base after a merged PR when it is on the base with a clean tree |
 | `cutter-verify <id>` | runs every gate once; fails if the tree moved during the run |
-| `cutter-red-proof <id>` | reverts the implementation and checks the changed tests go red (jest, vitest, `node --test`) |
+| `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`); a test that fails at HEAD exits 2 |
 | `cutter-review-packet <id>` | the reviewer's starting material: diff, changed files, conventions, last verify result |
 | `cutter-ticket github <ref>` | prints a GitHub issue as Markdown |
 
