@@ -8,5 +8,8 @@
     "bash tests/scripts.test.sh",
     "claude plugin validate ."
   ],
-  "close": "pr"
+  "close": "pr-merge",
+  "contextGate": {
+    "maxTokens": 200000
+  }
 }
