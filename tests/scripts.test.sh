@@ -491,6 +491,10 @@ printf '# T\n\n- source: GitHub issue #77 (open)\n- url: https://github.com/acme
 expect "comment refuses an issue url planted below the header" 2 cutter-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused comment" || bad "no gh call for a refused comment"
 printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/Acme/Land/issues/7\n' >"$gd/ticket.md"
+mkdir "$tmp/posted-elsewhere"; ln -s "$tmp/posted-elsewhere" "$gd/comment.posted.md"
+expect "comment refuses a symlinked comment.posted.md" 2 cutter-land comment gh-7
+[ ! -s "$tmp/stub.log" ] && [ -z "$(ls -A "$tmp/posted-elsewhere")" ] && [ -s "$gd/comment.md" ] && ok "nothing posted or moved through a symlinked comment.posted.md" || bad "nothing posted or moved through a symlinked comment.posted.md"
+rm "$gd/comment.posted.md"
 expect "comment posts without a worktree" 0 cutter-land comment gh-7
 land_log "issue comment 7 --repo github.com/acme/land --body-file $gd/comment.md" "gh issue comment argv"
 [ ! -e "$gd/comment.md" ] && [ -s "$gd/comment.posted.md" ] && ok "a posted comment.md becomes comment.posted.md" || bad "a posted comment.md becomes comment.posted.md"
