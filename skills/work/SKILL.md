@@ -2,6 +2,13 @@
 name: work
 description: Take one ticket from intake to a reviewed, verified branch — plan it, implement it in its own worktree, prove its tests, have a cold-context agent review it, fix what the review finds. Use when the user runs /cutter:work with a GitHub issue, a ticket id, or a task described in words.
 disable-model-invocation: true
+allowed-tools:
+  - Bash(cutter-worktree init *)
+  - Bash(cutter-worktree add *)
+  - Bash(cutter-ticket *)
+  - Bash(cutter-red-proof *)
+  - Bash(cutter-review-packet *)
+  - Bash(cutter-verify *)
 ---
 
 # Work a ticket
@@ -13,7 +20,7 @@ disable-model-invocation: true
 
 One ticket per session. Everything the next session needs lives in `.cutter/<id>/`.
 
-The scripts below (`cutter-worktree`, `cutter-ticket`, `cutter-red-proof`, `cutter-verify`, `cutter-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves.
+The scripts below (`cutter-worktree`, `cutter-ticket`, `cutter-red-proof`, `cutter-verify`, `cutter-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves. Run one command per Bash call — no `&&`, `;` or `|`.
 
 ## Step 0 — Which ticket, which phase
 
@@ -84,7 +91,12 @@ Delegated: spawn `cutter:frontend-engineer`, `cutter:backend-engineer` or `cutte
 
 ## Step 4 — Commit
 
-In the worktree: stage the changed paths explicitly (`git add -- <paths>`, never `-A`), commit in the repo's own message style (`git log -n 5 --oneline`). No push.
+In the worktree: stage the changed paths explicitly, never `-A`, then commit in the repo's own message style (`git log -n 5 --oneline`). No push.
+
+```bash
+git -C <worktree> add -- <paths>
+git -C <worktree> commit -m "<message>"
+```
 
 ## Step 5 — Red-proof
 

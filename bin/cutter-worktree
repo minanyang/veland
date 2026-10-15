@@ -5,7 +5,7 @@
 #   cutter-worktree add  <id> [--type feat] [--slug short-name] [--no-setup]
 #   cutter-worktree list
 #   cutter-worktree path <id>
-#   cutter-worktree rm   <id> [--force]
+#   cutter-worktree rm   <id>
 #   cutter-worktree sync-base
 #
 # `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
@@ -64,6 +64,8 @@ case "$cmd" in
         *) die "unknown option $1" ;;
       esac
     done
+    [[ "$type" =~ ^[a-z]+$ ]] || die "--type must match ^[a-z]+$"
+    [ -z "$slug" ] || [[ "$slug" =~ ^[A-Za-z0-9._-]+$ ]] || die "--slug must match ^[A-Za-z0-9._-]+$"
     path="$(worktree_dir)/$id"
     if [ -e "$path/.git" ]; then
       say "exists: $path on $(git -C "$path" rev-parse --abbrev-ref HEAD)"
@@ -123,12 +125,12 @@ case "$cmd" in
     ;;
 
   rm)
-    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree rm <id> [--force]"
+    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree rm <id>"
     check_id "$id"
-    force=""; [ "${2:-}" = --force ] && force=--force
+    [ $# -eq 1 ] || die "usage: cutter-worktree rm <id>"
     path="$(wt_path "$id")"
     branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
-    git -C "$ROOT" worktree remove $force "$path" || die "worktree has uncommitted changes; commit them or pass --force"
+    git -C "$ROOT" worktree remove "$path" || die "worktree has uncommitted changes; commit or discard them yourself"
     say "removed: $path"
     if git -C "$ROOT" branch -d "$branch" >/dev/null 2>&1; then
       say "deleted branch $branch (merged)"
