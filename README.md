@@ -91,6 +91,8 @@ Optional `.claude/cutter.json`, committed with the project:
 | `generated` | paths left out of the review diff (lockfiles always are) |
 | `contextGate.maxTokens` | `120000`; `0` turns the gate off |
 
+`cutter-verify` reads `gates` from the ticket's worktree, so a gate the ticket adds verifies that ticket; when the list differs from the base branch's, it lists the gates added and removed. Every other key comes from the main checkout.
+
 `.cutter/` and the worktree directory are added to `.git/info/exclude` automatically — your `.gitignore` is not touched.
 
 ## Scripts
