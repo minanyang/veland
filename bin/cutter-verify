@@ -3,7 +3,8 @@
 #
 #   cutter-verify <id>
 #
-# Gates: the config's `gates` (shell commands, run in order), else from package.json —
+# Gates: `gates` (shell commands, run in order) from the worktree's .claude/cutter.json, else
+# the main checkout's; a gate list that differs from the base's is reported. Else from package.json —
 # `verify` if defined, otherwise whichever of lint, typecheck, test exist. A model does not
 # need to wait on a test runner; this script does, and leaves one table to read.
 #
@@ -25,8 +26,22 @@ mkdir -p "$out"
 take_lock "$id"
 trap release_lock EXIT
 
+summary="$out/summary.txt"
+: >"$summary"
+
+# Gates come from the ticket's own branch, so a gate it adds verifies it; a change against
+# the base's list is reported, so a gate it drops is not dropped silently.
+gates_file="$path/.claude/cutter.json"
+[ -f "$gates_file" ] || gates_file="$CONFIG"
+base_cfg="$out/base-cutter.json"
+git -C "$ROOT" show "$(base_ref):.claude/cutter.json" >"$base_cfg" 2>/dev/null || : >"$base_cfg"
+gate_set() { [ -s "$1" ] && cfg_in "$1" gates | sed '/^$/d' | sort -u; }
+changes="$(comm -3 <(gate_set "$base_cfg") <(gate_set "$path/.claude/cutter.json") | awk -F'\t' '{ print ($1 == "" ? "  + " $2 : "  - " $1) }')"
+rm -f "$base_cfg"
+[ -z "$changes" ] || printf 'gates differ from %s:\n%s\n' "$(base_ref)" "$changes" | tee -a "$summary"
+
 names=(); cmds=()
-while IFS= read -r c; do [ -n "$c" ] && names+=("$c") && cmds+=("$c"); done < <(cfg gates)
+while IFS= read -r c; do [ -n "$c" ] && names+=("$c") && cmds+=("$c"); done < <(cfg_in "$gates_file" gates)
 if [ ${#cmds[@]} -eq 0 ] && [ -f "$path/package.json" ]; then
   pm="$(package_manager "$path")"
   if has_script "$path" verify; then gs=(verify); else gs=(); for g in lint typecheck test; do has_script "$path" "$g" && gs+=("$g"); done; fi
@@ -36,8 +51,6 @@ fi
 
 state() { printf '%s %s' "$(git -C "$path" rev-parse --short HEAD)" "$(git -C "$path" status --porcelain | wc -l | tr -d ' ')"; }
 
-summary="$out/summary.txt"
-: >"$summary"
 failed=0
 printf '%-28s %-6s %6s  %s\n' gate result secs log | tee -a "$summary"
 before="$(state)"

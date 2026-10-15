@@ -21,8 +21,12 @@ ROOT="$(main_root)"
 CONFIG="$ROOT/.claude/cutter.json"
 
 # cfg <dotted.key> [default] — print a config value (arrays one item per line).
-cfg() {
-  [ -f "$CONFIG" ] || { [ $# -gt 1 ] && printf '%s\n' "$2"; return 0; }
+cfg() { cfg_in "$CONFIG" "$@"; }
+
+# cfg_in <file> <dotted.key> [default] — the same, from another config file.
+cfg_in() {
+  local file=$1; shift
+  [ -f "$file" ] || { [ $# -gt 1 ] && printf '%s\n' "$2"; return 0; }
   # shellcheck disable=SC2016  # JavaScript, not shell
   node -e '
     const [file, key, dflt] = process.argv.slice(1)
@@ -31,7 +35,7 @@ cfg() {
     catch (e) { console.error(`cutter: cannot read ${file}: ${e.message}`); process.exit(2) }
     if (v === undefined || v === null) { if (dflt !== undefined) console.log(dflt); process.exit(0) }
     console.log(Array.isArray(v) ? v.join("\n") : typeof v === "object" ? JSON.stringify(v) : String(v))
-  ' "$CONFIG" "$1" ${2+"$2"}
+  ' "$file" "$1" ${2+"$2"}
 }
 
 check_id() {
