@@ -240,6 +240,18 @@ expect "rebase onto the moved base" 0 cutter-land rebase L1
 git -C "$lw" merge-base --is-ancestor origin/main HEAD && ok "branch contains the new base" || bad "branch contains the new base"
 expect "push after a rebase (lease)" 0 cutter-land push L1
 [ "$(git ls-remote --heads origin feat/L1 | cut -f1)" = "$(git -C "$lw" rev-parse HEAD)" ] && ok "origin has the rebased branch" || bad "origin has the rebased branch"
+# a push URL naming another repo is refused before anything is pushed; the same repo in another form is not
+git init -q --bare "$tmp/other.git"
+echo more >"$lw/more.txt"; git -C "$lw" add -A; git -C "$lw" commit -qm "feat: more"
+o_before="$(git ls-remote origin)"
+git config remote.origin.pushurl "$tmp/other.git"
+expect "push refuses a push URL to another repo" 2 cutter-land push L1
+grep -qF "$tmp/other.git" "$tmp/out" && grep -qF "$tmp/github.com/land.git" "$tmp/out" && ok "refusal names both URLs" || bad "refusal names both URLs"
+[ "$(git ls-remote origin)" = "$o_before" ] && [ -z "$(git ls-remote "$tmp/other.git")" ] && ok "mismatched push URL left both repos untouched" || bad "mismatched push URL left both repos untouched"
+git config remote.origin.pushurl "file://$tmp/github.com/land.git/"
+expect "push allows the same repo in another form" 0 cutter-land push L1
+[ "$(git ls-remote --heads origin feat/L1 | cut -f1)" = "$(git -C "$lw" rev-parse HEAD)" ] && ok "pushed through the equivalent push URL" || bad "pushed through the equivalent push URL"
+git config --unset remote.origin.pushurl
 mkdir -p .claude && echo '{"base":"feat/L1"}' >.claude/cutter.json
 expect "push refuses the base branch" 2 cutter-land push L1
 rm -r .claude
@@ -305,6 +317,16 @@ STUB_VIEW="develop OPEN false" expect "pr refuses an open PR into another base" 
 ! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a wrong base" || bad "no edit or create for a wrong base"
 STUB_VIEW="main OPEN true" expect "pr refuses a fork's open PR" 2 cutter-land pr L1
 ! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a fork's PR" || bad "no edit or create for a fork's PR"
+# pr and merge refuse a push URL naming another repo; the same repo over https is allowed
+git config remote.origin.pushurl https://github.com/evil/land.git
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr refuses a push URL to another repo" 2 cutter-land pr L1
+STUB_VIEW="main OPEN false" expect "merge refuses a push URL to another repo" 2 cutter-land merge L1
+[ ! -s "$tmp/stub.log" ] && ok "no gh call with a mismatched push URL" || bad "no gh call with a mismatched push URL"
+git config remote.origin.pushurl https://github.com/acme/land.git
+STUB_VIEW_RC=1 expect "pr allows the same repo over https" 0 cutter-land pr L1
+land_log "pr create --repo github.com/acme/land --base main --head feat/L1 --title feat: the feature --body-file $td/pr-body.md" "gh pr create argv with an equivalent push URL"
+git config --unset remote.origin.pushurl
 git remote set-url origin https://gitlab.example.com/grp/sub/land.git
 : >"$tmp/stub.log"
 STUB_VIEW_RC=1 expect "pr creates via glab" 0 cutter-land pr L1
