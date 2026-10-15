@@ -1,6 +1,7 @@
 #!/bin/bash
 # The skills' `allowed-tools` must cover every command their fenced bash blocks run, and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
+# open and work must load the shared references/grill.md (beside the skills directory).
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
 SKILLS_DIR="${SKILLS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/skills}"
@@ -56,5 +57,12 @@ for (const skill of Object.keys(userOwn)) {
     else bad(`${skill}: not covered by allowed-tools: ${raw}`)
   }
 }
+
+// open and work load the one shared grill rather than each carrying a copy.
+const grill = `${dir}/../references/grill.md`
+fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.md is missing")
+for (const skill of ["open", "work"])
+  fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8").includes("`references/grill.md`")
+    ? ok(`${skill}: loads references/grill.md`) : bad(`${skill}: does not load references/grill.md`)
 process.exit(fail)
 JS
