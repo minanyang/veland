@@ -18,7 +18,8 @@
 # `rm` removes the worktree and deletes its branch only if the branch is merged
 # (`git branch -d`); an unmerged branch is kept and reported.
 # `sync-base` fetches the base and fast-forwards it in the main checkout when the main checkout
-# is on the base with no uncommitted tracked changes; otherwise it leaves it and says why.
+# is on the base and git allows the fast-forward (uncommitted changes to files the incoming
+# commits do not touch are carried over); otherwise it leaves it and says why.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -152,8 +153,6 @@ case "$cmd" in
     head="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
     if [ "$head" != "$b" ]; then
       say "$behind: the main checkout is on $head"
-    elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]; then
-      say "$behind: the main checkout has uncommitted changes"
     elif ! git -C "$ROOT" merge-base --is-ancestor "$b" "origin/$b"; then
       say "$behind: $b has commits origin/$b does not"
     elif out="$(git -C "$ROOT" merge --ff-only --quiet "origin/$b" 2>&1)"; then

@@ -171,15 +171,28 @@ git switch -q -c side
 expect "sync-base off the base" 0 cutter-worktree sync-base
 grep -q 'main is behind origin/main, not updated: the main checkout is on side' "$tmp/out" && ok "off the base: left behind" || bad "off the base: left behind"
 git switch -q main && git branch -q -D side
+[ "$(git rev-parse main)" = "$before" ] && ok "base untouched off the base" || bad "base untouched off the base"
 echo 'export const add = (a, b) => b + a' >src/math.mjs
-expect "sync-base with uncommitted changes" 0 cutter-worktree sync-base
-grep -q 'not updated: the main checkout has uncommitted changes' "$tmp/out" && ok "dirty tree: left behind" || bad "dirty tree: left behind"
-[ "$(git rev-parse main)" = "$before" ] && ok "base untouched when not safe" || bad "base untouched when not safe"
+expect "sync-base with an unrelated unstaged change" 0 cutter-worktree sync-base
+grep -q "fast-forwarded main to $(git rev-parse --short origin/main)" "$tmp/out" && ok "unrelated unstaged change: fast-forwarded" || bad "unrelated unstaged change: fast-forwarded"
+[ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ] && ok "base equals origin/main" || bad "base equals origin/main"
+[ "$(git diff --name-only)" = src/math.mjs ] && ok "unstaged change kept" || bad "unstaged change kept"
+merged pr2
+git add src/math.mjs
+expect "sync-base with an unrelated staged change" 0 cutter-worktree sync-base
+grep -q "fast-forwarded main to $(git rev-parse --short origin/main)" "$tmp/out" && ok "unrelated staged change: fast-forwarded" || bad "unrelated staged change: fast-forwarded"
+[ "$(git diff --cached --name-only)" = src/math.mjs ] && ok "staged change kept staged" || bad "staged change kept staged"
+git reset -q -- src/math.mjs
+echo 'export const add = (a, b) => a + b + 0' >"$tmp/other/src/math.mjs"
+git -C "$tmp/other" -c user.email=t@t -c user.name=t commit -qam "fix: math" && git -C "$tmp/other" push -q origin main
+before=$(git rev-parse main)
+expect "sync-base with a change to an incoming file" 0 cutter-worktree sync-base
+grep -q 'not updated: git merge --ff-only refused' "$tmp/out" && grep -q 'src/math.mjs' "$tmp/out" && ok "conflicting change: refused, file named" || bad "conflicting change: refused, file named"
+[ "$(git rev-parse main)" = "$before" ] && ok "base untouched when git refuses" || bad "base untouched when git refuses"
 git checkout -q -- src/math.mjs
 expect "sync-base on a clean base" 0 cutter-worktree sync-base
 grep -q "fast-forwarded main to $(git rev-parse --short origin/main)" "$tmp/out" && ok "clean base fast-forwarded" || bad "clean base fast-forwarded"
-[ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ] && ok "base equals origin/main" || bad "base equals origin/main"
-merged pr2
+merged pr3
 echo local >local.txt && git add local.txt && git commit -qm "chore: local only"
 before=$(git rev-parse main)
 expect "sync-base with local commits" 0 cutter-worktree sync-base
