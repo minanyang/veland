@@ -10,7 +10,7 @@
 // the transcript. A compaction after that message means the context was just reset.
 //
 // .claude/cutter.json: { "contextGate": { "maxTokens": 200000 } }; maxTokens 0 turns it off.
-// The nearest one at or above the session's cwd counts, so a worktree's own file wins. One
+// The nearest one at or above the session's cwd, within its repo, counts, so a worktree's own file wins. One
 // that does not parse, or whose maxTokens is not a number, gets the default and a warning.
 
 const fs = require('node:fs')
@@ -29,10 +29,18 @@ if (!cmd) process.exit(0)
 const DEFAULT = 200_000
 let limit = DEFAULT
 let warning = ''
-let dir = path.resolve(input.cwd || process.cwd())
-while (!fs.existsSync(path.join(dir, '.claude', 'cutter.json')) && path.dirname(dir) !== dir) dir = path.dirname(dir)
-const file = path.join(dir, '.claude', 'cutter.json')
-if (fs.existsSync(file)) {
+// The nearest config up to the repo root (the first directory with a .git dir or file); none outside a repo.
+let file = ''
+for (let dir = path.resolve(input.cwd || process.cwd()); ; dir = path.dirname(dir)) {
+  const f = path.join(dir, '.claude', 'cutter.json')
+  if (!file && fs.existsSync(f)) file = f
+  if (fs.existsSync(path.join(dir, '.git'))) break
+  if (path.dirname(dir) === dir) {
+    file = ''
+    break
+  }
+}
+if (file) {
   try {
     const gate = JSON.parse(fs.readFileSync(file, 'utf8')).contextGate
     if (gate && Number.isFinite(gate.maxTokens)) limit = gate.maxTokens
