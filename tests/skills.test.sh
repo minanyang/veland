@@ -70,6 +70,9 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
     return body.endsWith("*") ? (w + " ").startsWith(body.slice(0, -1)) : body === w || body.startsWith(w + " ")
   }
   const hits = [...fm.matchAll(/Bash\(([^)]*)\)/g)].filter((b) => publicWrites.some((w) => covers(b[1].trim(), w)))
+  // A bare `Bash` (or `Bash()`) grants every command.
+  const tools = (/^allowed-tools:(.*(?:\n  - .*)*)/m.exec(fm) || ["", ""])[1]
+  hits.push(...[...tools.matchAll(/(?:^|[\s,-])(Bash(?:\(\s*\))?)(?=[\s,]|$)/g)].map((b) => [b[1]]))
   hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants a public write, which must always prompt`))
     : ok(`${skill}: grants no public write`)
 }
