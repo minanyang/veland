@@ -5,9 +5,13 @@
 //
 // The issue is read from origin's repo only (a URL must name it), so the ticket, its branch, its PR and
 // any comment posted to it all concern the same repo.
+//
+// --out must name this issue's .cutter/gh-<number>/ticket.md in the main checkout, so a permission rule for
+// `cutter-ticket *` cannot be stretched into a write anywhere else.
 
 const { execFileSync } = require('node:child_process')
-const { writeFileSync } = require('node:fs')
+const { lstatSync, realpathSync, renameSync, writeFileSync } = require('node:fs')
+const { basename, dirname, join, resolve } = require('node:path')
 
 const args = process.argv.slice(2)
 const [source, ref] = args
@@ -20,14 +24,46 @@ if (!source || !ref || !ok) die('usage: cutter-ticket github <number|url> [--out
 const outPath = args[3]
 
 if (source !== 'github') die(`unknown source '${source}' (github)`)
-const md = github(ref)
-if (!outPath) process.stdout.write(md)
+const ticket = github(ref)
+if (!outPath) process.stdout.write(ticket.text)
 else {
+  // A fresh file renamed into place: an existing symlink or hard link at the target is replaced, never written through.
+  const tmp = `${ticket.target}.${process.pid}.tmp`
   try {
-    writeFileSync(outPath, md)
+    writeFileSync(tmp, ticket.text, { flag: 'wx' })
+    renameSync(tmp, ticket.target)
   } catch (e) {
     die(`cannot write ${outPath}: ${e.message}`)
   }
+}
+
+// The resolved ticket.md for --out, or die before anything is fetched: its directory must be the main checkout's
+// .cutter/gh-<number>/, with no symlink at .cutter or gh-<number>.
+function outTarget(number) {
+  let common
+  try {
+    common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    die('not in a git repository')
+  }
+  const dir = join(dirname(common), '.cutter', `gh-${number}`)
+  for (const p of [dirname(dir), dir]) {
+    let st
+    try {
+      st = lstatSync(p)
+    } catch {
+      die(`${p} does not exist: run \`cutter-worktree init gh-${number}\` first`)
+    }
+    if (!st.isDirectory()) die(`${p} is a symlink or not a directory`)
+  }
+  let parent
+  try {
+    parent = realpathSync(dirname(resolve(outPath)))
+  } catch {
+    parent = ''
+  }
+  if (parent !== realpathSync(dir) || basename(outPath) !== 'ticket.md') die(`--out must be ${join(dir, 'ticket.md')}, got '${outPath}'`)
+  return join(parent, 'ticket.md')
 }
 
 // OWNER/REPO of origin, which must be on github.com (the same host and path rules as cutter-land).
@@ -56,6 +92,7 @@ function github(ref) {
   if (url && url[1].toLowerCase() !== repo.toLowerCase())
     die(`issue ${ref} is not in origin's repo ${repo}; describe the task in words instead`)
   const number = url ? url[2] : /^[1-9][0-9]*$/.test(ref) ? ref : die(`'${ref}' is neither an issue number nor an issue URL of ${repo}`)
+  const target = outPath ? outTarget(number) : null
   let raw
   try {
     raw = execFileSync('gh', ['issue', 'view', number, '--repo', `github.com/${repo}`, '--json', 'number,title,body,url,state,labels,issueType,comments'], {
@@ -77,6 +114,6 @@ function github(ref) {
     out.push('', '## Comments')
     for (const c of i.comments) out.push('', `**${c.author.login}** (${c.createdAt.slice(0, 10)}):`, '', c.body.trim())
   }
-  return out.join('\n') + '\n'
+  return { text: out.join('\n') + '\n', target }
 }
 
