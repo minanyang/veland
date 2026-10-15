@@ -34,7 +34,9 @@ summary="$out/summary.txt"
 gates_file="$path/.claude/cutter.json"
 [ -f "$gates_file" ] || gates_file="$CONFIG"
 base_cfg="$out/base-cutter.json"
-git -C "$ROOT" show "$(base_ref):.claude/cutter.json" >"$base_cfg" 2>/dev/null || : >"$base_cfg"
+# At the merge-base, not the base's tip: a gate the base gained since the cut is not the ticket's change.
+fork="$(git -C "$path" merge-base "$(base_ref)" HEAD 2>/dev/null)"
+{ [ -n "$fork" ] && git -C "$path" show "$fork:.claude/cutter.json" >"$base_cfg" 2>/dev/null; } || : >"$base_cfg"
 gate_set() { [ -s "$1" ] && cfg_in "$1" gates | sed '/^$/d' | sort -u; }
 changes="$(comm -3 <(gate_set "$base_cfg") <(gate_set "$path/.claude/cutter.json") | awk -F'\t' '{ print ($1 == "" ? "  + " $2 : "  - " $1) }')"
 rm -f "$base_cfg"

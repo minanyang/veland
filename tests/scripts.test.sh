@@ -140,6 +140,10 @@ grep -q '^echo gate-added ' "$s7" && ok "gate added in the worktree runs" || bad
 grep -qxF 'gates differ from origin/main:' "$s7" && ok "difference reported against the main checkout's base" || bad "difference reported against the main checkout's base"
 grep -qxF '  + echo gate-added' "$s7" && grep -qxF '  - echo gate-base' "$s7" && ok "added and removed gates listed" || bad "added and removed gates listed"
 ! grep -q 'gate-kept' <(grep '^  [+-] ' "$s7") && ok "kept gate not listed" || bad "kept gate not listed"
+echo '{ "gates": ["echo gate-base", "echo gate-kept", "echo gate-later"] }' >.claude/cutter.json
+git commit -qam "chore: base gains a gate" && git push -q origin main
+expect "verify after the base gained a gate" 0 cutter-verify T7
+! grep -q 'gate-later' "$s7" && ok "gate added on the base after the cut not listed" || bad "gate added on the base after the cut not listed"
 echo '{ "gates": ["echo gate-kept", "echo gate-base"] }' >"$wt7/.claude/cutter.json"
 git -C "$wt7" commit -qam "chore: reorder gates"
 expect "verify with reordered gates" 0 cutter-verify T7
