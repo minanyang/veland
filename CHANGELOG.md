@@ -7,6 +7,7 @@
 - Tickets from a description or a GitHub issue (`gh`).
 - Scripts: `cutter-land` (`pr`, `issue` and `comment` build the PR/MR, issue and issue-comment commands from files under `.cutter/`), `cutter-worktree`, `cutter-verify` (runs the gates the ticket's worktree declares, listing changes against the base's; on cutter itself, lists the worktree's `bin/` and `scripts/` files that differ from the running copy), `cutter-red-proof`, `cutter-review-packet` (`--fixes` for the commits since the last review), `cutter-ticket` (reads issues of origin's repo only).
 - Agent memory written during `/cutter:work` — in the main checkout or the worktree — is committed on the ticket's branch before the report (`cutter-worktree memory`), leaving the main checkout clean; `cutter-verify` and `cutter-red-proof` ignore memory an agent writes into the worktree while they run.
+- `redProof.command` / `redProof.tests` let `cutter-red-proof` run any test runner; `preReviewGates` run before `cutter-review-packet` builds, so no reviewer reads a diff that fails the quick gates.
 - Agents: `frontend-engineer`, `backend-engineer`, `devops-engineer`, `qa-engineer`, `code-reviewer` (do-not-report list, confidence ≥ 80), `security-reviewer`.
 - Skills: `commit`, `code-review`, `code-review-branch`.
 - Hooks: guard against destructive Bash commands; context gate for the flow skills.

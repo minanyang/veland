@@ -38,6 +38,13 @@ cfg_in() {
   ' "$file" "$1" ${2+"$2"}
 }
 
+# wt_cfg <worktree> <dotted.key> — a config value from the worktree's cutter.json, else the main checkout's.
+wt_cfg() {
+  local file="$1/.claude/cutter.json"
+  [ -f "$file" ] || file="$CONFIG"
+  cfg_in "$file" "$2"
+}
+
 # gate_changes <base-cfg> <cfg> — gates added (+) and removed (-) in <cfg> against <base-cfg>; an empty or missing base lists every gate as added.
 gate_changes() {
   gate_set() { [ -s "$1" ] && cfg_in "$1" gates | sed '/^$/d' | sort -u; }

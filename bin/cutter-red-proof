@@ -21,7 +21,10 @@
 # reported as `note`. Not reverted: test helpers and fixtures, package.json and lockfiles
 # (dependencies are not reinstalled).
 #
-# Runners: jest, vitest, else `node --test`. Other stacks exit 2 ("unsupported").
+# Runners: jest, vitest, else `node --test`. Any other stack declares its own in .claude/cutter.json:
+# `redProof.command` (a shell command with `{file}`, run once per test file in the worktree root)
+# and `redProof.tests` (git pathspec globs naming the test files); a file is judged by its exit
+# code, and a modified test file that stays green is GREEN (no `note` in this mode).
 # The worktree must be clean. The tree is always restored on exit, and the ticket lock is
 # shared with cutter-verify. Agent memory (.claude/agent-memory/) is never checked, reverted
 # or restored: agents may write it while red-proof runs.
@@ -36,10 +39,23 @@ id="${1:-}"; [ -n "$id" ] || die "usage: cutter-red-proof <id>"
 check_id "$id"
 path="$(wt_path "$id")"
 [ -z "$(tree_status "$path")" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
-[ -f "$path/package.json" ] || die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) and this worktree has no package.json"
+rp_cmd="$(wt_cfg "$path" redProof.command)"
+rp_globs=()
+if [ -n "$rp_cmd" ]; then
+  while IFS= read -r g; do [ -n "$g" ] && rp_globs+=(":(glob)$g"); done < <(wt_cfg "$path" redProof.tests)
+  [ ${#rp_globs[@]} -gt 0 ] || die "redProof.command is set but redProof.tests is missing (git pathspec globs naming the test files)"
+  [[ "$rp_cmd" == *'{file}'* ]] || die "redProof.command has no {file} placeholder"
+elif [ ! -f "$path/package.json" ]; then
+  die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) out of the box; for another stack set redProof.command and redProof.tests in .claude/cutter.json"
+fi
 base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
 
-is_test()   { [[ "$1" =~ \.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$ ]]; }
+cmd_tests=""
+[ -z "$rp_cmd" ] || cmd_tests="$(git -C "$path" diff --name-only "$base" HEAD -- "${rp_globs[@]}")"
+is_test() {
+  if [ -n "$rp_cmd" ]; then printf '%s\n' "$cmd_tests" | grep -qxF -- "$1"
+  else [[ "$1" =~ \.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$ ]]; fi
+}
 is_helper() { [[ "$1" =~ (^|/)(__tests__|__mocks__|test|tests|fixtures|e2e)/ || "$1" =~ \.(stub|mock|fixture)\. ]]; }
 is_pinned() { [[ "$1" =~ (^|/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$ ]]; }
 adds_case() { git -C "$path" diff "$base" HEAD -- "$1" | grep -qE '^\+.*\b(it|test|describe)(\.(each|only|skip|concurrent))?\('; }
@@ -50,7 +66,7 @@ while IFS=$'\t' read -r status file; do
   if is_test "$file"; then
     [ "$status" = D ] && continue
     tests+=("$file")
-    if [ "$status" = A ]; then added_tests+=("$file"); elif ! adds_case "$file"; then no_case+=("$file"); fi
+    if [ "$status" = A ]; then added_tests+=("$file"); elif [ -z "$rp_cmd" ] && ! adds_case "$file"; then no_case+=("$file"); fi
   elif is_helper "$file" || is_pinned "$file"; then
     continue
   elif [ "$status" = A ]; then
@@ -82,7 +98,9 @@ trap restore EXIT
 
 pm="$(package_manager "$path")"
 exec_cmd=("$pm" exec); [ "$pm" = npm ] && exec_cmd=(npx --no-install)
-if ls "$path"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
+if [ -n "$rp_cmd" ]; then
+  runner=custom
+elif ls "$path"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
   runner=jest
 elif ls "$path"/vitest.config.* >/dev/null 2>&1 || node -e 'const p = require(process.argv[1]); process.exit({ ...p.dependencies, ...p.devDependencies }.vitest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
   runner=vitest
@@ -90,12 +108,26 @@ else
   runner=node-test
 fi
 
+fill_file() { # <path> — redProof.command with every {file} replaced by the shell-quoted path
+  local c=$rp_cmd q; q="$(printf %q "$1")"
+  while [[ "$c" == *'{file}'* ]]; do c="${c%%'{file}'*}$q${c#*'{file}'}"; done
+  printf '%s' "$c"
+}
+
 run_tests() { # <json> <log> — run the changed test files, write a jest-shaped report
   local json=$1 log=$2 t st sep=''
   rm -f "$json"
   case "$runner" in
     jest)   ( cd "$path" && "${exec_cmd[@]}" jest --ci --silent --json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1 ;;
     vitest) ( cd "$path" && "${exec_cmd[@]}" vitest run --reporter=json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1 ;;
+    custom)
+      : >"$log"
+      printf '{"testResults":[' >"$json"
+      for t in "${tests[@]}"; do
+        ( cd "$path" && bash -c "$(fill_file "$t")" ) >>"$log" 2>&1 && st=passed || st=failed
+        printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
+      done
+      printf ']}' >>"$json" ;;
     *)
       : >"$log"
       printf '{"testResults":[' >"$json"

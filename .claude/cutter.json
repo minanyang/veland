@@ -10,6 +10,14 @@
     "bash tests/skills.test.sh",
     "claude plugin validate ."
   ],
+  "redProof": {
+    "command": "bash {file}",
+    "tests": ["tests/*.test.sh"]
+  },
+  "preReviewGates": [
+    "shellcheck bin/cutter-land bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
+    "node --check bin/cutter-ticket && node --check hooks/context-gate.js"
+  ],
   "close": "pr-merge",
   "contextGate": {
     "maxTokens": 200000

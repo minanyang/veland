@@ -151,6 +151,51 @@ git -C "$wt" rev-parse HEAD >.cutter/T1/review-head
 git -C "$wt" commit -q --amend -m "fix: add sq (amended)"
 expect "fixes packet off a rewritten history" 2 cutter-review-packet T1 --fixes
 
+# red-proof with a declared runner (no package.json), pre-review gates
+expect "worktree add RP1" 0 cutter-worktree add RP1 --no-setup
+wtrp="$tmp/repo/.worktrees/RP1"
+git -C "$wtrp" rm -q package.json
+echo 'val() { echo 42; }' >"$wtrp/lib.sh"
+mkdir "$wtrp/tests"
+printf '%s\n' '. "$(dirname "$0")/../lib.sh"' '[ "$(val)" = 42 ]' >"$wtrp/tests/a.test.sh"
+printf '%s\n' '[ 1 = 1 ]' >"$wtrp/tests/b.test.sh"
+git -C "$wtrp" add -A && git -C "$wtrp" commit -qm "feat: val"
+echo '{}' >.claude/cutter.json
+expect "red-proof: no package.json and no redProof is unsupported" 2 cutter-red-proof RP1
+grep -q 'redProof.command' "$tmp/out" && grep -q 'redProof.tests' "$tmp/out" && ok "unsupported message names redProof.command and redProof.tests" || bad "unsupported message names redProof.command and redProof.tests"
+echo '{ "redProof": { "command": "bash {file}" } }' >.claude/cutter.json
+expect "red-proof: redProof.command without redProof.tests" 2 cutter-red-proof RP1
+grep -q 'redProof.tests' "$tmp/out" && ok "names the missing redProof.tests" || bad "names the missing redProof.tests"
+echo '{ "redProof": { "command": "bash tests/a.test.sh", "tests": ["tests/*.test.sh"] } }' >.claude/cutter.json
+expect "red-proof: command without {file}" 2 cutter-red-proof RP1
+echo '{ "redProof": { "command": "bash {file}", "tests": ["tests/*.test.sh"] } }' >.claude/cutter.json
+expect "red-proof: shell tests, one stays green" 1 cutter-red-proof RP1
+grep -q '^RED    tests/a.test.sh' "$tmp/out" && ok "red-proof: shell test goes RED" || bad "red-proof: shell test goes RED"
+grep -q '^GREEN  tests/b.test.sh' "$tmp/out" && ok "red-proof: shell test stays GREEN" || bad "red-proof: shell test stays GREEN"
+[ -z "$(git -C "$wtrp" status --porcelain)" ] && [ -f "$wtrp/lib.sh" ] && ok "red-proof restored the tree (command mode)" || bad "red-proof restored the tree (command mode)"
+git -C "$wtrp" rm -q tests/b.test.sh && git -C "$wtrp" commit -qm "test: drop b"
+expect "red-proof: shell test goes RED" 0 cutter-red-proof RP1
+expect "rm RP1" 0 cutter-worktree rm RP1
+
+git -C "$wt" rev-parse HEAD >.cutter/T1/review-head
+rh="$(cat .cutter/T1/review-head)"
+echo '{ "preReviewGates": ["echo gate-ran", "echo gate-broke-it; false"] }' >.claude/cutter.json
+rm -f .cutter/T1/review-packet.md
+expect "packet refused by a failing pre-review gate" 1 cutter-review-packet T1
+grep -q 'gate-broke-it; false' "$tmp/out" && grep -q '^gate-broke-it' "$tmp/out" && ok "refusal names the gate and tails its log" || bad "refusal names the gate and tails its log"
+[ ! -e .cutter/T1/review-packet.md ] && [ "$(cat .cutter/T1/review-head)" = "$rh" ] && ok "no packet, review-head untouched" || bad "no packet, review-head untouched"
+rm .cutter/T1/review-head
+expect "packet refused by a failing pre-review gate (no review-head written)" 1 cutter-review-packet T1
+[ ! -e .cutter/T1/review-head ] && ok "no review-head written" || bad "no review-head written"
+echo "$rh" >.cutter/T1/review-head
+git -C "$wt" commit -q --allow-empty -m "fix: empty"
+rm -f .cutter/T1/fixes-packet.md
+expect "fixes packet refused by a failing pre-review gate" 1 cutter-review-packet T1 --fixes
+grep -q 'gate-broke-it; false' "$tmp/out" && [ ! -e .cutter/T1/fixes-packet.md ] && ok "fixes: gate named, no packet" || bad "fixes: gate named, no packet"
+echo '{ "preReviewGates": ["echo gate-ran"] }' >.claude/cutter.json
+expect "packet builds when the pre-review gate passes" 0 cutter-review-packet T1
+[ -s .cutter/T1/review-packet.md ] && ok "packet written after the gate passed" || bad "packet written after the gate passed"
+
 # lock
 mkdir .cutter/T1/lock
 expect "lock blocks a concurrent run" 2 cutter-verify T1
