@@ -2,11 +2,17 @@
 # Build a cold reviewer's starting material in one place, so the review opens with one Read
 # and one parallel batch instead of many one-slice-per-turn reads.
 #
-#   cutter-review-packet <id>
+#   cutter-review-packet <id>            round 1: the whole branch
+#   cutter-review-packet <id> --fixes    round 2: only the commits made after round 1
 #
-# Writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles excluded)
-# and .cutter/<id>/review-packet.md (tree identity, convention files, changed files with
-# line counts, stat, commits, the last verify summary).
+# Round 1 writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles
+# excluded) and .cutter/<id>/review-packet.md (tree identity, convention files, changed files
+# with line counts, stat, commits, the last verify summary), and records the reviewed HEAD in
+# .cutter/<id>/review-head.
+#
+# --fixes writes fixes.diff and fixes-packet.md for review-head...HEAD, with round 1's findings:
+# review.md cut before "## Fixes applied" / "## Re-review", so the implementer's account of the
+# fixes never reaches the reviewer. Exit 3 when there are no commits since review-head.
 #
 # The packet holds only what the tree says. It never carries the implementer's report or a
 # summary of intent: the reviewer must not have them.
@@ -15,26 +21,41 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-id="${1:-}"; [ -n "$id" ] || die "usage: cutter-review-packet <id>"
+usage="usage: cutter-review-packet <id> [--fixes]"
+id="${1:-}"; [ -n "$id" ] || die "$usage"
 check_id "$id"
+fixes=""
+case "${2:-}" in "") ;; --fixes) fixes=1 ;; *) die "$usage" ;; esac
 path="$(wt_path "$id")"
 dir="$(task_dir "$id")"
 mkdir -p "$dir"
-base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
+if [ -n "$fixes" ]; then
+  [ -f "$dir/review-head" ] || die "no $dir/review-head: build the round 1 packet first"
+  [ -f "$dir/review.md" ] || die "no $dir/review.md: round 1's findings must be written first"
+  base="$(cat "$dir/review-head")"
+  git -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null || die "review head ${base:0:9} is not an ancestor of HEAD"
+  if [ "$(git -C "$path" rev-parse HEAD)" = "$base" ]; then say "no fix commits since ${base:0:9}"; exit 3; fi
+  diff_file="$dir/fixes.diff"
+  index="$dir/fixes-packet.md"
+else
+  base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
+  diff_file="$dir/review.diff"
+  index="$dir/review-packet.md"
+  git -C "$path" rev-parse HEAD >"$dir/review-head"
+fi
 
 excludes=(':(exclude)pnpm-lock.yaml' ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)bun.lock' ':(exclude)bun.lockb')
 while IFS= read -r g; do [ -n "$g" ] && excludes+=(":(exclude)$g"); done < <(cfg generated)
 
-diff_file="$dir/review.diff"
-index="$dir/review-packet.md"
 git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
 
 {
-  echo "# Review packet — $id"
+  if [ -n "$fixes" ]; then echo "# Review packet — $id, fix commits"; else echo "# Review packet — $id"; fi
   echo
   echo "- worktree: \`$path\`"
   echo "- branch: \`$(git -C "$path" rev-parse --abbrev-ref HEAD)\` at \`$(git -C "$path" rev-parse --short HEAD)\`"
-  echo "- base: \`$(base_ref)\`, merge base \`${base:0:9}\`"
+  if [ -n "$fixes" ]; then echo "- range: round 1 reviewed up to \`${base:0:9}\`; this diff is the commits since"
+  else echo "- base: \`$(base_ref)\`, merge base \`${base:0:9}\`"; fi
   echo "- uncommitted paths: $(git -C "$path" status --porcelain | wc -l | tr -d ' ') (the diff is committed work only)"
   echo
   echo "## Read these first, in one message"
@@ -66,6 +87,12 @@ git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
   echo '```'
   git -C "$path" log --oneline "$base"..HEAD
   echo '```'
+  if [ -n "$fixes" ]; then
+    echo
+    echo "## Round 1 findings — what these commits respond to"
+    echo
+    awk '/^## (Fixes applied|Re-review)/ { exit } { print }' "$dir/review.md"
+  fi
   if [ -f "$dir/verify/summary.txt" ]; then
     echo
     echo "## Last cutter-verify run — gates already ran; do not re-run them"

@@ -1,6 +1,6 @@
 ---
 name: work
-description: Take one ticket from intake to a reviewed, verified branch — plan it, implement it in its own worktree, prove its tests, have a cold-context agent review it, fix what the review finds. Use when the user runs /cutter:work with a GitHub issue, a ticket id, or a task described in words.
+description: Take one ticket from intake to a reviewed, verified branch — plan it, implement it in its own worktree, prove its tests, have a cold-context agent review it, fix what the review finds and have the fixes reviewed once. Use when the user runs /cutter:work with a GitHub issue, a ticket id, or a task described in words.
 disable-model-invocation: true
 allowed-tools:
   - Bash(cutter-worktree init *)
@@ -17,7 +17,7 @@ allowed-tools:
 `/cutter:work <ticket>` runs in two invocations, and stops after each so the user stays in control:
 
 1. **Plan** — read the ticket, write `.cutter/<id>/plan.md`, stop for approval.
-2. **Implement** — after approval (`/cutter:work <id>` again, or the user says go in the same session): worktree → implement → commit → red-proof → verify + review → fix → report, then stop. Merging is `/cutter:close <id>`.
+2. **Implement** — after approval (`/cutter:work <id>` again, or the user says go in the same session): worktree → implement → commit → red-proof → verify + review → fix → review the fixes → report, then stop. Merging is `/cutter:close <id>`.
 
 One ticket per session. Everything the next session needs lives in `.cutter/<id>/`.
 
@@ -150,11 +150,25 @@ Write the findings to `.cutter/<id>/review.md`, verbatim in substance, headed wi
 - A fix that needs scope the plan did not bind is not yours: record it and raise it.
 - Small fixes in files you can name: do them yourself. Larger: one engineer agent, handed the findings verbatim and the files.
 
-Fixes are further commits on the branch. Then `cutter-red-proof <id>` again if tests changed, and `cutter-verify <id>` once on the final tree. **Do not re-review the fixed tree** — append `## Fixes applied` to `review.md` (per finding: what changed or why not, and the commit), never overwrite the original findings.
+Fixes are further commits on the branch. Then `cutter-red-proof <id>` again if tests changed. Append `## Fixes applied` to `review.md` (per finding: what changed or why not, and the commit), never overwrite the original findings.
+
+## Step 7a — Review the fixes, once
+
+Every line written in response to the review is read by a reviewer too. Build the fixes packet:
+
+```bash
+cutter-review-packet <id> --fixes
+```
+
+Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8.
+
+Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
+
+Append the findings to `review.md` as `## Re-review`, headed with the verdict. Act on them with the same table. This round is the last: fixes it calls for are recorded under `## Re-review` → `### Fixes applied`, followed by `cutter-red-proof <id>` if tests changed and `cutter-verify <id>` on the final tree — no third review.
 
 ## Step 8 — Report and stop
 
-Report: the branch and commits, the final `cutter-verify` table, red-proof's result, the review verdict and what was done about each finding, anything left open. Then stop. The next step is `/cutter:close <id>`.
+Report: the branch and commits, the final `cutter-verify` table, red-proof's result, both review rounds' verdicts and what was done about each finding, anything left open. Then stop. The next step is `/cutter:close <id>`.
 
 ## Never
 

@@ -120,6 +120,24 @@ rm "$wt/moved.txt"
 expect "review packet" 0 cutter-review-packet T1
 grep -q 'src/mul.mjs' .cutter/T1/review-packet.md && [ -s .cutter/T1/review.diff ] && ok "packet lists changes" || bad "packet lists changes"
 grep -q 'gates already ran' .cutter/T1/review-packet.md && ok "packet carries the verify summary" || bad "packet carries the verify summary"
+[ "$(cat .cutter/T1/review-head)" = "$(git -C "$wt" rev-parse HEAD)" ] && ok "packet records the reviewed head" || bad "packet records the reviewed head"
+
+# fixes packet: only the commits since the reviewed head, with round 1's findings
+expect "fixes packet refuses without review.md" 2 cutter-review-packet T1 --fixes
+printf '# T1 — review\n\n- [minor] round-one-finding\n\n## Fixes applied\n\n- implementer-account\n' >.cutter/T1/review.md
+expect "fixes packet with no fix commits" 3 cutter-review-packet T1 --fixes
+[ ! -e .cutter/T1/fixes-packet.md ] && ok "no fixes packet without fix commits" || bad "no fixes packet without fix commits"
+echo 'export const sq = (a) => a * a' >"$wt/src/sq.mjs"
+git -C "$wt" add src/sq.mjs && git -C "$wt" commit -qm "fix: add sq"
+expect "fixes packet" 0 cutter-review-packet T1 --fixes
+grep -q 'src/sq.mjs' .cutter/T1/fixes.diff && ! grep -q 'src/mul.mjs' .cutter/T1/fixes.diff && ok "fixes diff holds only the fix commits" || bad "fixes diff holds only the fix commits"
+grep -q 'round-one-finding' .cutter/T1/fixes-packet.md && ok "fixes packet carries round 1's findings" || bad "fixes packet carries round 1's findings"
+! grep -q 'implementer-account' .cutter/T1/fixes-packet.md && ok "fixes packet leaves out Fixes applied" || bad "fixes packet leaves out Fixes applied"
+grep -q 'src/mul.mjs' .cutter/T1/review.diff && ok "round 1 diff kept" || bad "round 1 diff kept"
+expect "packet rejects an unknown flag" 2 cutter-review-packet T1 --nope
+git -C "$wt" rev-parse HEAD >.cutter/T1/review-head
+git -C "$wt" commit -q --amend -m "fix: add sq (amended)"
+expect "fixes packet off a rewritten history" 2 cutter-review-packet T1 --fixes
 
 # lock
 mkdir .cutter/T1/lock
