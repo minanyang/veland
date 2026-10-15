@@ -22,6 +22,7 @@
 # `ff` (local mode) fast-forwards the base to the ticket branch; it refuses anything else.
 # `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
 # has an open one, replaces only its body. The repo is pinned to origin; no auto-merge, push or fill flags.
+# `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
 # `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, body);
 # every label must already exist in the repo.
 
@@ -44,10 +45,10 @@ else
 fi
 has_origin() { git -C "$ROOT" remote get-url origin >/dev/null 2>&1; }
 
-# Sets o_host and o_path (the repo path, groups included) from origin's URL.
-origin_parts() {
-  local u
-  u="$(git -C "$ROOT" remote get-url origin)"; u="${u%/}"; u="${u%.git}"
+# Sets o_host and o_path (the repo path, groups included) from a remote URL.
+url_parts() {
+  local u="$1"
+  u="${u%/}"; u="${u%.git}"
   o_host=""
   if [[ "$u" == *://* ]]; then
     u="${u#*://}"; o_host="${u%%/*}"; o_host="${o_host##*@}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
@@ -56,6 +57,18 @@ origin_parts() {
   else
     o_path="${u#/}"
   fi
+}
+origin_parts() { url_parts "$(git -C "$ROOT" remote get-url origin)"; }
+# Every URL origin pushes to must name the repo it fetches from, or the branch lands in one repo
+# while the PR/MR is opened or merged in another.
+same_push_url() {
+  local fetch want p
+  fetch="$(git -C "$ROOT" remote get-url origin)"
+  url_parts "$fetch"; want="$o_host/$o_path"
+  while IFS= read -r p; do
+    url_parts "$p"
+    [ "$o_host/$o_path" = "$want" ] || die "origin pushes to $p but fetches from $fetch; point both at the same repo"
+  done < <(git -C "$ROOT" remote get-url --push --all origin)
 }
 # github.com/OWNER/REPO for gh (the last two path segments), host included so GH_HOST cannot redirect it.
 gh_repo() {
@@ -111,6 +124,7 @@ case "$cmd" in
   push)
     [ "$branch" != "$base" ] || die "refusing to push the base branch $base"
     has_origin || die "no origin to push to"
+    same_push_url
     if git -C "$ROOT" ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
       git -C "$path" push --force-with-lease="refs/heads/$branch" -u origin "refs/heads/$branch:refs/heads/$branch"
     else
@@ -120,6 +134,7 @@ case "$cmd" in
 
   merge)
     has_origin || die "no origin"
+    same_push_url
     origin_parts
     case "$o_host" in
       github.com)
@@ -151,6 +166,7 @@ case "$cmd" in
   pr)
     [ "$branch" != "$base" ] || die "refusing to open a PR from the base branch $base"
     has_origin || die "no origin"
+    same_push_url
     td="$(task_dir "$id")"
     need_file "$td/pr-title"; need_file "$td/pr-body.md"
     title="$(head -n 1 "$td/pr-title")"
