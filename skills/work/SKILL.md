@@ -79,7 +79,7 @@ Show the plan, and `comment.md` verbatim when there is one, and **stop**. On app
 cutter-land comment <id>
 ```
 
-It renames `comment.md` to `comment.posted.md`, so a comment is never posted twice. Then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
+It renames `comment.md` to `comment.posted.md`, so a comment is never posted twice; a new `comment.md`, written by a later grill, is posted as a new comment. Then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
 
 ## Step 2 — Worktree
 

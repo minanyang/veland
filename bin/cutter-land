@@ -293,11 +293,10 @@ case "$cmd" in
     # The ticket must have been read from this very issue, not #<n> of another repo. Only line 4, the url
     # cutter-ticket writes in the header, counts: the issue body and comments below it are anyone's text.
     sed -n 4p "$td/ticket.md" | grep -Fixq -- "- url: https://$repo/issues/$number" || die "$td/ticket.md is not issue #$number of $repo; not commenting"
-    # Checked before posting: an existing comment.posted.md means a comment was already posted, and a symlink there
-    # would make the rename below write outside .cutter/.
-    [ ! -e "$td/comment.posted.md" ] && [ ! -L "$td/comment.posted.md" ] || die "$td/comment.posted.md exists; not commenting again"
     gh issue comment "$number" --repo "$repo" --body-file "$td/comment.md"
-    # A posted comment is never posted again: a second call finds no comment.md.
+    # A posted comment is never posted again: a second call finds no comment.md. The earlier comment.posted.md is
+    # removed first, so a symlink there cannot make mv write outside .cutter/ (rm removes the link, not its target).
+    rm -f "$td/comment.posted.md"
     mv -f "$td/comment.md" "$td/comment.posted.md"
     ;;
 
