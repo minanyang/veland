@@ -6,6 +6,7 @@
 #   cutter-worktree list
 #   cutter-worktree path <id>
 #   cutter-worktree rm   <id> [--force]
+#   cutter-worktree sync-base
 #
 # `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
 # .cutter/ (or .cutter/<id>/, created) — run it before writing anything under .cutter/.
@@ -16,6 +17,8 @@
 # present). Re-running `add` for an existing ticket reports the worktree and leaves it alone.
 # `rm` removes the worktree and deletes its branch only if the branch is merged
 # (`git branch -d`); an unmerged branch is kept and reported.
+# `sync-base` fetches the base and fast-forwards it in the main checkout when the main checkout
+# is on the base with no uncommitted tracked changes; otherwise it leaves it and says why.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -141,5 +144,24 @@ case "$cmd" in
     fi
     ;;
 
-  *) die "usage: cutter-worktree init|add|list|path|rm ..." ;;
+  sync-base)
+    b="$(base_branch)"
+    git -C "$ROOT" fetch --quiet origin "$b" || die "cannot fetch $b from origin"
+    if git -C "$ROOT" merge-base --is-ancestor "origin/$b" "$b"; then say "$b is up to date"; exit 0; fi
+    behind="$b is behind origin/$b, not updated"
+    head="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
+    if [ "$head" != "$b" ]; then
+      say "$behind: the main checkout is on $head"
+    elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]; then
+      say "$behind: the main checkout has uncommitted changes"
+    elif ! git -C "$ROOT" merge-base --is-ancestor "$b" "origin/$b"; then
+      say "$behind: $b has commits origin/$b does not"
+    elif out="$(git -C "$ROOT" merge --ff-only --quiet "origin/$b" 2>&1)"; then
+      say "fast-forwarded $b to $(git -C "$ROOT" rev-parse --short HEAD)"
+    else
+      say "$behind: git merge --ff-only refused"; say "$out"
+    fi
+    ;;
+
+  *) die "usage: cutter-worktree init|add|list|path|rm|sync-base ..." ;;
 esac
