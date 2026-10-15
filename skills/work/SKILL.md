@@ -29,7 +29,7 @@ Work out the id from the argument:
 
 | Argument | Id | Ticket text |
 |---|---|---|
-| GitHub issue number or URL | `gh-<number>` | `cutter-ticket github <arg>` |
+| GitHub issue number or URL, of origin's repo | `gh-<number>` | `cutter-ticket github <arg>` |
 | an id that has `.cutter/<id>/` | that id | already there |
 | words describing a task | a short kebab-case slug of it, ≤ 30 characters | the user's words |
 

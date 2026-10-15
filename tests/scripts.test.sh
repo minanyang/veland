@@ -206,6 +206,7 @@ echo "$*" >>"$STUB_LOG"
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
+  "issue view") echo '{"number":7,"title":"T","body":"b","url":"https://github.com/acme/land/issues/7","state":"OPEN","labels":[],"issueType":null,"comments":[]}' ;;
 esac
 exit 0
 STUB
@@ -400,6 +401,23 @@ git remote set-url origin https://gitlab.example.com/grp/land.git
 : >"$tmp/stub.log"
 expect "comment refuses a GitLab origin" 2 cutter-land comment gh-7
 git remote set-url origin git@github.com:acme/land.git
+
+# cutter-ticket reads the issue from origin's repo only
+: >"$tmp/stub.log"
+expect "ticket by number" 0 cutter-ticket github 7
+land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,state,labels,issueType,comments" "gh issue view pinned to origin's repo"
+: >"$tmp/stub.log"
+expect "ticket by origin's URL" 0 cutter-ticket github https://github.com/Acme/land/issues/7
+land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,state,labels,issueType,comments" "a URL is read as its number in origin's repo"
+: >"$tmp/stub.log"
+expect "ticket refuses another repo's URL" 2 cutter-ticket github https://github.com/other/land/issues/7
+expect "ticket refuses a URL on a look-alike host" 2 cutter-ticket github https://github.com.evil/acme/land/issues/7
+expect "ticket refuses a flag" 2 cutter-ticket github --web
+expect "ticket refuses a repo-qualified ref" 2 cutter-ticket github other/land#7
+git remote set-url origin https://notgithub.com/acme/land.git
+expect "ticket refuses a non-github.com origin" 2 cutter-ticket github 7
+git remote set-url origin git@github.com:acme/land.git
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused ticket" || bad "no gh call for a refused ticket"
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1

@@ -106,7 +106,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal):
 | `cutter-verify <id>` | runs every gate once; fails if the tree moved during the run |
 | `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`); a test that fails at HEAD exits 2 |
 | `cutter-review-packet <id>` | the reviewer's starting material: diff, changed files, conventions, last verify result |
-| `cutter-ticket github <ref>` | prints a GitHub issue as Markdown |
+| `cutter-ticket github <ref>` | prints a GitHub issue of origin's repo as Markdown (a number, or that repo's issue URL; another repo's is refused) |
 
 `cutter-verify`, `cutter-red-proof` and `cutter-worktree add` run the project's own gates and setup commands and its test files, so granting them is as strong as granting the agent permission to write files in the repo.
 
