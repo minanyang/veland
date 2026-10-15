@@ -265,14 +265,19 @@ STUB_VIEW="main OPEN true" expect "merge refuses a fork's PR" 2 cutter-land merg
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a fork's PR" || bad "no merge call for a fork's PR"
 lwsha="$(git -C "$lw" rev-parse HEAD)"
 STUB_VIEW="main OPEN false" expect "merge" 0 cutter-land merge L1
-grep -qxF 'pr view feat/L1 --repo acme/land --json baseRefName,state,isCrossRepository --jq .baseRefName + " " + .state + " " + (.isCrossRepository | tostring)' "$tmp/stub.log" && ok "gh pr view pinned to origin's repo" || bad "gh pr view pinned to origin's repo"
-grep -qxF 'pr merge feat/L1 --repo acme/land --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>"
+grep -qxF 'pr view feat/L1 --repo github.com/acme/land --json baseRefName,state,isCrossRepository --jq .baseRefName + " " + .state + " " + (.isCrossRepository | tostring)' "$tmp/stub.log" && ok "gh pr view pinned to origin's repo" || bad "gh pr view pinned to origin's repo"
+grep -qxF 'pr merge feat/L1 --repo github.com/acme/land --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>"
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 STUB_VIEW="main OPEN false" expect "merge refuses a host that only contains github.com" 2 cutter-land merge L1
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host on merge" || bad "no gh call for a look-alike host on merge"
+git remote set-url origin https://evil.example/x@github.com/acme/land.git
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN false" expect "merge refuses an @ in the path posing as the host" 2 cutter-land merge L1
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for an @-spoofed host" || bad "no gh call for an @-spoofed host"
 git remote set-url origin https://gitlab.example.com/grp/land.git
 : >"$tmp/stub.log"
+expect "merge via glab refuses an MR without project ids" 2 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
 expect "merge via glab refuses a fork's MR" 2 env STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":2,"target_project_id":1}' cutter-land merge L1
 ! grep -q 'mr merge' "$tmp/stub.log" && ok "no glab merge call for a fork's MR" || bad "no glab merge call for a fork's MR"
 expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":1,"target_project_id":1}' cutter-land merge L1
@@ -291,10 +296,10 @@ expect "pr refuses a missing body" 2 cutter-land pr L1
 printf 'Closes #1\n' >"$td/pr-body.md"
 : >"$tmp/stub.log"
 STUB_VIEW_RC=1 expect "pr creates via gh" 0 cutter-land pr L1
-land_log "pr create --repo acme/land --base main --head feat/L1 --title feat: the feature --body-file $td/pr-body.md" "gh pr create argv"
+land_log "pr create --repo github.com/acme/land --base main --head feat/L1 --title feat: the feature --body-file $td/pr-body.md" "gh pr create argv"
 : >"$tmp/stub.log"
 STUB_VIEW="main OPEN false" expect "pr updates via gh" 0 cutter-land pr L1
-land_log "pr edit feat/L1 --repo acme/land --body-file $td/pr-body.md" "gh pr edit argv"
+land_log "pr edit feat/L1 --repo github.com/acme/land --body-file $td/pr-body.md" "gh pr edit argv"
 : >"$tmp/stub.log"
 STUB_VIEW="develop OPEN false" expect "pr refuses an open PR into another base" 2 cutter-land pr L1
 ! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a wrong base" || bad "no edit or create for a wrong base"
@@ -326,7 +331,7 @@ STUB_LABELS=$'bug\nui\nother'
 export STUB_LABELS
 : >"$tmp/stub.log"
 expect "issue create" 0 cutter-land issue thing
-grep -qE -- '^issue create --repo acme/land --title Add the thing --body-file .+ --label bug --label ui --type Bug$' "$tmp/stub.log" && ok "gh issue create argv" || bad "gh issue create argv"
+grep -qE -- '^issue create --repo github.com/acme/land --title Add the thing --body-file .+ --label bug --label ui --type Bug$' "$tmp/stub.log" && ok "gh issue create argv" || bad "gh issue create argv"
 expect "issue rejects a path slug" 2 cutter-land issue ../x
 expect "issue rejects a slash slug" 2 cutter-land issue a/b
 expect "issue rejects extra arguments" 2 cutter-land issue thing --label x

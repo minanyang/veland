@@ -1,6 +1,7 @@
 #!/bin/bash
-# The writes /cutter:close needs, each taking only a ticket id — the command line is built here,
-# so a permission rule for `cutter-land *` cannot be stretched into a force-push or a bypass.
+# The writes /cutter:close and /cutter:open need, each taking only a ticket id or a draft slug — the command
+# line is built here, so a permission rule for `cutter-land <sub> *` cannot be stretched into a force-push,
+# a bypass or a publish of another file or repo.
 #
 #   cutter-land check  <id>
 #   cutter-land rebase <id>
@@ -49,20 +50,20 @@ origin_parts() {
   u="$(git -C "$ROOT" remote get-url origin)"; u="${u%/}"; u="${u%.git}"
   o_host=""
   if [[ "$u" == *://* ]]; then
-    u="${u#*://}"; u="${u#*@}"; o_host="${u%%/*}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
+    u="${u#*://}"; o_host="${u%%/*}"; o_host="${o_host##*@}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
   elif [[ "$u" =~ ^([^/:]+@)?([^/:]+):(.+)$ ]]; then
     o_host="${BASH_REMATCH[2]}"; o_path="${BASH_REMATCH[3]}"
   else
     o_path="${u#/}"
   fi
 }
-# OWNER/REPO for gh (the last two path segments).
+# github.com/OWNER/REPO for gh (the last two path segments), host included so GH_HOST cannot redirect it.
 gh_repo() {
   local o r
   origin_parts
   r="${o_path##*/}"; o="${o_path%/*}"; o="${o##*/}"
   [[ "$o/$r" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "cannot derive OWNER/REPO from origin"
-  printf '%s/%s\n' "$o" "$r"
+  printf 'github.com/%s/%s\n' "$o" "$r"
 }
 # The full https URL of origin's project for glab -R: the one form that also pins a self-hosted host.
 glab_repo() {
@@ -78,7 +79,7 @@ gh_view() {
 }
 glab_view() {
   glab mr view "$branch" -R "$repo" --output json \
-    | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (m.source_project_id === m.target_project_id))'
+    | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (Number.isInteger(m.source_project_id) && m.source_project_id === m.target_project_id))'
 }
 # A regular, non-empty file with one link, really inside .cutter/ (no symlink anywhere on the way), or die.
 need_file() {
