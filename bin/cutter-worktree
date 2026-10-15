@@ -9,6 +9,7 @@
 #
 # `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
 # .cutter/ (or .cutter/<id>/, created) — run it before writing anything under .cutter/.
+# Without an id it also creates .cutter/drafts/, where /cutter:open writes issue drafts.
 # `add` cuts <type>/<id>[-<slug>] from the up-to-date base branch (config `base`, else
 # develop if origin has it, else origin's default branch), at <worktreeDir>/<id>, then runs
 # the config's `setup` command inside it (default: install dependencies when a lockfile is
@@ -43,7 +44,7 @@ case "$cmd" in
     if [ -n "${1:-}" ]; then
       check_id "$1"; mkdir -p "$(task_dir "$1")"; task_dir "$1"
     else
-      mkdir -p "$ROOT/.cutter"; printf '%s\n' "$ROOT/.cutter"
+      mkdir -p "$ROOT/.cutter/drafts"; printf '%s\n' "$ROOT/.cutter"
     fi
     ;;
 

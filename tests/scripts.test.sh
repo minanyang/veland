@@ -32,7 +32,10 @@ expect "init with an id" 0 cutter-worktree init T0
 [ "$(cat "$tmp/out")" = "$tmp/repo/.cutter/T0" ] || [ "$(cat "$tmp/out")" = "$(cd "$tmp/repo" && pwd -P)/.cutter/T0" ] && ok "init prints the ticket dir" || bad "init prints the ticket dir"
 echo plan >.cutter/T0/plan.md
 [ -z "$(git status --porcelain)" ] && ok "ticket files stay out of git before any worktree" || bad "ticket files stay out of git before any worktree"
+[ ! -e .cutter/drafts ] && ok "init <id> does not create drafts/" || bad "init <id> does not create drafts/"
 expect "init without an id" 0 cutter-worktree init
+[ -d .cutter/drafts ] && ok "init creates drafts/" || bad "init creates drafts/"
+[ "$(cat "$tmp/out")" = "$tmp/repo/.cutter" ] || [ "$(cat "$tmp/out")" = "$(cd "$tmp/repo" && pwd -P)/.cutter" ] && ok "init prints .cutter" || bad "init prints .cutter"
 
 # worktree
 expect "worktree add" 0 cutter-worktree add T1 --slug mul
