@@ -7,19 +7,21 @@
 #   cutter-land rebase <id>
 #   cutter-land push   <id>
 #   cutter-land merge  <id>
-#   cutter-land ff     <id>
+#   cutter-land squash <id>
 #   cutter-land pr     <id>
 #   cutter-land issue  <slug>
 #
 # `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes.
-# `rebase` fetches origin and rebases the ticket branch onto origin/<base>; on a conflict it lists
+# `rebase` fetches origin and rebases the ticket branch onto origin/<base> (in local mode, onto the local
+# base when it contains origin/<base>; refused when the two have diverged); on a conflict it lists
 # the files and leaves the rebase for the user (never --skip).
 # `push` pushes the ticket branch, and only it, to origin; --force-with-lease only when origin
 # already has the branch (never a plain force-push). It refuses the base branch.
 # `merge` squash-merges the branch's open PR/MR (gh for github.com, glab for a GitLab host) after
 # checking that its base is the configured base and that it is not a fork's; pinned to origin's repo
 # and to the worktree's HEAD sha (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
-# `ff` (local mode) fast-forwards the base to the ticket branch; it refuses anything else.
+# `squash` (local mode) lands the ticket branch on the base as one commit with .cutter/<id>/commit-msg as its
+# message; it refuses unless the branch is rebased onto the base.
 # `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
 # has an open one, replaces only its body. The repo is pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
@@ -30,7 +32,7 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-usage="usage: cutter-land check|rebase|push|merge|ff|pr <id> | issue <slug>"
+usage="usage: cutter-land check|rebase|push|merge|squash|pr <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
 if [ "$cmd" = issue ]; then
@@ -112,6 +114,7 @@ case "$cmd" in
 
   rebase)
     has_origin && { git -C "$ROOT" fetch --quiet origin "$base" || die "could not fetch origin/$base"; }
+    ! base_diverged || die "$(base_branch) and origin/$(base_branch) have diverged — reconcile the local base first"
     if git -C "$path" rebase "$(base_ref)" >/dev/null 2>&1; then
       say "rebased $branch onto $(base_ref)"
     else
@@ -153,14 +156,20 @@ case "$cmd" in
     esac
     ;;
 
-  ff)
+  squash)
     [ "$branch" != "$base" ] || die "the ticket branch is the base branch"
+    td="$(task_dir "$id")"
+    need_file "$td/commit-msg"
+    git -C "$ROOT" merge-base --is-ancestor "refs/heads/$base" "refs/heads/$branch" || die "$base moved since the rebase — rebase again"
+    [ "$(git -C "$ROOT" rev-parse "refs/heads/$base")" != "$(git -C "$ROOT" rev-parse "refs/heads/$branch")" ] || die "$branch has no commits beyond $base"
+    # Rebased onto the base, the branch's tree is the squashed result.
+    commit="$(git -C "$ROOT" commit-tree "refs/heads/$branch^{tree}" -p "refs/heads/$base" -F "$td/commit-msg")"
     if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
-      git -C "$ROOT" merge --ff-only "$branch" || die "$base moved since the rebase — rebase again"
+      git -C "$ROOT" merge --ff-only --quiet "$commit" || die "$base moved since the rebase — rebase again"
     else
-      git -C "$ROOT" fetch --quiet . "refs/heads/$branch:refs/heads/$base" || die "$base moved since the rebase — rebase again"
+      git -C "$ROOT" fetch --quiet . "$commit:refs/heads/$base" || die "$base moved since the rebase — rebase again"
     fi
-    say "fast-forwarded $base to $(git -C "$ROOT" rev-parse --short "$base")"
+    say "squashed $branch onto $base as $(git -C "$ROOT" rev-parse --short "$base")"
     ;;
 
   pr)

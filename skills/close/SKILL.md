@@ -7,7 +7,7 @@ allowed-tools:
   - Bash(cutter-land rebase *)
   - Bash(cutter-land push *)
   - Bash(cutter-land merge *)
-  - Bash(cutter-land ff *)
+  - Bash(cutter-land squash *)
   - Bash(cutter-land pr *)
   - Bash(cutter-verify *)
   - Bash(cutter-worktree path *)
@@ -29,7 +29,7 @@ allowed-tools:
 |---|---|
 | `pr` (default) | push the branch, open a PR; a human merges it. Run `/cutter:close <id>` again after the merge to clean up. |
 | `pr-merge` | push, open the PR, and squash-merge it. |
-| `local` | no PR: fast-forward the base branch to the ticket branch locally. Pushing the base is left to the user. |
+| `local` | no PR: squash the ticket branch onto the base branch locally. Pushing the base is left to the user. |
 
 The PR tool follows `origin`: github.com → `gh`, a GitLab host → `glab`. Any other host, or no `origin`, supports only `local`.
 
@@ -55,7 +55,7 @@ Stop and say why if any of these holds:
 cutter-land rebase <id>
 ```
 
-The base is `base` from the config, else `develop` when origin has it, else origin's default branch. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
+The base is `base` from the config, else `develop` when origin has it, else origin's default branch. In `local` mode the rebase goes onto the local base when it contains `origin/<base>`, so tickets closed earlier and not pushed yet are kept; when the two have diverged it refuses — stop and leave reconciling the base to the user. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
 
 ## Step 2 — Verify the rebased tree
 
@@ -77,12 +77,13 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 **`local`:**
 
-1. `cutter-land ff <id>` — fast-forward only, in the main checkout if it is on the base branch with a clean tree, otherwise by updating the base ref. A refusal means the base moved since Step 1: go back to Step 1.
-2. Go to Step 4.
+1. Write `.cutter/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style, then a blank line and a short body when it helps.
+2. `cutter-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout if it is on the base branch with a clean tree, otherwise by updating the base ref. A refusal means the base moved since Step 1: go back to Step 1.
+3. Go to Step 4.
 
 ## Step 4 — Clean up after the merge
 
-Only once the branch is merged (squash-merged PR, or the local fast-forward). After a merged PR (`pr-merge`, or `pr` on its cleanup run) bring the main checkout's base up to date first; skip `sync-base` in `local` mode, whose base is already ahead:
+Only once the branch is merged (squash-merged PR, or the local squash). After a merged PR (`pr-merge`, or `pr` on its cleanup run) bring the main checkout's base up to date first; skip `sync-base` in `local` mode, whose base is already ahead:
 
 ```bash
 cutter-worktree sync-base

@@ -51,7 +51,7 @@ Rebases onto the current base, verifies again, then lands the branch as configur
 |---|---|
 | `pr` (default) | push and open a PR; you merge it, then run `/cutter:close <id>` again to clean up |
 | `pr-merge` | push, open the PR and squash-merge it |
-| `local` | fast-forward the base branch locally, no PR |
+| `local` | squash the branch onto the base locally, no PR; the next ticket starts from that local base, pushed or not |
 
 GitHub remotes use `gh`. GitLab remotes use `glab` — untested so far.
 
@@ -102,7 +102,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal):
 | Script | Does |
 |---|---|
 | `cutter-worktree init\|add\|list\|path\|rm <id>\|sync-base` | one worktree per ticket; `init` keeps `.cutter/` out of git before anything is written there; `rm` deletes the branch only if git sees it merged; `sync-base` fast-forwards the main checkout's base after a merged PR when it is on the base and git allows the fast-forward (unrelated uncommitted changes are kept) |
-| `cutter-land check\|rebase\|push\|merge\|ff\|pr <id>`, `cutter-land issue <slug>` | the writes `/cutter:close` and `/cutter:open` need, each built from the ticket id or draft slug alone: `check` lists uncommitted changes, `rebase` onto the base (conflicts left for you), `push` the ticket branch (lease only if origin has it), `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, `ff` fast-forwards the base in `local` mode, `pr` opens the PR/MR from `.cutter/<id>/pr-title` + `pr-body.md` or updates only its body, `issue` creates an issue from `.cutter/drafts/<slug>.md` (existing labels only); `push`, `merge` and `pr` refuse when origin's push URL names another repo than its fetch URL |
+| `cutter-land check\|rebase\|push\|merge\|squash\|pr <id>`, `cutter-land issue <slug>` | the writes `/cutter:close` and `/cutter:open` need, each built from the ticket id or draft slug alone: `check` lists uncommitted changes, `rebase` onto the base (conflicts left for you), `push` the ticket branch (lease only if origin has it), `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, `squash` lands the branch on the base as one commit from `.cutter/<id>/commit-msg` in `local` mode, `pr` opens the PR/MR from `.cutter/<id>/pr-title` + `pr-body.md` or updates only its body, `issue` creates an issue from `.cutter/drafts/<slug>.md` (existing labels only); `push`, `merge` and `pr` refuse when origin's push URL names another repo than its fetch URL |
 | `cutter-verify <id>` | runs every gate once; fails if the tree moved during the run |
 | `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`); a test that fails at HEAD exits 2 |
 | `cutter-review-packet <id>` | the reviewer's starting material: diff, changed files, conventions, last verify result |
