@@ -6,7 +6,7 @@ Each ticket is planned with you, built in its own worktree, verified by scripts 
 
 ```
 /cutter:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
-/cutter:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → verify + cold review → fix → review the fixes
+/cutter:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /cutter:close <id>      →  rebase → verify → PR / merge → clean up
 ```
 
@@ -77,6 +77,8 @@ Optional `.claude/cutter.json`, committed with the project:
   "close": "pr",
   "worktreeDir": ".worktrees",
   "generated": ["src/api/generated"],
+  "redProof": { "command": "pytest {file}", "tests": ["tests/test_*.py"] },
+  "preReviewGates": ["ruff check ."],
   "contextGate": { "maxTokens": 200000 }
 }
 ```
@@ -89,9 +91,12 @@ Optional `.claude/cutter.json`, committed with the project:
 | `close` | `pr` |
 | `worktreeDir` | `.worktrees` |
 | `generated` | paths left out of the review diff (lockfiles always are) |
+| `redProof.command` | JavaScript runners (jest, vitest, `node --test`) are detected. For any other stack, a shell command containing `{file}`, run once per changed test file in the worktree root with the shell-quoted path substituted; the file's exit code is the result |
+| `redProof.tests` | required with `redProof.command`: git pathspec globs naming the test files (`tests/*.test.sh`) |
+| `preReviewGates` | none. Shell commands (quick gates: lint, typecheck) that `cutter-review-packet` runs first; a failure exits 1 and no packet is built |
 | `contextGate.maxTokens` | `200000`; `0` turns the gate off. A file that does not parse, or a `maxTokens` that is not a number, gets the default and a warning |
 
-`cutter-verify` reads `gates` from the ticket's worktree, so a gate the ticket adds verifies that ticket; when the list differs from the base branch's, it lists the gates added and removed. The context gate reads `contextGate` from the nearest `.claude/cutter.json` at or above the session's working directory, up to the repo root (none outside a repo), so inside a worktree it is the worktree's file. Every other key comes from the main checkout.
+`cutter-verify` reads `gates` from the ticket's worktree, so a gate the ticket adds verifies that ticket; when the list differs from the base branch's, it lists the gates added and removed. The context gate reads `contextGate` from the nearest `.claude/cutter.json` at or above the session's working directory, up to the repo root (none outside a repo), so inside a worktree it is the worktree's file. `redProof` and `preReviewGates` are read from the ticket's worktree, else the main checkout. Every other key comes from the main checkout.
 
 `.cutter/` and the worktree directory are added to `.git/info/exclude` automatically — your `.gitignore` is not touched.
 
@@ -104,8 +109,8 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal):
 | `cutter-worktree init\|add\|list\|path\|rm <id>\|sync-base` | one worktree per ticket; `init` keeps `.cutter/` out of git before anything is written there; `rm` deletes the branch only if git sees it merged; `sync-base` fast-forwards the main checkout's base after a merged PR when it is on the base and git allows the fast-forward (unrelated uncommitted changes are kept) |
 | `cutter-land check\|rebase\|push\|merge\|squash\|pr\|comment <id>`, `cutter-land issue <slug>` | the writes `/cutter:close`, `/cutter:open` and `/cutter:work` need, each built from the ticket id or draft slug alone: `check` lists uncommitted changes, `rebase` onto the base (conflicts left for you), `push` the ticket branch (lease only if origin has it), `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, and on GitHub only when the PR's head is the worktree's HEAD and its checks are green, `squash` lands the branch on the base as one commit from `.cutter/<id>/commit-msg` in `local` mode, `pr` opens the PR/MR from `.cutter/<id>/pr-title` + `pr-body.md` or updates only its body, `issue` creates an issue from `.cutter/drafts/<slug>.md` (existing labels only), `comment` posts `.cutter/gh-<n>/comment.md` on issue `<n>` of origin's repo, only when the url in `.cutter/gh-<n>/ticket.md`'s header is that issue's, then renames it to `comment.posted.md` so it is posted once; `push`, `merge` and `pr` refuse when origin's push URL names another repo than its fetch URL |
 | `cutter-verify <id>` | runs every gate once; fails if the tree moved during the run |
-| `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`); a test that fails at HEAD exits 2 |
-| `cutter-review-packet <id> [--fixes]` | the reviewer's starting material: diff, changed files, conventions, last verify result; `--fixes` covers only the commits since the last review, with its findings |
+| `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`, or the `redProof` command of any other stack); a test that fails at HEAD exits 2 |
+| `cutter-review-packet <id> [--fixes]` | runs `preReviewGates` first (a failure exits 1, no packet), then builds the reviewer's starting material: diff, changed files, conventions, last verify result; `--fixes` covers only the commits since the last review, with its findings |
 | `cutter-ticket github <ref> [--out <path>]` | prints a GitHub issue of origin's repo as Markdown, or writes it to `--out`, which must be that issue's `.cutter/gh-<n>/ticket.md` (a number, or that repo's issue URL; another repo's is refused, and so is any other argument) |
 
 `cutter-verify`, `cutter-red-proof` and `cutter-worktree add` run the project's own gates and setup commands and its test files, so granting them is as strong as granting the agent permission to write files in the repo.
