@@ -491,6 +491,9 @@ merge_checks "no checks, the base's pull_request workflow dropped on the branch"
 # merge: origin/<base> moved since the rebase
 other="$(git -C "$lw" commit-tree "$base_wf^{tree}" -p "$base_wf" -m "elsewhere")"
 git -C "$lw" push -q "$tmp/github.com/land.git" "$other:refs/heads/main"
+git config remote.origin.fetch '+refs/heads/none:refs/remotes/origin/none'
+merge_checks "origin/main moved, fetch refspec not covering the base" 4 '[]'
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 merge_checks "origin/main moved since the rebase" 4 '[]'
 grep -q 'origin/main moved' "$tmp/out" && ok "merge: says the base moved" || bad "merge: says the base moved"
 git -C "$lw" push -q -f "$tmp/github.com/land.git" "$om:refs/heads/main"
@@ -524,7 +527,6 @@ checks '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"
 wait_checks "pending, then green" 0 '[]' CUTTER_WAIT_CAP=60 STUB_CHECKS_SEQ="$seq_dir"
 [ "$(grep -c headRefOid "$tmp/stub.log")" -eq 3 ] && ok "wait: polled until green" || bad "wait: polled until green"
 rm -r "$seq_dir"; mkdir -p "$seq_dir"
-checks '[]' >"$seq_dir/1"; checks '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]' >"$seq_dir/2"
 mkdir -p "$lw/.github/workflows"; printf 'on:\n  pull_request:\n' >"$lw/.github/workflows/ci.yml"
 git -C "$lw" commit -qam "ci: pull_request"; lwsha="$(git -C "$lw" rev-parse HEAD)"
 checks '[]' >"$seq_dir/1"; checks '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]' >"$seq_dir/2"

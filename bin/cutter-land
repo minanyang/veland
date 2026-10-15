@@ -208,7 +208,8 @@ case "$cmd" in
         repo="$(gh_repo)"
         got="$(gh_view)" || die "no PR found for $branch"
         [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
-        git -C "$ROOT" fetch --quiet origin "$base" || die "could not fetch origin/$base"
+        # An explicit refspec: a narrowed remote.origin.fetch would leave origin/<base> stale and the check below moot.
+        git -C "$ROOT" fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" || die "could not fetch origin/$base"
         if ! git -C "$path" merge-base --is-ancestor "refs/remotes/origin/$base" HEAD; then
           say "cutter: origin/$base moved since $branch was rebased — rebase again" >&2; exit 4
         fi
