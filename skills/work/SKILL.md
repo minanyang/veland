@@ -5,6 +5,7 @@ disable-model-invocation: true
 allowed-tools:
   - Bash(cutter-worktree init *)
   - Bash(cutter-worktree add *)
+  - Bash(cutter-worktree memory *)
   - Bash(cutter-ticket *)
   - Bash(cutter-land comment *)
   - Bash(cutter-red-proof *)
@@ -17,7 +18,7 @@ allowed-tools:
 `/cutter:work <ticket>` runs in two invocations, and stops after each so the user stays in control:
 
 1. **Plan** — read the ticket, write `.cutter/<id>/plan.md`, stop for approval.
-2. **Implement** — after approval (`/cutter:work <id>` again, or the user says go in the same session): worktree → implement → commit → red-proof → verify + review → fix → review the fixes → report, then stop. Merging is `/cutter:close <id>`.
+2. **Implement** — after approval (`/cutter:work <id>` again, or the user says go in the same session): worktree → implement → commit → red-proof → verify + review → fix → review the fixes → commit agent memory → report, then stop. Merging is `/cutter:close <id>`.
 
 One ticket per session. Everything the next session needs lives in `.cutter/<id>/`.
 
@@ -166,9 +167,17 @@ Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the b
 
 Append the findings to `review.md` as `## Re-review`, headed with the verdict. Act on them with the same table. This round is the last: fixes it calls for are recorded under `## Re-review` → `### Fixes applied`, followed by `cutter-red-proof <id>` if tests changed and `cutter-verify <id>` on the final tree — no third review.
 
-## Step 8 — Report and stop
+## Step 8 — Commit agent memory, report and stop
 
-Report: the branch and commits, the final `cutter-verify` table, red-proof's result, both review rounds' verdicts and what was done about each finding, anything left open. Then stop. The next step is `/cutter:close <id>`.
+Agents write their memory (`.claude/agent-memory/`) under the session's working directory — the main checkout, or the worktree once the session has moved there. Once both review rounds are over, commit it on the ticket branch — not after each round: moving it out of the main checkout would hide round 1's memory from round 2's reviewers, and a memory commit would enter round 2's diff.
+
+```bash
+cutter-worktree memory <id>
+```
+
+It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, then run the command again. No reviewer reads this commit and `/cutter:close` pushes it, so show the user its full diff in the report — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
+
+Report: the branch and commits, the memory files committed and their diff, the final `cutter-verify` table, red-proof's result, both review rounds' verdicts and what was done about each finding, anything left open. Then stop. The next step is `/cutter:close <id>`.
 
 ## Never
 

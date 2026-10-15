@@ -23,7 +23,8 @@
 #
 # Runners: jest, vitest, else `node --test`. Other stacks exit 2 ("unsupported").
 # The worktree must be clean. The tree is always restored on exit, and the ticket lock is
-# shared with cutter-verify.
+# shared with cutter-verify. Agent memory (.claude/agent-memory/) is never checked, reverted
+# or restored: agents may write it while red-proof runs.
 # Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run
 # (including: a changed test file does not pass at HEAD).
 
@@ -34,7 +35,7 @@ source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 id="${1:-}"; [ -n "$id" ] || die "usage: cutter-red-proof <id>"
 check_id "$id"
 path="$(wt_path "$id")"
-[ -z "$(git -C "$path" status --porcelain)" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
+[ -z "$(tree_status "$path")" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
 [ -f "$path/package.json" ] || die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) and this worktree has no package.json"
 base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
 
@@ -57,7 +58,7 @@ while IFS=$'\t' read -r status file; do
   else
     revert+=("$file")
   fi
-done < <(git -C "$path" diff --name-status --no-renames "$base" HEAD)
+done < <(git -C "$path" diff --name-status --no-renames "$base" HEAD -- . "$MEMORY_EXCLUDE")
 
 if [ ${#tests[@]} -eq 0 ]; then
   say "$id: the branch adds or modifies no test file — nothing to prove."
@@ -73,9 +74,9 @@ out="$(task_dir "$id")/red-proof"
 mkdir -p "$out"
 take_lock "$id"
 restore() {
-  git -C "$path" restore --source=HEAD --staged --worktree -- . 2>/dev/null
+  git -C "$path" restore --source=HEAD --staged --worktree -- . "$MEMORY_EXCLUDE" 2>/dev/null
   release_lock
-  [ -z "$(git -C "$path" status --porcelain)" ] || echo "!! the worktree did NOT return to HEAD cleanly — inspect: git -C $path status" >&2
+  [ -z "$(tree_status "$path")" ] || echo "!! the worktree did NOT return to HEAD cleanly — inspect: git -C $path status" >&2
 }
 trap restore EXIT
 
