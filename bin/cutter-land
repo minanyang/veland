@@ -21,7 +21,8 @@
 # checking that its base is the configured base and that it is not a fork's; pinned to origin's repo
 # and to the worktree's HEAD sha (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
 # `squash` (local mode) lands the ticket branch on the base as one commit with .cutter/<id>/commit-msg as its
-# message; it refuses unless the branch is rebased onto the base.
+# message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
+# fast-forwards it, keeping uncommitted changes to files the squash does not touch.
 # `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
 # has an open one, replaces only its body. The repo is pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
@@ -167,8 +168,9 @@ case "$cmd" in
     [ "$(git -C "$ROOT" rev-parse "$onto")" != "$(git -C "$ROOT" rev-parse "refs/heads/$branch")" ] || die "$branch has no commits beyond $onto"
     # Rebased onto the base, the branch's tree is the squashed result.
     commit="$(git -C "$ROOT" commit-tree "refs/heads/$branch^{tree}" -p "$onto" -F "$td/commit-msg")"
-    if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
-      git -C "$ROOT" merge --ff-only --quiet "$commit" || die "$base moved since the rebase — rebase again"
+    if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ]; then
+      # Like sync-base: uncommitted changes to files the squash does not touch are kept.
+      out="$(git -C "$ROOT" merge --ff-only --quiet "$commit" 2>&1)" || { say "$out"; die "$base not updated: the main checkout has uncommitted changes to files the ticket touches — commit or stash them, then squash again"; }
     else
       git -C "$ROOT" fetch --quiet . "$commit:refs/heads/$base" || die "$base moved since the rebase — rebase again"
     fi

@@ -440,6 +440,22 @@ grep -q 'onto origin/main$' "$tmp/out" && ok "behind: rebased onto origin/main" 
 expect "squash with the local base behind origin" 0 cutter-land squash L4
 [ "$(git rev-parse main^)" = "$(git rev-parse origin/main)" ] && [ -z "$(git rev-list main..origin/main)" ] && ok "behind: squash lands on origin/main, not diverged" || bad "behind: squash lands on origin/main, not diverged"
 [ -z "$(git status --porcelain)" ] && [ -f up.txt ] && ok "behind: checkout has the upstream file" || bad "behind: checkout has the upstream file"
+# a dirty main checkout on the base: unrelated changes kept, a change to a file the ticket touches refused
+cutter-worktree add L7 --no-setup >/dev/null
+echo seven >"$tmp/land/.worktrees/L7/seven.txt"; echo ticket-g >"$tmp/land/.worktrees/L7/g.txt"
+git -C "$tmp/land/.worktrees/L7" add -A; git -C "$tmp/land/.worktrees/L7" commit -qm "feat: seven"
+mkdir -p .cutter/L7 && echo "feat: seven" >.cutter/L7/commit-msg
+echo mine >g.txt
+before="$(git rev-parse main)"
+expect "squash refuses over an uncommitted change to a touched file" 2 cutter-land squash L7
+grep -q 'uncommitted changes to files the ticket touches' "$tmp/out" && ! grep -q 'moved since' "$tmp/out" && ok "dirty checkout: reason given" || bad "dirty checkout: reason given"
+[ "$(git rev-parse main)" = "$before" ] && [ "$(cat g.txt)" = mine ] && ok "dirty checkout: base and change untouched" || bad "dirty checkout: base and change untouched"
+git checkout -q -- g.txt
+echo mine >>f.txt; echo staged >s.txt; git add s.txt
+expect "squash with unrelated uncommitted changes" 0 cutter-land squash L7
+[ "$(git rev-parse main^)" = "$before" ] && [ -f seven.txt ] && ok "dirty checkout: squash applied" || bad "dirty checkout: squash applied"
+[ "$(git diff --name-only)" = f.txt ] && [ "$(git diff --cached --name-only)" = s.txt ] && ok "dirty checkout: unrelated changes kept" || bad "dirty checkout: unrelated changes kept"
+git checkout -q -- f.txt; git rm -q --cached s.txt; rm s.txt
 echo upstream2 >"$tmp/land-other/up.txt"
 git -C "$tmp/land-other" pull -q && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qam "feat: upstream again" && git -C "$tmp/land-other" push -q origin main
 git fetch -q origin

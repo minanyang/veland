@@ -78,7 +78,7 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 **`local`:**
 
 1. Write `.cutter/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style, then a blank line and a short body when it helps.
-2. `cutter-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout if it is on the base branch with a clean tree, otherwise by updating the base ref. A refusal means the base moved since Step 1: go back to Step 1.
+2. `cutter-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout with `git merge --ff-only` if it is on the base branch (uncommitted changes to files the ticket does not touch are kept), otherwise by updating the base ref. A refusal that says the base moved means go back to Step 1; one that names uncommitted changes in the main checkout is the user's to commit or stash — stop and show it, never stash, reset or discard them yourself.
 3. Go to Step 4.
 
 ## Step 4 — Clean up after the merge
