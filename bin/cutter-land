@@ -30,7 +30,8 @@
 # `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, body);
 # every label must already exist in the repo.
 # `comment` (github.com only) posts .cutter/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
-# repo; it needs no worktree, since /cutter:work posts it while planning.
+# repo, only when .cutter/<id>/ticket.md was read from that issue; it needs no worktree, since /cutter:work posts
+# it while planning.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -256,8 +257,11 @@ case "$cmd" in
     origin_parts
     [ "$o_host" = github.com ] || die "comment needs a github.com origin"
     td="$(task_dir "$id")"
-    need_file "$td/comment.md"
-    gh issue comment "$number" --repo "$(gh_repo)" --body-file "$td/comment.md"
+    need_file "$td/comment.md"; need_file "$td/ticket.md"
+    repo="$(gh_repo)"
+    # The ticket must have been read from this very issue, not #<n> of another repo.
+    grep -Fixq -- "- url: https://$repo/issues/$number" "$td/ticket.md" || die "$td/ticket.md is not issue #$number of $repo; not commenting"
+    gh issue comment "$number" --repo "$repo" --body-file "$td/comment.md"
     ;;
 
   *) die "$usage" ;;

@@ -387,7 +387,13 @@ rm "$gd/comment.md"; printf 'Decisions from planning:\n' >"$gd/comment.md"
 expect "comment rejects a non-gh id" 2 cutter-land comment L1
 expect "comment rejects gh-0" 2 cutter-land comment gh-0
 expect "comment rejects extra arguments" 2 cutter-land comment gh-7 --repo evil/land
+expect "comment refuses without ticket.md" 2 cutter-land comment gh-7
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/other/land/issues/7\n' >"$gd/ticket.md"
+expect "comment refuses a ticket read from another repo" 2 cutter-land comment gh-7
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/acme/land/issues/77\n' >"$gd/ticket.md"
+expect "comment refuses a ticket of another issue" 2 cutter-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused comment" || bad "no gh call for a refused comment"
+printf '# T\n\n- source: GitHub issue #7 (open)\n- url: https://github.com/Acme/Land/issues/7\n' >"$gd/ticket.md"
 expect "comment posts without a worktree" 0 cutter-land comment gh-7
 land_log "issue comment 7 --repo github.com/acme/land --body-file $gd/comment.md" "gh issue comment argv"
 git remote set-url origin https://gitlab.example.com/grp/land.git
