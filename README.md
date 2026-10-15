@@ -6,7 +6,7 @@ Each ticket is planned with you, built in its own worktree, verified by scripts 
 
 ```
 /cutter:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
-/cutter:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → verify + cold review → fix
+/cutter:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → verify + cold review → fix → review the fixes
 /cutter:close <id>      →  rebase → verify → PR / merge → clean up
 ```
 
@@ -41,7 +41,7 @@ The ticket id is `gh-<n>` for an issue, else a slug. The branch type follows the
 It runs in two invocations and stops after each:
 
 1. **Plan** — saves the ticket to `.cutter/<id>/ticket.md`, grills you on the technical decisions (and the product ones a GitHub issue leaves open, whose answers it posts to the issue as one comment once you approve the plan), writes `.cutter/<id>/plan.md` (goal, acceptance criteria, approach, the files it binds, tests, assumptions, out of scope) and waits for your approval.
-2. **Implement** — creates `.worktrees/<id>` on a new branch from the up-to-date base, implements (itself for small tickets, an engineer agent for larger ones), commits, proves the tests go red without the change, then runs the gates and a cold-context review **concurrently**. Blockers and majors are fixed; the original findings stay in `.cutter/<id>/review.md` with what was done about each.
+2. **Implement** — creates `.worktrees/<id>` on a new branch from the up-to-date base, implements (itself for small tickets, an engineer agent for larger ones), commits, proves the tests go red without the change, then runs the gates and a cold-context review **concurrently**. Blockers and majors are fixed, and the fix commits get one more cold review of their own; the findings of both rounds stay in `.cutter/<id>/review.md` with what was done about each.
 
 ### `/cutter:close <id>`
 
@@ -105,7 +105,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal):
 | `cutter-land check\|rebase\|push\|merge\|squash\|pr\|comment <id>`, `cutter-land issue <slug>` | the writes `/cutter:close`, `/cutter:open` and `/cutter:work` need, each built from the ticket id or draft slug alone: `check` lists uncommitted changes, `rebase` onto the base (conflicts left for you), `push` the ticket branch (lease only if origin has it), `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, `squash` lands the branch on the base as one commit from `.cutter/<id>/commit-msg` in `local` mode, `pr` opens the PR/MR from `.cutter/<id>/pr-title` + `pr-body.md` or updates only its body, `issue` creates an issue from `.cutter/drafts/<slug>.md` (existing labels only), `comment` posts `.cutter/gh-<n>/comment.md` on issue `<n>` of origin's repo, only when `.cutter/gh-<n>/ticket.md` was read from that issue; `push`, `merge` and `pr` refuse when origin's push URL names another repo than its fetch URL |
 | `cutter-verify <id>` | runs every gate once; fails if the tree moved during the run |
 | `cutter-red-proof <id>` | runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`); a test that fails at HEAD exits 2 |
-| `cutter-review-packet <id>` | the reviewer's starting material: diff, changed files, conventions, last verify result |
+| `cutter-review-packet <id> [--fixes]` | the reviewer's starting material: diff, changed files, conventions, last verify result; `--fixes` covers only the commits since the last review, with its findings |
 | `cutter-ticket github <ref> [--out <path>]` | prints a GitHub issue of origin's repo as Markdown, or writes it to `--out`, which must be that issue's `.cutter/gh-<n>/ticket.md` (a number, or that repo's issue URL; another repo's is refused, and so is any other argument) |
 
 `cutter-verify`, `cutter-red-proof` and `cutter-worktree add` run the project's own gates and setup commands and its test files, so granting them is as strong as granting the agent permission to write files in the repo.
