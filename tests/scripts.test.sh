@@ -373,10 +373,32 @@ rm "$tmp/land/.cutter/drafts"; mv "$tmp/drafts-elsewhere" "$tmp/land/.cutter/dra
 ln "$tmp/real-body.md" "$td/pr-body.md"
 expect "pr refuses a hard-linked body" 2 cutter-land pr L1
 rm "$td/pr-body.md"; printf 'Closes #1\n' >"$td/pr-body.md"
+
+# comment: posts .cutter/gh-<n>/comment.md on issue <n> of origin's repo, without a worktree
+mkdir -p "$tmp/land/.cutter/gh-7"
+gd="$(cd "$tmp/land/.cutter/gh-7" && pwd -P)"
+: >"$tmp/stub.log"
+expect "comment refuses a missing comment.md" 2 cutter-land comment gh-7
+: >"$gd/comment.md"
+expect "comment refuses an empty comment.md" 2 cutter-land comment gh-7
+printf 'Decisions from planning:\n' >"$tmp/real-comment.md"; rm "$gd/comment.md"; ln -s "$tmp/real-comment.md" "$gd/comment.md"
+expect "comment refuses a symlinked comment.md" 2 cutter-land comment gh-7
+rm "$gd/comment.md"; printf 'Decisions from planning:\n' >"$gd/comment.md"
+expect "comment rejects a non-gh id" 2 cutter-land comment L1
+expect "comment rejects gh-0" 2 cutter-land comment gh-0
+expect "comment rejects extra arguments" 2 cutter-land comment gh-7 --repo evil/land
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused comment" || bad "no gh call for a refused comment"
+expect "comment posts without a worktree" 0 cutter-land comment gh-7
+land_log "issue comment 7 --repo github.com/acme/land --body-file $gd/comment.md" "gh issue comment argv"
+git remote set-url origin https://gitlab.example.com/grp/land.git
+: >"$tmp/stub.log"
+expect "comment refuses a GitLab origin" 2 cutter-land comment gh-7
+git remote set-url origin git@github.com:acme/land.git
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1
 expect "issue refuses a host that only contains github.com" 2 cutter-land issue thing
+expect "comment refuses a host that only contains github.com" 2 cutter-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host" || bad "no gh call for a look-alike host"
 unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"

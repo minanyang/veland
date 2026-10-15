@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(cutter-worktree init *)
   - Bash(cutter-worktree add *)
   - Bash(cutter-ticket *)
+  - Bash(cutter-land comment *)
   - Bash(cutter-red-proof *)
   - Bash(cutter-review-packet *)
   - Bash(cutter-verify *)
@@ -20,7 +21,7 @@ allowed-tools:
 
 One ticket per session. Everything the next session needs lives in `.cutter/<id>/`.
 
-The scripts below (`cutter-worktree`, `cutter-ticket`, `cutter-red-proof`, `cutter-verify`, `cutter-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves. Run one command per Bash call — no `&&`, `;` or `|`.
+The scripts below (`cutter-worktree`, `cutter-ticket`, `cutter-land`, `cutter-red-proof`, `cutter-verify`, `cutter-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves. Run one command per Bash call — no `&&`, `;` or `|`.
 
 ## Step 0 — Which ticket, which phase
 
@@ -36,7 +37,18 @@ If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as 
 
 ## Step 1 — Plan, then stop
 
-Run `cutter-worktree init <id>` first — it creates `.cutter/<id>/` and keeps `.cutter/` out of git before anything is written there. Save the ticket text verbatim to `.cutter/<id>/ticket.md`. Read enough of the codebase to bind the plan to real files. Ask the user only what the ticket leaves genuinely open — product questions, not things the code answers.
+Run `cutter-worktree init <id>` first — it creates `.cutter/<id>/` and keeps `.cutter/` out of git before anything is written there. Save the ticket text verbatim to `.cutter/<id>/ticket.md`. Read enough of the codebase to bind the plan to real files.
+
+Then grill: read `references/grill.md` at the plugin root (two levels above this skill's base directory) and follow it. The questions here are technical — where a rule lives, the data's shape, interfaces, migration order. A product question the ticket leaves open (what the user gets, an edge case, what counts as done) is asked in the same grill:
+
+- **GitHub issue** — the issue stays the record. After the grill, write the product answers to `.cutter/<id>/comment.md`, a line `Decisions from planning:` followed by one `**Q — <title>**: <answer>` line each, and post it as one comment:
+
+  ```bash
+  cutter-land comment <id>
+  ```
+
+  No product question, no comment. Technical answers go only into `plan.md`.
+- **Words** — product and technical questions alike; nothing is posted.
 
 Write `.cutter/<id>/plan.md`:
 
@@ -59,6 +71,9 @@ The files this ticket binds, each with what changes in it. Implementation stays 
 
 ## Tests
 Which test proves each criterion — new or changed test files. A criterion no test can cover says how it is verified instead.
+
+## Assumptions
+Decisions the grill did not settle with the user, each with the answer taken.
 
 ## Out of scope
 What a reader might expect here but this ticket does not do.

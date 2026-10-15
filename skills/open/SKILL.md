@@ -26,7 +26,7 @@ Stop, saying which and how to fix it, when `origin` is not on github.com, `gh` i
 
 ## Step 1 — Ground it
 
-Read just enough of the codebase to make the ticket concrete: which module, route, component or file it is about, and what happens there today. Search before claiming something is missing. Ask the user only what the request leaves genuinely open — a product question, not something the code answers.
+Read just enough of the codebase to make the ticket concrete: which module, route, component or file it is about, and what happens there today. Search before claiming something is missing.
 
 Look for an existing issue first:
 
@@ -35,6 +35,8 @@ gh issue list --state open --search "<key words>" --limit 10
 ```
 
 If one already covers it, show it and ask whether to add to it instead.
+
+Then grill: read `references/grill.md` at the plugin root (two levels above this skill's base directory) and follow it. The questions here are product questions — what changes for the user, the edge cases, what counts as done.
 
 ## Step 2 — Classify
 
@@ -70,6 +72,9 @@ The outcome, in one or two sentences.
 
 ## Out of scope
 What a reader might expect here but this ticket does not cover. Omit if nothing.
+
+## Assumptions
+Decisions the grill did not settle with the user, each with the answer taken. Omit if none.
 ```
 
 Show the user the title, the kind with the label or type it maps to, and the body. Title: short, imperative, in the repo's language and style (`gh issue list --limit 10` shows it). **Stop** until the user approves or edits it.
