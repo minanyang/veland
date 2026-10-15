@@ -602,8 +602,7 @@ refuse "issue refuses a Form: that is not in the repo" 'line 2' noform
 printf '# T\nForm: ../bug.yml\n\nb\n' >"$dr/pathform.md"
 refuse "issue refuses a Form: with a path" 'line 2' pathform
 printf '# T\nForm: config.yml\n\nb\n' >"$dr/cfgform.md"
-: >"$tmp/stub.log"
-expect "issue with Form: config.yml has no required fields to satisfy" 2 cutter-land issue cfgform
+refuse "issue refuses Form: config.yml" 'is not an issue form' cfgform
 bugbody() { # <what> <steps> <expected> <version> <criteria>
   printf '# T\nLabels: bug\nForm: bug.yml\n\n### What happens\n%s\n\n### Steps to reproduce\n%s\n\n### Expected\n%s\n\n### Version / commit\n%s\n\n### Acceptance criteria\n%s\n' "$@"
 }
@@ -619,6 +618,8 @@ bugbody '' '1. run' 'it holds' 'abc123' '- [ ] AC1 — it holds' >"$dr/bugempty.
 refuse "issue refuses an empty required section" 'What happens' bugempty
 bugbody 'it breaks' '1. run' 'it holds' 'abc123' '- [ ] it holds' >"$dr/bugac.md"
 refuse "issue refuses an unnumbered criterion in a form" 'lacks' bugac
+bugbody 'it breaks' '1. run' 'it holds' 'abc123' '- it holds' >"$dr/bugplain.md"
+refuse "issue refuses form criteria with no checkbox" 'no checkbox criterion' bugplain
 printf '# T\nLabels: enhancement\nForm: feature.yml\n\n### Problem\nneed\n\n### Proposed behaviour\ndo\n\n### Acceptance criteria\n- [ ] AC1 — done\n' >"$dr/featok.md"
 : >"$tmp/stub.log"
 STUB_LABELS=$'enhancement' expect "issue accepts a draft filled per feature.yml, optional fields absent" 0 cutter-land issue featok

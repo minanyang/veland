@@ -289,6 +289,7 @@ case "$cmd" in
     if [ -n "$form" ] || [ ${#forms[@]} -gt 0 ]; then
       [ -n "$form" ] || die "$draft: no 'Form:' header line, but the repo has issue forms; add 'Form: <file>' (one of: $(for f in "${forms[@]}"; do printf '%s ' "$(basename "$f")"; done))"
       [[ "$form" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$ ]] || die "$draft: line $form_line: invalid Form '$form' (a .yml or .yaml file name in .github/ISSUE_TEMPLATE/)"
+      case "$form" in config.yml|config.yaml) die "$draft: line $form_line: Form '$form' is not an issue form" ;; esac
       formfile="$ROOT/.github/ISSUE_TEMPLATE/$form"
       [ ! -L "$formfile" ] && [ -f "$formfile" ] || die "$draft: line $form_line: Form '$form' is not a file in .github/ISSUE_TEMPLATE/"
     fi
@@ -360,7 +361,6 @@ case "$cmd" in
         return doc.body
       }
       const norm = (s) => s.trim().toLowerCase()
-      const isHeading = (s) => /^#{1,6}\s/.test(s)
       // Lines outside fences, with inline code spans blanked; fenced lines become null.
       let fence = null
       const text = dl.map((s, k) => {
@@ -392,7 +392,7 @@ case "$cmd" in
         s = s.trim()
         return s === "" || /^_no response_$/i.test(s) ? "" : s
       }
-      let crit = null // [from, to) of the criteria section
+      let crit = null, critHead = -1 // [from, to) of the criteria section, and its heading line
       if (formPath) {
         const fields = parseForm(fs.readFileSync(formPath, "utf8")).filter((f) => f && f.type !== "markdown")
         for (const f of fields) {
@@ -402,16 +402,16 @@ case "$cmd" in
           const req = f.validations && String(f.validations.required) === "true"
           if (k < 0) { if (req) fail("required field \"" + label + "\": no \"### " + label + "\" section"); continue }
           const [a, b] = section(k, 3)
-          if (norm(label) === "acceptance criteria") crit = [a, b]
+          if (norm(label) === "acceptance criteria") { crit = [a, b]; critHead = k }
           if (req && content(a, b) === "") fail("line " + (k + 1) + ": required field \"" + label + "\" is empty")
         }
       } else {
         const k = head(2, "Acceptance criteria")
         if (k < 0) fail("no \"## Acceptance criteria\" section")
-        crit = section(k, 2)
-        if (!text.slice(crit[0], crit[1]).some((s) => s !== null && /^\s*[-*+]\s+\[[ xX]\]/.test(s)))
-          fail("line " + (k + 1) + ": \"Acceptance criteria\" has no checkbox criterion")
+        crit = section(k, 2); critHead = k
       }
+      if (crit && !text.slice(crit[0], crit[1]).some((s) => s !== null && /^\s*[-*+]\s+\[[ xX]\]/.test(s)))
+        fail("line " + (critHead + 1) + ": \"Acceptance criteria\" has no checkbox criterion")
       if (crit) for (let k = crit[0]; k < crit[1]; k++) {
         const s = text[k]
         if (s === null) continue

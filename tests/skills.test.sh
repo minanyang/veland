@@ -43,7 +43,6 @@ for (const skill of Object.keys(userOwn)) {
     if (toks.slice(0, -1).some((t) => t.includes("*")) || (toks.at(-1).includes("*") && toks.at(-1) !== "*"))
       bad(`${skill}: ${e} has a * that is not the last token`)
     if (bareGrants.includes(body) || forbidden.some((f) => body === f || body.startsWith(f + " "))) bad(`${skill}: ${e} is a forbidden grant`)
-    if (publicWrites.some((w) => body === w || body.startsWith(w + " "))) bad(`${skill}: ${e} grants a public write, which must always prompt`)
     bodies.push(body)
   }
   if (entries.length) ok(`${skill}: entries are well-formed and safe`)
@@ -60,6 +59,19 @@ for (const skill of Object.keys(userOwn)) {
     else if (userOwn[skill].some((p) => line.startsWith(p))) ok(`${skill}: left to the user: ${raw}`)
     else bad(`${skill}: not covered by allowed-tools: ${raw}`)
   }
+}
+
+// No skill may grant a public write, by any pattern that covers it: `*`, `cutter-land *`, `cutter-land i*`,
+// the legacy `cutter-land issue:*`, or the command itself.
+for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}/SKILL.md`))) {
+  const fm = (/^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")) || ["", ""])[1]
+  const covers = (body, w) => {
+    body = body.replace(/:\*$/, " *")
+    return body.endsWith("*") ? (w + " ").startsWith(body.slice(0, -1)) : body === w || body.startsWith(w + " ")
+  }
+  const hits = [...fm.matchAll(/Bash\(([^)]*)\)/g)].filter((b) => publicWrites.some((w) => covers(b[1].trim(), w)))
+  hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants a public write, which must always prompt`))
+    : ok(`${skill}: grants no public write`)
 }
 
 // open and work load the one shared grill rather than each carrying a copy.
