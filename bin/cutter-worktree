@@ -7,6 +7,7 @@
 #   cutter-worktree path <id>
 #   cutter-worktree rm   <id>
 #   cutter-worktree sync-base
+#   cutter-worktree memory <id>
 #
 # `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
 # .cutter/ (or .cutter/<id>/, created) — run it before writing anything under .cutter/.
@@ -20,6 +21,11 @@
 # `sync-base` fetches the base and fast-forwards it in the main checkout when the main checkout
 # is on the base and git allows the fast-forward (uncommitted changes to files the incoming
 # commits do not touch are carried over); otherwise it leaves it and says why.
+# `memory` commits agent memory (.claude/agent-memory/) on the ticket branch: new or changed files
+# in the main checkout, where agents write it, are moved into the worktree (a new file is removed
+# from the main checkout, a tracked one restored there), then those and the worktree's own memory
+# changes go in one commit, nothing else. A path changed differently in both places stops it
+# before anything moves. Prints each committed path.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -166,5 +172,34 @@ case "$cmd" in
     fi
     ;;
 
-  *) die "usage: cutter-worktree init|add|list|path|rm|sync-base ..." ;;
+  memory)
+    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree memory <id>"
+    check_id "$id"
+    [ $# -eq 1 ] || die "usage: cutter-worktree memory <id>"
+    path="$(wt_path "$id")"
+    mem=.claude/agent-memory
+    moves=()
+    while IFS= read -r -d '' line; do
+      st="${line:0:2}"; f="${line:3}"
+      [ "$st" = "??" ] || [[ "$st" == *[MA]* ]] || continue
+      if [ -e "$path/$f" ] && ! cmp -s "$ROOT/$f" "$path/$f" && [ -n "$(git -C "$path" status --porcelain -- "$f")" ]; then
+        die "$f is changed differently in the main checkout and the worktree; nothing moved — reconcile it yourself"
+      fi
+      moves+=("$st" "$f")
+    done < <(git -C "$ROOT" status --porcelain -z --untracked-files=all -- "$mem")
+    for ((i = 0; i < ${#moves[@]}; i += 2)); do
+      st="${moves[i]}"; f="${moves[i+1]}"
+      mkdir -p "$(dirname "$path/$f")"
+      cp "$ROOT/$f" "$path/$f"
+      [ "$st" = "??" ] || git -C "$ROOT" restore --staged -- "$f"
+      if git -C "$ROOT" cat-file -e "HEAD:$f" 2>/dev/null; then git -C "$ROOT" restore --worktree -- "$f"; else rm "$ROOT/$f"; fi
+    done
+    git -C "$path" add -- "$mem" 2>/dev/null || true
+    if git -C "$path" diff --cached --quiet -- "$mem"; then say "no agent memory to commit"; exit 0; fi
+    git -C "$path" commit --quiet -m "chore(memory): commit agent memory written during $id" -- "$mem"
+    say "committed agent memory on $(git -C "$path" rev-parse --abbrev-ref HEAD) ($(git -C "$path" rev-parse --short HEAD)):"
+    git -C "$path" -c core.quotePath=false diff-tree --no-commit-id --name-only -r HEAD | sed 's/^/  /'
+    ;;
+
+  *) die "usage: cutter-worktree init|add|list|path|rm|sync-base|memory ..." ;;
 esac

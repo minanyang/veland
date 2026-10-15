@@ -201,6 +201,32 @@ expect "verify with a broken plugin.json" 0 cutter-verify S1
 ! grep -q '^scripts differ' "$ss" && ok "broken plugin.json: no report" || bad "broken plugin.json: no report"
 cd "$tmp/repo" || exit 2
 
+# memory: agent memory from the main checkout and the worktree lands in one commit on the ticket branch
+m=.claude/agent-memory/cutter-a
+mkdir -p "$m" && echo old >"$m/kept.md"
+git add "$m" && git commit -qm "chore: memory" && git push -q origin main
+expect "worktree add T8" 0 cutter-worktree add T8 --no-setup
+wt8="$tmp/repo/.worktrees/T8"
+expect "memory: nothing to commit" 0 cutter-worktree memory T8
+grep -q 'no agent memory to commit' "$tmp/out" && [ "$(git -C "$wt8" rev-list --count HEAD)" = "$(git rev-list --count HEAD)" ] && ok "memory: no commit when nothing changed" || bad "memory: no commit when nothing changed"
+echo new >"$m/new.md"; echo changed >"$m/kept.md"
+mkdir -p "$wt8/.claude/agent-memory/cutter-b" && echo wt >"$wt8/.claude/agent-memory/cutter-b/MEMORY.md"
+echo unrelated >"$wt8/unrelated.txt" && git -C "$wt8" add unrelated.txt
+expect "memory: commit" 0 cutter-worktree memory T8
+git -C "$wt8" show --name-only --format= HEAD | sort >"$tmp/mem-files"
+printf '%s\n' .claude/agent-memory/cutter-a/kept.md .claude/agent-memory/cutter-a/new.md .claude/agent-memory/cutter-b/MEMORY.md >"$tmp/mem-want"
+cmp -s "$tmp/mem-files" "$tmp/mem-want" && ok "memory: one commit with main checkout's and worktree's memory" || bad "memory: one commit with main checkout's and worktree's memory"
+[ "$(git -C "$wt8" show HEAD:"$m/kept.md")" = changed ] && [ "$(git -C "$wt8" show HEAD:"$m/new.md")" = new ] && ok "memory: main checkout's content committed" || bad "memory: main checkout's content committed"
+grep -qF "$m/new.md" "$tmp/out" && grep -qF "$m/kept.md" "$tmp/out" && grep -qF .claude/agent-memory/cutter-b/MEMORY.md "$tmp/out" && ok "memory: committed paths printed" || bad "memory: committed paths printed"
+[ -z "$(git status --porcelain -- .claude/agent-memory)" ] && [ ! -e "$m/new.md" ] && [ "$(cat "$m/kept.md")" = old ] && ok "memory: main checkout left clean" || bad "memory: main checkout left clean"
+[ "$(git -C "$wt8" diff --cached --name-only)" = unrelated.txt ] && ok "memory: unrelated staged file left staged" || bad "memory: unrelated staged file left staged"
+echo main-side >"$m/kept.md"; echo wt-side >"$wt8/$m/kept.md"
+head8="$(git -C "$wt8" rev-parse HEAD)"
+expect "memory: conflict stops" 2 cutter-worktree memory T8
+grep -qF "$m/kept.md" "$tmp/out" && [ "$(cat "$m/kept.md")" = main-side ] && [ "$(cat "$wt8/$m/kept.md")" = wt-side ] && [ "$(git -C "$wt8" rev-parse HEAD)" = "$head8" ] && ok "memory: conflict named, neither side touched, no commit" || bad "memory: conflict named, neither side touched, no commit"
+git checkout -q -- "$m/kept.md"; git -C "$wt8" checkout -q -- "$m/kept.md"; git -C "$wt8" reset -q unrelated.txt; rm "$wt8/unrelated.txt"
+expect "rm T8" 0 cutter-worktree rm T8
+
 # remove
 expect "rm keeps an unmerged branch" 0 cutter-worktree rm T1
 grep -q 'kept branch feat/T1-mul' "$tmp/out" && ok "unmerged branch kept" || bad "unmerged branch kept"
