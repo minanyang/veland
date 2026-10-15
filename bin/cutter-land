@@ -22,7 +22,7 @@
 # checking that its base is the configured base and that it is not a fork's; pinned to origin's repo
 # and to the worktree's HEAD sha (--match-head-commit / --sha). On GitHub it also refuses unless the PR's head is
 # the worktree's HEAD and its checks are all green (a pending, failed or still-expected run is named); no checks
-# at all is a refusal only when a workflow under .github/workflows/ on the branch mentions pull_request. Never --admin, never the delete-branch flags.
+# at all is a refusal only when a workflow under .github/workflows/ on the branch or the base mentions pull_request. Never --admin, never the delete-branch flags.
 # `squash` (local mode) lands the ticket branch on the base as one commit with .cutter/<id>/commit-msg as its
 # message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
 # fast-forwards it, keeping uncommitted changes to files the squash does not touch.
@@ -175,7 +175,9 @@ case "$cmd" in
         bad="$(gh_checks)" || die "could not read the checks of $branch"
         case "$bad" in
           head\ *) die "PR head ${bad#head } is not the worktree's HEAD — push first" ;;
-          none) if git -C "$path" grep -q pull_request HEAD -- .github/workflows 2>/dev/null; then
+          # The base's workflows count too: a branch that deletes its trigger does not opt itself out.
+          none) if git -C "$path" grep -q pull_request HEAD -- .github/workflows 2>/dev/null ||
+                  git -C "$path" grep -q pull_request "$(base_ref)" -- .github/workflows 2>/dev/null; then
                   die "PR of $branch has no checks yet but a workflow runs on pull_request — still pending; run /cutter:close again once CI finishes"
                 fi ;;
           "") ;;

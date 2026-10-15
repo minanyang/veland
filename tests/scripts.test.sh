@@ -1,6 +1,6 @@
 #!/bin/bash
 # End-to-end test of the bin/ scripts on a throwaway repository with an origin.
-# shellcheck disable=SC2015  # `cond && ok || bad` is safe: ok always returns 0
+# shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; backticks in patterns are literal Markdown
 set -uo pipefail
 BIN="$(cd "$(dirname "$0")/.." && pwd)/bin"
 export PATH="$BIN:$PATH"
@@ -331,6 +331,15 @@ printf 'on:\n  push:\n' >"$lw/.github/workflows/ci.yml"
 git -C "$lw" commit -qam "ci: push only"
 lwsha="$(git -C "$lw" rev-parse HEAD)"
 merge_checks "no checks, a workflow without pull_request" 0 '[]'
+# a branch that drops the base's pull_request trigger is still pending
+om="$(git -C "$lw" rev-parse origin/main)"
+wf="$(printf 'on:\n  pull_request:\n' | git -C "$lw" hash-object -w --stdin)"
+gh_tree="$(printf '100644 blob %s\tci.yml\n' "$wf" | git -C "$lw" mktree)"
+gh_tree="$(printf '040000 tree %s\tworkflows\n' "$gh_tree" | git -C "$lw" mktree)"
+base_tree="$( { git -C "$lw" ls-tree "$om"; printf '040000 tree %s\t.github\n' "$gh_tree"; } | git -C "$lw" mktree)"
+git -C "$lw" update-ref refs/remotes/origin/main "$(git -C "$lw" commit-tree "$base_tree" -p "$om" -m "ci: base workflow")"
+merge_checks "no checks, the base's pull_request workflow dropped on the branch" 2 '[]'
+git -C "$lw" update-ref refs/remotes/origin/main "$om"
 STUB_CHECKS="$(checks '[]')"; export STUB_CHECKS
 
 git remote set-url origin https://notgithub.com/acme/land.git
