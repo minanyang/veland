@@ -29,6 +29,22 @@ check 2 'git branch -D feature'
 check 2 'git checkout -- .'
 check 2 'pnpm publish'
 check 2 'dd if=/dev/zero of=/dev/disk2'
+# a cutter script runs alone
+check 2 'cutter-ticket github 7 > ~/.zshrc'
+check 2 'cutter-ticket github 7 >>/tmp/x'
+check 2 'cutter-ticket github 7 2>/tmp/x'
+check 2 'cutter-ticket github 7 < /etc/passwd'
+check 2 'cutter-ticket github 7 | tee /tmp/x'
+check 2 'cutter-ticket github 7; rm x'
+check 2 'cutter-ticket github 7 && rm x'
+check 2 'cutter-verify gh-7 & rm x'
+# shellcheck disable=SC2016  # the substitution is the command text under test, not run here
+check 2 'cutter-ticket github $(touch /tmp/x)'
+# shellcheck disable=SC2016
+check 2 'cutter-ticket github `touch /tmp/x`'
+check 2 "cutter-ticket github 7
+rm x"
+check 2 '  /opt/cutter/bin/cutter-land push gh-7 >x'
 # allowed
 check 0 'rm file.txt'
 check 0 'git push origin feature'
@@ -36,6 +52,9 @@ check 0 'git push --force-with-lease origin feature'
 check 0 'git reset --soft HEAD~1'
 check 0 'git branch -d merged'
 check 0 'ls -la'
+check 0 'cutter-ticket github 7 --out .cutter/gh-7/ticket.md'
+check 0 'cutter-land push gh-7'
+check 0 'grep -rn cutter-ticket skills | head'
 check 0 ''
 
 # unreadable input fails closed
@@ -50,6 +69,10 @@ mkdir -p "$tmp/.claude/scripts"
 touch "$tmp/.claude/scripts/guard-bash.sh"
 if ! printf '{"tool_input":{"command":"rm -rf x"}}' | CLAUDE_PROJECT_DIR="$tmp" bash "$GUARD" >/dev/null 2>&1; then
   echo "FAIL: did not defer to the project's guard"
+  fail=1
+fi
+if printf '{"tool_input":{"command":"cutter-ticket github 7 > x"}}' | CLAUDE_PROJECT_DIR="$tmp" bash "$GUARD" >/dev/null 2>&1; then
+  echo "FAIL: a project's guard let a cutter script redirect"
   fail=1
 fi
 rm -r "$tmp"

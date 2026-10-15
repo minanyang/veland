@@ -16,10 +16,6 @@
 
 set -uo pipefail
 
-# A project that ships its own guard at .claude/scripts/guard-bash.sh registers it
-# in its own settings; defer to it so the two lists cannot disagree.
-[ -n "${CLAUDE_PROJECT_DIR-}" ] && [ -f "$CLAUDE_PROJECT_DIR/.claude/scripts/guard-bash.sh" ] && exit 0
-
 INPUT=$(cat)
 # node, not jq: a missing jq would make COMMAND empty and silently allow everything.
 COMMAND=$(printf '%s' "$INPUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{process.stdout.write(JSON.parse(d).tool_input?.command??"")}catch{process.exit(3)}})') || {
@@ -29,6 +25,27 @@ COMMAND=$(printf '%s' "$INPUT" | node -e 'let d="";process.stdin.on("data",c=>d+
 
 # No command → nothing to validate.
 [ -z "$COMMAND" ] && exit 0
+
+# cutter's scripts are pre-approved by the skills' allowed-tools (`Bash(cutter-ticket *)` …) and write
+# only their own files. A redirection, pipe, chain or substitution would stretch that grant into a write
+# or command the user never approved, so a cutter script runs alone. Checked before deferring to a
+# project's guard: that guard does not know cutter's grants.
+# shellcheck disable=SC2016  # a literal $( is what is matched
+if [[ "$COMMAND" =~ ^[[:space:]]*([^[:space:]]*/)?cutter-[a-z] ]] &&
+  [[ "$COMMAND" == *[\<\>\|\;\&\`]* || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
+  cat >&2 <<EOF
+Blocked by cutter's guard — a cutter script runs alone, one per call, with no redirection,
+pipe, chaining or command substitution:
+  $COMMAND
+
+The scripts write their own files (cutter-ticket --out writes ticket.md); run the command bare.
+EOF
+  exit 2
+fi
+
+# A project that ships its own guard at .claude/scripts/guard-bash.sh registers it
+# in its own settings; defer to it so the two lists cannot disagree.
+[ -n "${CLAUDE_PROJECT_DIR-}" ] && [ -f "$CLAUDE_PROJECT_DIR/.claude/scripts/guard-bash.sh" ] && exit 0
 
 # Denylist of regex patterns.
 # Each entry is a POSIX extended regex matched case-insensitively.
