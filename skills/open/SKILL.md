@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(gh issue list *)
   - Bash(gh label list *)
   - Bash(cutter-worktree init)
+  - Bash(cutter-land issue *)
 ---
 
 # Open a ticket
@@ -51,9 +52,13 @@ If the repo has issue templates (`.github/ISSUE_TEMPLATE/`), follow the matching
 
 ## Step 3 — Draft and stop
 
-Run `cutter-worktree init` and write the body to `.cutter/drafts/<short-slug>.md`:
+Run `cutter-worktree init` and write the draft to `.cutter/drafts/<short-slug>.md` (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only) and `Type: <name>` lines follow directly; then a blank line and the body:
 
 ```markdown
+# <title>
+Labels: <label>, <label>
+Type: <issue type>
+
 ## Context
 What happens today and where — name the files or routes. For a bug: steps to reproduce, expected, actual.
 
@@ -72,8 +77,10 @@ Show the user the title, the kind with the label or type it maps to, and the bod
 ## Step 4 — Create
 
 ```bash
-gh issue create --title "<title>" --body-file .cutter/drafts/<short-slug>.md [--label <label>] [--type <type>]
+cutter-land issue <short-slug>
 ```
+
+It reads only that draft, refuses a label the repo does not have, and creates the issue in origin's repo.
 
 Report the issue URL and the next step, `/cutter:work gh-<n>`. Delete the draft only after the issue exists.
 

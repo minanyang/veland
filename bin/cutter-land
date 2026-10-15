@@ -1,12 +1,15 @@
 #!/bin/bash
-# The writes /cutter:close needs, each taking only a ticket id — the command line is built here,
-# so a permission rule for `cutter-land *` cannot be stretched into a force-push or a bypass.
+# The writes /cutter:close and /cutter:open need, each taking only a ticket id or a draft slug — the command
+# line is built here, so a permission rule for `cutter-land <sub> *` cannot be stretched into a force-push,
+# a bypass or a publish of another file or repo.
 #
 #   cutter-land check  <id>
 #   cutter-land rebase <id>
 #   cutter-land push   <id>
 #   cutter-land merge  <id>
 #   cutter-land ff     <id>
+#   cutter-land pr     <id>
+#   cutter-land issue  <slug>
 #
 # `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes.
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base>; on a conflict it lists
@@ -14,23 +17,76 @@
 # `push` pushes the ticket branch, and only it, to origin; --force-with-lease only when origin
 # already has the branch (never a plain force-push). It refuses the base branch.
 # `merge` squash-merges the branch's open PR/MR (gh for github.com, glab for a GitLab host) after
-# checking that its base is the configured base, pinned to the worktree's HEAD sha
-# (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
+# checking that its base is the configured base and that it is not a fork's; pinned to origin's repo
+# and to the worktree's HEAD sha (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
 # `ff` (local mode) fast-forwards the base to the ticket branch; it refuses anything else.
+# `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
+# has an open one, replaces only its body. The repo is pinned to origin; no auto-merge, push or fill flags.
+# `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, body);
+# every label must already exist in the repo.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
+usage="usage: cutter-land check|rebase|push|merge|ff|pr <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
-[ $# -eq 2 ] || die "usage: cutter-land check|rebase|push|merge|ff <id>"
-check_id "$id"
-path="$(wt_path "$id")"
-branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
-base="$(base_branch)"
-# A leading + or a : would turn the branch into a forced or re-targeted refspec.
-case "$branch" in +*|*:*) die "refusing branch name '$branch': a leading + or a : is not allowed" ;; esac
+[ $# -eq 2 ] || die "$usage"
+if [ "$cmd" = issue ]; then
+  [[ "$id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "invalid draft slug '$id' (lowercase letters, digits, -)"
+else
+  check_id "$id"
+  path="$(wt_path "$id")"
+  branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
+  base="$(base_branch)"
+  # A leading + or a : would turn the branch into a forced or re-targeted refspec.
+  case "$branch" in +*|*:*) die "refusing branch name '$branch': a leading + or a : is not allowed" ;; esac
+fi
 has_origin() { git -C "$ROOT" remote get-url origin >/dev/null 2>&1; }
+
+# Sets o_host and o_path (the repo path, groups included) from origin's URL.
+origin_parts() {
+  local u
+  u="$(git -C "$ROOT" remote get-url origin)"; u="${u%/}"; u="${u%.git}"
+  o_host=""
+  if [[ "$u" == *://* ]]; then
+    u="${u#*://}"; o_host="${u%%/*}"; o_host="${o_host##*@}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
+  elif [[ "$u" =~ ^([^/:]+@)?([^/:]+):(.+)$ ]]; then
+    o_host="${BASH_REMATCH[2]}"; o_path="${BASH_REMATCH[3]}"
+  else
+    o_path="${u#/}"
+  fi
+}
+# github.com/OWNER/REPO for gh (the last two path segments), host included so GH_HOST cannot redirect it.
+gh_repo() {
+  local o r
+  origin_parts
+  r="${o_path##*/}"; o="${o_path%/*}"; o="${o##*/}"
+  [[ "$o/$r" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "cannot derive OWNER/REPO from origin"
+  printf 'github.com/%s/%s\n' "$o" "$r"
+}
+# The full https URL of origin's project for glab -R: the one form that also pins a self-hosted host.
+glab_repo() {
+  origin_parts
+  [ -n "$o_host" ] && [[ "$o_path" =~ ^[A-Za-z0-9._/-]+$ ]] || die "cannot derive the project URL from origin"
+  printf 'https://%s/%s\n' "$o_host" "$o_path"
+}
+# "<base> <state> <cross-repo>" of the branch's PR in $repo, and "<base> <state> <same-project>" of its MR:
+# a fork's PR/MR with the same branch name is never the ticket's.
+gh_view() {
+  gh pr view "$branch" --repo "$repo" --json baseRefName,state,isCrossRepository \
+    --jq '.baseRefName + " " + .state + " " + (.isCrossRepository | tostring)'
+}
+glab_view() {
+  glab mr view "$branch" -R "$repo" --output json \
+    | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (Number.isInteger(m.source_project_id) && m.source_project_id === m.target_project_id))'
+}
+# A regular, non-empty file with one link, really inside .cutter/ (no symlink anywhere on the way), or die.
+need_file() {
+  [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"
+  [ ! -L "$ROOT/.cutter" ] && [[ "$(readlink -f "$1")" == "$(readlink -f "$ROOT/.cutter")/"* ]] || die "$1 resolves outside .cutter/"
+  [ -n "$(find "$1" -maxdepth 0 -links 1)" ] || die "$1 has more than one hard link"
+}
 
 case "$cmd" in
   check)
@@ -64,19 +120,21 @@ case "$cmd" in
 
   merge)
     has_origin || die "no origin"
-    url="$(git -C "$ROOT" remote get-url origin)"
-    case "$url" in
-      *github.com*)
-        got="$(gh pr view "$branch" --json baseRefName,state --jq '.baseRefName + " " + .state')" || die "no PR found for $branch"
-        [ "$got" = "$base OPEN" ] || die "PR of $branch is '$got', want '$base OPEN'"
-        gh pr merge "$branch" --squash --match-head-commit "$(git -C "$path" rev-parse HEAD)"
+    origin_parts
+    case "$o_host" in
+      github.com)
+        repo="$(gh_repo)"
+        got="$(gh_view)" || die "no PR found for $branch"
+        [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
+        gh pr merge "$branch" --repo "$repo" --squash --match-head-commit "$(git -C "$path" rev-parse HEAD)"
         ;;
       *gitlab*)
-        got="$(glab mr view "$branch" --output json | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state)')" || die "no MR found for $branch"
-        [ "$got" = "$base opened" ] || die "MR of $branch is '$got', want '$base opened'"
-        glab mr merge "$branch" --squash --yes --sha "$(git -C "$path" rev-parse HEAD)"
+        repo="$(glab_repo)"
+        got="$(glab_view)" || die "no MR found for $branch"
+        [ "$got" = "$base opened true" ] || die "MR of $branch is '$got', want '$base opened true' (base, state, same project)"
+        glab mr merge "$branch" -R "$repo" --squash --yes --sha "$(git -C "$path" rev-parse HEAD)"
         ;;
-      *) die "origin $url is neither github.com nor a GitLab host" ;;
+      *) die "origin host '$o_host' is neither github.com nor a GitLab host" ;;
     esac
     ;;
 
@@ -90,5 +148,72 @@ case "$cmd" in
     say "fast-forwarded $base to $(git -C "$ROOT" rev-parse --short "$base")"
     ;;
 
-  *) die "usage: cutter-land check|rebase|push|merge|ff <id>" ;;
+  pr)
+    [ "$branch" != "$base" ] || die "refusing to open a PR from the base branch $base"
+    has_origin || die "no origin"
+    td="$(task_dir "$id")"
+    need_file "$td/pr-title"; need_file "$td/pr-body.md"
+    title="$(head -n 1 "$td/pr-title")"
+    [ -n "${title//[[:space:]]/}" ] || die "$td/pr-title has an empty first line"
+    origin_parts
+    case "$o_host" in
+      github.com)
+        repo="$(gh_repo)"
+        if got="$(gh_view 2>/dev/null)" && [[ "$got" == *" OPEN "* ]]; then
+          [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
+          gh pr edit "$branch" --repo "$repo" --body-file "$td/pr-body.md"
+        else
+          gh pr create --repo "$repo" --base "$base" --head "$branch" --title "$title" --body-file "$td/pr-body.md"
+        fi
+        ;;
+      *gitlab*)
+        repo="$(glab_repo)"
+        if got="$(glab_view 2>/dev/null)" && [[ "$got" == *" opened "* ]]; then
+          [ "$got" = "$base opened true" ] || die "MR of $branch is '$got', want '$base opened true' (base, state, same project)"
+          glab mr update "$branch" -R "$repo" --description "$(cat "$td/pr-body.md")"
+        else
+          glab mr create -R "$repo" --target-branch "$base" --source-branch "$branch" --title "$title" --description "$(cat "$td/pr-body.md")" --yes
+        fi
+        ;;
+      *) die "origin is neither github.com nor a GitLab host" ;;
+    esac
+    ;;
+
+  issue)
+    has_origin || die "no origin"
+    origin_parts
+    [ "$o_host" = github.com ] || die "issue needs a github.com origin"
+    draft="$ROOT/.cutter/drafts/$id.md"
+    need_file "$draft"
+    repo="$(gh_repo)"
+    { IFS= read -r first || true; } <"$draft"
+    [[ "$first" == "# "* ]] || die "$draft: line 1 must be '# <title>'"
+    title="${first#\# }"
+    [ -n "${title//[[:space:]]/}" ] || die "$draft: empty title"
+    labels=(); itype=""; body_from=2
+    while IFS= read -r line; do
+      case "$line" in
+        "Labels:"*) IFS=',' read -ra parts <<<"${line#Labels:}"
+                    for l in ${parts[@]+"${parts[@]}"}; do l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"; [ -n "$l" ] && labels+=("$l"); done ;;
+        "Type:"*)   itype="${line#Type:}"; itype="${itype#"${itype%%[![:space:]]*}"}"; itype="${itype%"${itype##*[![:space:]]}"}" ;;
+        *) break ;;
+      esac
+      body_from=$((body_from + 1))
+    done < <(tail -n +2 "$draft")
+    [ -z "$itype" ] || [[ "$itype" =~ ^[A-Za-z0-9][A-Za-z0-9\ _-]*$ ]] || die "invalid issue type '$itype'"
+    if [ ${#labels[@]} -gt 0 ]; then
+      existing="$(gh label list --repo "$repo" --limit 1000 --json name --jq '.[].name')" || die "could not list labels"
+      for l in "${labels[@]}"; do
+        printf '%s\n' "$existing" | grep -Fxq -- "$l" || die "label '$l' does not exist in $repo"
+      done
+    fi
+    bodyfile="$(mktemp)"; trap 'rm -f "$bodyfile"' EXIT
+    tail -n +"$body_from" "$draft" | sed '1{/^[[:space:]]*$/d;}' >"$bodyfile"
+    args=(issue create --repo "$repo" --title "$title" --body-file "$bodyfile")
+    for l in ${labels[@]+"${labels[@]}"}; do args+=(--label "$l"); done
+    [ -z "$itype" ] || args+=(--type "$itype")
+    gh "${args[@]}"
+    ;;
+
+  *) die "$usage" ;;
 esac
