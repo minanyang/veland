@@ -70,8 +70,12 @@ glab_repo() {
   [ -n "$o_host" ] && [[ "$o_path" =~ ^[A-Za-z0-9._/-]+$ ]] || die "cannot derive the project URL from origin"
   printf 'https://%s/%s\n' "$o_host" "$o_path"
 }
-# A regular, non-empty, non-symlink file or die.
-need_file() { [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"; }
+# A regular, non-empty file with one link, really inside .cutter/ (no symlink anywhere on the way), or die.
+need_file() {
+  [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"
+  [ ! -L "$ROOT/.cutter" ] && [[ "$(readlink -f "$1")" == "$(readlink -f "$ROOT/.cutter")/"* ]] || die "$1 resolves outside .cutter/"
+  [ -n "$(find "$1" -maxdepth 0 -links 1)" ] || die "$1 has more than one hard link"
+}
 
 case "$cmd" in
   check)
@@ -138,8 +142,9 @@ case "$cmd" in
     need_file "$td/pr-title"; need_file "$td/pr-body.md"
     title="$(head -n 1 "$td/pr-title")"
     [ -n "${title//[[:space:]]/}" ] || die "$td/pr-title has an empty first line"
-    case "$(git -C "$ROOT" remote get-url origin)" in
-      *github.com*)
+    origin_parts
+    case "$o_host" in
+      github.com)
         repo="$(gh_repo)"
         if got="$(gh pr view "$branch" --repo "$repo" --json state,baseRefName --jq '.baseRefName + " " + .state' 2>/dev/null)" && [[ "$got" == *" OPEN" ]]; then
           [ "$got" = "$base OPEN" ] || die "PR of $branch is '$got', want '$base OPEN'"
@@ -163,7 +168,8 @@ case "$cmd" in
 
   issue)
     has_origin || die "no origin"
-    case "$(git -C "$ROOT" remote get-url origin)" in *github.com*) ;; *) die "issue needs a github.com origin" ;; esac
+    origin_parts
+    [ "$o_host" = github.com ] || die "issue needs a github.com origin"
     draft="$ROOT/.cutter/drafts/$id.md"
     need_file "$draft"
     repo="$(gh_repo)"
@@ -175,7 +181,7 @@ case "$cmd" in
     while IFS= read -r line; do
       case "$line" in
         "Labels:"*) IFS=',' read -ra parts <<<"${line#Labels:}"
-                    for l in "${parts[@]}"; do l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"; [ -n "$l" ] && labels+=("$l"); done ;;
+                    for l in ${parts[@]+"${parts[@]}"}; do l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"; [ -n "$l" ] && labels+=("$l"); done ;;
         "Type:"*)   itype="${line#Type:}"; itype="${itype#"${itype%%[![:space:]]*}"}"; itype="${itype%"${itype##*[![:space:]]}"}" ;;
         *) break ;;
       esac

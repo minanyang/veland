@@ -19,7 +19,7 @@ const userOwn = {
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
-const bareGrants = ["cutter-worktree *"]
+const bareGrants = ["cutter-worktree *", "cutter-land *"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 

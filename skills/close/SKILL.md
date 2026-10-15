@@ -3,7 +3,12 @@ name: close
 description: Land a ticket that /cutter:work finished — rebase it onto the current base, verify again, then open a PR, merge it, or merge locally, as the project configures; remove the worktree once merged. Use when the user runs /cutter:close <id>.
 disable-model-invocation: true
 allowed-tools:
-  - Bash(cutter-land *)
+  - Bash(cutter-land check *)
+  - Bash(cutter-land rebase *)
+  - Bash(cutter-land push *)
+  - Bash(cutter-land merge *)
+  - Bash(cutter-land ff *)
+  - Bash(cutter-land pr *)
   - Bash(cutter-verify *)
   - Bash(cutter-worktree path *)
   - Bash(cutter-worktree rm *)

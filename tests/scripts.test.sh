@@ -321,6 +321,21 @@ expect "issue refuses an unknown label" 2 cutter-land issue bad
 ! grep -q 'issue create' "$tmp/stub.log" && ok "no create call for an unknown label" || bad "no create call for an unknown label"
 ln -s "$tmp/land/.cutter/drafts/thing.md" "$tmp/land/.cutter/drafts/link.md"
 expect "issue refuses a symlinked draft" 2 cutter-land issue link
+printf '# T\nLabels:\n\nb\n' >"$tmp/land/.cutter/drafts/nolabel.md"
+: >"$tmp/stub.log"
+expect "issue with an empty Labels: line" 0 cutter-land issue nolabel
+! grep -q -- '--label' "$tmp/stub.log" && ok "no --label for an empty Labels: line" || bad "no --label for an empty Labels: line"
+mv "$tmp/land/.cutter/drafts" "$tmp/drafts-elsewhere"; ln -s "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
+expect "issue refuses a draft under a symlinked drafts dir" 2 cutter-land issue thing
+rm "$tmp/land/.cutter/drafts"; mv "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
+ln "$tmp/real-body.md" "$td/pr-body.md"
+expect "pr refuses a hard-linked body" 2 cutter-land pr L1
+rm "$td/pr-body.md"; printf 'Closes #1\n' >"$td/pr-body.md"
+git remote set-url origin https://notgithub.com/acme/land.git
+: >"$tmp/stub.log"
+expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1
+expect "issue refuses a host that only contains github.com" 2 cutter-land issue thing
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host" || bad "no gh call for a look-alike host"
 unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"
 
