@@ -38,6 +38,12 @@ cfg_in() {
   ' "$file" "$1" ${2+"$2"}
 }
 
+# gate_changes <base-cfg> <cfg> — gates added (+) and removed (-) in <cfg> against <base-cfg>; an empty or missing base lists every gate as added.
+gate_changes() {
+  gate_set() { [ -s "$1" ] && cfg_in "$1" gates | sed '/^$/d' | sort -u; }
+  comm -3 <(gate_set "$1") <(gate_set "$2") | awk -F'\t' '{ print ($1 == "" ? "  + " $2 : "  - " $1) }'
+}
+
 check_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid ticket id '$1' (letters, digits, . _ -)"
 }
