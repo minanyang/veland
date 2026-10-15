@@ -33,7 +33,7 @@ Work out the id from the argument:
 | an id that has `.cutter/<id>/` | that id | already there |
 | words describing a task | a short kebab-case slug of it, ≤ 30 characters | the user's words |
 
-If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, show it and ask for approval or changes. Otherwise Step 1.
+If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, show it, and `.cutter/<id>/comment.md` verbatim when there is one, and ask for approval or changes; on approval, continue as at the end of Step 1. Otherwise Step 1.
 
 ## Step 1 — Plan, then stop
 
@@ -73,13 +73,13 @@ Decisions the grill did not settle with the user, each with the answer taken.
 What a reader might expect here but this ticket does not do.
 ```
 
-Show the plan, and `comment.md` verbatim when there is one, and **stop**. On approval, post the comment first — it is public, and the user has now seen it:
+Show the plan, and `comment.md` verbatim when there is one, and **stop**. On approval, when `comment.md` exists, post it first — it is public, and the user has now seen it:
 
 ```bash
 cutter-land comment <id>
 ```
 
-then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
+It renames `comment.md` to `comment.posted.md`, so a comment is never posted twice. Then set `Status: approved` and continue (or end, if the user wants a fresh session for the implementation).
 
 ## Step 2 — Worktree
 
