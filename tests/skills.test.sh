@@ -1,7 +1,9 @@
 #!/bin/bash
 # The skills' `allowed-tools` must cover every command their fenced bash blocks run, and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
+# Creating an issue and posting a comment are public writes: never granted, so they always prompt.
 # open and work must load the shared references/grill.md (beside the skills directory).
+# The skills and review agents that report on work must carry the verify-first rule.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
 SKILLS_DIR="${SKILLS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/skills}"
@@ -15,12 +17,13 @@ const bad = (m) => { console.log(`FAIL  ${m}`); fail = 1 }
 // Commands left to the user's own permissions, per skill (prefix of the placeholder-normalised line).
 const userOwn = {
   close: [],
-  work: ["git -C X add ", "git -C X commit "],
-  open: ["gh api graphql "],
+  work: ["git -C X add ", "git -C X commit ", "cutter-land comment "],
+  open: ["gh api graphql ", "cutter-land issue "],
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
 const bareGrants = ["cutter-worktree *", "cutter-land *"]
+const publicWrites = ["cutter-land issue", "cutter-land comment"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 
@@ -40,6 +43,7 @@ for (const skill of Object.keys(userOwn)) {
     if (toks.slice(0, -1).some((t) => t.includes("*")) || (toks.at(-1).includes("*") && toks.at(-1) !== "*"))
       bad(`${skill}: ${e} has a * that is not the last token`)
     if (bareGrants.includes(body) || forbidden.some((f) => body === f || body.startsWith(f + " "))) bad(`${skill}: ${e} is a forbidden grant`)
+    if (publicWrites.some((w) => body === w || body.startsWith(w + " "))) bad(`${skill}: ${e} grants a public write, which must always prompt`)
     bodies.push(body)
   }
   if (entries.length) ok(`${skill}: entries are well-formed and safe`)
@@ -64,5 +68,14 @@ fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.
 for (const skill of ["open", "work"])
   fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8").includes("`references/grill.md`")
     ? ok(`${skill}: loads references/grill.md`) : bad(`${skill}: does not load references/grill.md`)
+
+const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
+  "Only when a check is impossible, say so, naming what was tried and why it cannot be checked."
+for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/code-review/SKILL.md",
+  "skills/code-review-branch/SKILL.md", "agents/code-reviewer.md", "agents/security-reviewer.md"]) {
+  const file = `${dir}/../${f}`
+  fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(rule)
+    ? ok(`${f}: carries the verify-first rule`) : bad(`${f}: lost the verify-first rule`)
+}
 process.exit(fail)
 JS

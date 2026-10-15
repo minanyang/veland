@@ -542,7 +542,7 @@ expect "pr refuses a symlinked body" 2 cutter-land pr L1
 [ ! -s "$tmp/stub.log" ] && ok "no call for refused pr" || bad "no call for refused pr"
 rm "$td/pr-body.md"
 
-printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n' >"$tmp/land/.cutter/drafts/thing.md"
+printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$tmp/land/.cutter/drafts/thing.md"
 STUB_LABELS=$'bug\nui\nother'
 export STUB_LABELS
 : >"$tmp/stub.log"
@@ -551,19 +551,87 @@ grep -qE -- '^issue create --repo github.com/acme/land --title Add the thing --b
 expect "issue rejects a path slug" 2 cutter-land issue ../x
 expect "issue rejects a slash slug" 2 cutter-land issue a/b
 expect "issue rejects extra arguments" 2 cutter-land issue thing --label x
-printf '# T\nLabels: bug, nope\n\nb\n' >"$tmp/land/.cutter/drafts/bad.md"
+printf '# T\nLabels: bug, nope\n\nb\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$tmp/land/.cutter/drafts/bad.md"
 : >"$tmp/stub.log"
 expect "issue refuses an unknown label" 2 cutter-land issue bad
 ! grep -q 'issue create' "$tmp/stub.log" && ok "no create call for an unknown label" || bad "no create call for an unknown label"
 ln -s "$tmp/land/.cutter/drafts/thing.md" "$tmp/land/.cutter/drafts/link.md"
 expect "issue refuses a symlinked draft" 2 cutter-land issue link
-printf '# T\nLabels:\n\nb\n' >"$tmp/land/.cutter/drafts/nolabel.md"
+printf '# T\nLabels:\n\nb\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$tmp/land/.cutter/drafts/nolabel.md"
 : >"$tmp/stub.log"
 expect "issue with an empty Labels: line" 0 cutter-land issue nolabel
 ! grep -q -- '--label' "$tmp/stub.log" && ok "no --label for an empty Labels: line" || bad "no --label for an empty Labels: line"
 mv "$tmp/land/.cutter/drafts" "$tmp/drafts-elsewhere"; ln -s "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
 expect "issue refuses a draft under a symlinked drafts dir" 2 cutter-land issue thing
 rm "$tmp/land/.cutter/drafts"; mv "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
+# issue: no-form drafts need numbered criteria and no banned phrase; forms add required sections
+dr="$tmp/land/.cutter/drafts"
+refuse() { # <description> <expected text in the message> <slug>
+  : >"$tmp/stub.log"
+  expect "$1" 2 cutter-land issue "$3"
+  grep -qF -- "$2" "$tmp/out" && ok "$1: names '$2'" || { bad "$1: names '$2'"; cat "$tmp/out"; }
+  ! grep -q 'issue create' "$tmp/stub.log" && ok "$1: no create call" || bad "$1: no create call"
+}
+printf '# T\n\n## Context\nb\n' >"$dr/nocrit.md"
+refuse "issue refuses a draft without a criteria section" 'Acceptance criteria' nocrit
+printf '# T\n\n## Acceptance criteria\nsome prose\n' >"$dr/nobox.md"
+refuse "issue refuses a criteria section without a checkbox" 'no checkbox criterion' nobox
+printf '# T\n\n## Acceptance criteria\n- [ ] AC1 — fine\n- [ ] it exists\n' >"$dr/noac.md"
+refuse "issue refuses a criterion without AC<n>" 'line 5' noac
+printf '# T\n\n## Acceptance criteria\n- [ ] AC1 it exists\n' >"$dr/nodash.md"
+refuse "issue refuses AC<n> without a dash" 'line 4' nodash
+printf '# T\n\n## Acceptance criteria\n- [ ] AC1 — a [ ] AC2 — b\n' >"$dr/two.md"
+refuse "issue refuses two checkboxes on one line" 'two checkboxes' two
+while IFS= read -r p; do
+  case "$p" in ''|'#'*) continue ;; esac
+  printf '# T\n\nIt is %s.\n\n## Acceptance criteria\n- [ ] AC1: ok\n' "$p" | tr '[:lower:]' '[:upper:]' | sed '1s/.*/# T/' >"$dr/banned.md"
+  refuse "issue refuses the banned phrase '$p' in any case" "line 3: banned phrase \"$p\"" banned
+done <"$BIN/../references/banned-phrases.txt"
+printf '# T\n\n`handle edge cases` and\n```\netc.\n```\n\n## Acceptance criteria\n- [ ] AC1: ok\n- [ ] AC2 – ok\n- [x] AC3 - ok\n' >"$dr/code.md"
+: >"$tmp/stub.log"
+expect "issue ignores banned phrases in code and accepts every dash" 0 cutter-land issue code
+printf '# T\n\nappropriately, inappropriate, /etc/hosts and TBDs\n\n## Acceptance criteria\n- [ ] AC1: ok\n' >"$dr/word.md"
+expect "issue matches banned phrases on word boundaries" 0 cutter-land issue word
+
+# with the repo's own forms
+mkdir -p "$tmp/land/.github/ISSUE_TEMPLATE"
+cp "$BIN"/../.github/ISSUE_TEMPLATE/*.yml "$tmp/land/.github/ISSUE_TEMPLATE/"
+refuse "issue refuses a draft without Form: when the repo has forms" 'Form:' thing
+printf '# T\nForm: nope.yml\n\nb\n' >"$dr/noform.md"
+refuse "issue refuses a Form: that is not in the repo" 'line 2' noform
+printf '# T\nForm: ../bug.yml\n\nb\n' >"$dr/pathform.md"
+refuse "issue refuses a Form: with a path" 'line 2' pathform
+printf '# T\nForm: config.yml\n\nb\n' >"$dr/cfgform.md"
+: >"$tmp/stub.log"
+expect "issue with Form: config.yml has no required fields to satisfy" 2 cutter-land issue cfgform
+bugbody() { # <what> <steps> <expected> <version> <criteria>
+  printf '# T\nLabels: bug\nForm: bug.yml\n\n### What happens\n%s\n\n### Steps to reproduce\n%s\n\n### Expected\n%s\n\n### Version / commit\n%s\n\n### Acceptance criteria\n%s\n' "$@"
+}
+bugbody 'it breaks' '1. run' 'it holds' 'abc123' '- [ ] AC1 — it holds' >"$dr/bugok.md"
+: >"$tmp/stub.log"
+expect "issue accepts a draft filled per bug.yml" 0 cutter-land issue bugok
+grep -q 'issue create' "$tmp/stub.log" && ok "bug.yml draft is created" || bad "bug.yml draft is created"
+bugbody 'it breaks' '1. run' 'it holds' 'abc123' '- [ ] AC1 — it holds' | grep -v '^### Expected' >"$dr/bugmiss.md"
+refuse "issue refuses a draft missing a required section" '"Expected"' bugmiss
+bugbody 'it breaks' '1. run' 'it holds' '_No response_' '- [ ] AC1 — it holds' >"$dr/bugnores.md"
+refuse "issue refuses a _No response_ required section" 'Version / commit' bugnores
+bugbody '' '1. run' 'it holds' 'abc123' '- [ ] AC1 — it holds' >"$dr/bugempty.md"
+refuse "issue refuses an empty required section" 'What happens' bugempty
+bugbody 'it breaks' '1. run' 'it holds' 'abc123' '- [ ] it holds' >"$dr/bugac.md"
+refuse "issue refuses an unnumbered criterion in a form" 'lacks' bugac
+printf '# T\nLabels: enhancement\nForm: feature.yml\n\n### Problem\nneed\n\n### Proposed behaviour\ndo\n\n### Acceptance criteria\n- [ ] AC1 — done\n' >"$dr/featok.md"
+: >"$tmp/stub.log"
+STUB_LABELS=$'enhancement' expect "issue accepts a draft filled per feature.yml, optional fields absent" 0 cutter-land issue featok
+printf '# T\nForm: feature.yml\n\n### Problem\nneed\n\n### Acceptance criteria\n- [ ] AC1 — done\n' >"$dr/featmiss.md"
+refuse "issue refuses feature.yml without Proposed behaviour" 'Proposed behaviour' featmiss
+printf 'body:\n  - type: textarea\n    attributes: {label: X}\n' >"$tmp/land/.github/ISSUE_TEMPLATE/flow.yml"
+printf '# T\nForm: flow.yml\n\nb\n' >"$dr/flow.md"
+refuse "issue refuses a form in flow style, naming it" 'flow.yml' flow
+printf 'labels: [bug, "triage"]\nbody:\n  - type: textarea\n    attributes:\n      label: X\n    validations:\n      required: true\n' >"$tmp/land/.github/ISSUE_TEMPLATE/flowlabels.yml"
+printf '# T\nForm: flowlabels.yml\n\n### X\nx\n' >"$dr/flowlabels.md"
+: >"$tmp/stub.log"
+expect "issue reads a form whose labels are a flow list" 0 cutter-land issue flowlabels
+rm -r "$tmp/land/.github"
 ln "$tmp/real-body.md" "$td/pr-body.md"
 expect "pr refuses a hard-linked body" 2 cutter-land pr L1
 rm "$td/pr-body.md"; printf 'Closes #1\n' >"$td/pr-body.md"

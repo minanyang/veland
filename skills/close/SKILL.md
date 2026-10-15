@@ -105,3 +105,4 @@ What landed and where (PR URL or base commit), the final verify table, what `syn
 - Never resolve a rebase conflict by dropping commits or `--skip`.
 - Never remove a worktree before its branch is merged.
 - Never merge in `pr` mode — that is the human's click.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.

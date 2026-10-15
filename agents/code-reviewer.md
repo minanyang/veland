@@ -148,3 +148,4 @@ The truly destructive Bash commands (`rm -rf`, `git push --force`, `git reset --
 - Never silently expand scope. If you notice something out of the review scope (security, design, infra), flag it in **Cross-cutting observations** with a hand-off pointer; don't investigate it unprompted.
 - Never review work *you* produced in **this same agent invocation** (e.g. after a `SendMessage` resume). Reviewing a sibling agent's or the parent session's just-produced work **is** the intended cold-context pattern — your context is fresh regardless of what happened upstream. The misuse to refuse is "resume me and review what I just wrote".
 - If the guard script blocks a command you genuinely need, do **not** try to bypass by rephrasing. Surface it in **Blockers / open questions** and stop.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.
