@@ -203,7 +203,10 @@ git remote add origin "$tmp/github.com/land.git" && git push -q -u origin main
 cat >"$tmp/stub/gh" <<'STUB'
 #!/bin/bash
 echo "$*" >>"$STUB_LOG"
-case "$1 $2" in "pr view"|"mr view") echo "$STUB_VIEW" ;; esac
+case "$1 $2" in
+  "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
+  "label list") printf '%s\n' "${STUB_LABELS-}" ;;
+esac
 exit 0
 STUB
 cp "$tmp/stub/gh" "$tmp/stub/glab"; chmod +x "$tmp/stub/gh" "$tmp/stub/glab"
@@ -264,6 +267,61 @@ git remote set-url origin "$tmp/gitlab.com/land.git"
 : >"$tmp/stub.log"
 expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
 grep -qxF 'mr merge feat/L1 --squash --yes --sha '"$lwsha" "$tmp/stub.log" && ok "glab called with mr merge <branch> --squash --yes --sha <sha>" || bad "glab called with mr merge <branch> --squash --yes --sha <sha>"
+git remote set-url origin "$tmp/github.com/land.git"
+
+# pr / issue: argv is built from files under .cutter/ and origin alone
+land_log() { grep -qxF -- "$1" "$tmp/stub.log" && ok "$2" || { bad "$2"; cat "$tmp/stub.log"; }; }
+mkdir -p "$tmp/land/.cutter/L1" "$tmp/land/.cutter/drafts"
+td="$(cd "$tmp/land/.cutter/L1" && pwd -P)"
+git remote set-url origin git@github.com:acme/land.git
+expect "pr refuses a missing title and body" 2 cutter-land pr L1
+printf 'feat: the feature\nignored second line\n' >"$td/pr-title"
+expect "pr refuses a missing body" 2 cutter-land pr L1
+printf 'Closes #1\n' >"$td/pr-body.md"
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr creates via gh" 0 cutter-land pr L1
+land_log "pr create --repo acme/land --base main --head feat/L1 --title feat: the feature --body-file $td/pr-body.md" "gh pr create argv"
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN" expect "pr updates via gh" 0 cutter-land pr L1
+land_log "pr edit feat/L1 --repo acme/land --body-file $td/pr-body.md" "gh pr edit argv"
+: >"$tmp/stub.log"
+STUB_VIEW="develop OPEN" expect "pr refuses an open PR into another base" 2 cutter-land pr L1
+! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a wrong base" || bad "no edit or create for a wrong base"
+git remote set-url origin https://gitlab.example.com/grp/sub/land.git
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr creates via glab" 0 cutter-land pr L1
+land_log "mr create -R https://gitlab.example.com/grp/sub/land --target-branch main --source-branch feat/L1 --title feat: the feature --description Closes #1 --yes" "glab mr create argv"
+: >"$tmp/stub.log"
+STUB_VIEW='{"target_branch":"main","state":"opened"}' expect "pr updates via glab" 0 cutter-land pr L1
+land_log "mr update feat/L1 -R https://gitlab.example.com/grp/sub/land --description Closes #1" "glab mr update argv"
+git remote set-url origin git@github.com:acme/land.git
+: >"$tmp/stub.log"
+expect "pr rejects extra arguments" 2 cutter-land pr L1 --fill
+expect "pr rejects a bad id" 2 cutter-land pr '../x'
+: >"$td/pr-title"
+expect "pr refuses an empty title" 2 cutter-land pr L1
+printf 'feat: the feature\n' >"$td/pr-title"
+mv "$td/pr-body.md" "$tmp/real-body.md"; ln -s "$tmp/real-body.md" "$td/pr-body.md"
+expect "pr refuses a symlinked body" 2 cutter-land pr L1
+[ ! -s "$tmp/stub.log" ] && ok "no call for refused pr" || bad "no call for refused pr"
+rm "$td/pr-body.md"
+
+printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n' >"$tmp/land/.cutter/drafts/thing.md"
+STUB_LABELS=$'bug\nui\nother'
+export STUB_LABELS
+: >"$tmp/stub.log"
+expect "issue create" 0 cutter-land issue thing
+grep -qE -- '^issue create --repo acme/land --title Add the thing --body-file .+ --label bug --label ui --type Bug$' "$tmp/stub.log" && ok "gh issue create argv" || bad "gh issue create argv"
+expect "issue rejects a path slug" 2 cutter-land issue ../x
+expect "issue rejects a slash slug" 2 cutter-land issue a/b
+expect "issue rejects extra arguments" 2 cutter-land issue thing --label x
+printf '# T\nLabels: bug, nope\n\nb\n' >"$tmp/land/.cutter/drafts/bad.md"
+: >"$tmp/stub.log"
+expect "issue refuses an unknown label" 2 cutter-land issue bad
+! grep -q 'issue create' "$tmp/stub.log" && ok "no create call for an unknown label" || bad "no create call for an unknown label"
+ln -s "$tmp/land/.cutter/drafts/thing.md" "$tmp/land/.cutter/drafts/link.md"
+expect "issue refuses a symlinked draft" 2 cutter-land issue link
+unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"
 
 # ff: local mode
