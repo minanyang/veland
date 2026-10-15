@@ -1,0 +1,80 @@
+#!/bin/bash
+# Build a cold reviewer's starting material in one place, so the review opens with one Read
+# and one parallel batch instead of many one-slice-per-turn reads.
+#
+#   cutter-review-packet <id>
+#
+# Writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles excluded)
+# and .cutter/<id>/review-packet.md (tree identity, convention files, changed files with
+# line counts, stat, commits, the last verify summary).
+#
+# The packet holds only what the tree says. It never carries the implementer's report or a
+# summary of intent: the reviewer must not have them.
+
+set -euo pipefail
+# shellcheck source=../scripts/lib.sh
+source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
+
+id="${1:-}"; [ -n "$id" ] || die "usage: cutter-review-packet <id>"
+check_id "$id"
+path="$(wt_path "$id")"
+dir="$(task_dir "$id")"
+mkdir -p "$dir"
+base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
+
+excludes=(':(exclude)pnpm-lock.yaml' ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)bun.lock' ':(exclude)bun.lockb')
+while IFS= read -r g; do [ -n "$g" ] && excludes+=(":(exclude)$g"); done < <(cfg generated)
+
+diff_file="$dir/review.diff"
+index="$dir/review-packet.md"
+git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
+
+{
+  echo "# Review packet — $id"
+  echo
+  echo "- worktree: \`$path\`"
+  echo "- branch: \`$(git -C "$path" rev-parse --abbrev-ref HEAD)\` at \`$(git -C "$path" rev-parse --short HEAD)\`"
+  echo "- base: \`$(base_ref)\`, merge base \`${base:0:9}\`"
+  echo "- uncommitted paths: $(git -C "$path" status --porcelain | wc -l | tr -d ' ') (the diff is committed work only)"
+  echo
+  echo "## Read these first, in one message"
+  echo
+  echo "- \`$diff_file\` — the full diff ($(wc -l <"$diff_file" | tr -d ' ') lines)"
+  [ -f "$dir/plan.md" ] && echo "- \`$dir/plan.md\` — what the ticket asks for"
+  for f in CLAUDE.md AGENTS.md; do [ -f "$path/$f" ] && echo "- \`$path/$f\`"; done
+  if [ -d "$path/.claude/rules" ]; then
+    for f in "$path"/.claude/rules/*.md; do [ -f "$f" ] && echo "- \`$f\`"; done
+  fi
+  echo
+  echo "## Changed files — read whole, batched in parallel"
+  echo
+  echo "| status | lines | path |"
+  echo "|---|---|---|"
+  git -C "$path" diff --name-status --no-renames "$base" HEAD -- . "${excludes[@]}" | while IFS=$'\t' read -r st f; do
+    if [ "$st" = D ]; then echo "| D | — | \`$f\` (deleted) |"
+    else echo "| $st | $(wc -l <"$path/$f" | tr -d ' ') | \`$path/$f\` |"; fi
+  done
+  echo
+  echo "## Stat (generated files and lockfiles included here, excluded from the diff)"
+  echo
+  echo '```'
+  git -C "$path" diff --stat "$base" HEAD
+  echo '```'
+  echo
+  echo "## Commits"
+  echo
+  echo '```'
+  git -C "$path" log --oneline "$base"..HEAD
+  echo '```'
+  if [ -f "$dir/verify/summary.txt" ]; then
+    echo
+    echo "## Last cutter-verify run — gates already ran; do not re-run them"
+    echo
+    echo '```'
+    cat "$dir/verify/summary.txt"
+    echo '```'
+  fi
+} >"$index"
+
+say "$index"
+say "  diff: $(wc -l <"$diff_file" | tr -d ' ') lines · changed files: $(git -C "$path" diff --name-only "$base" HEAD -- . "${excludes[@]}" | wc -l | tr -d ' ')"

@@ -1,0 +1,145 @@
+#!/bin/bash
+# Prove that a ticket's tests test the ticket: they must go red without the change.
+#
+#   cutter-red-proof <id>
+#
+# "The string appears in a test" is not "the string is tested". A test that never imports
+# the unit it names, or asserts a constant equals itself, stays green whatever the
+# implementation does. This asks the question mechanically, before the review:
+#
+#   1. take the test files the branch added or modified (vs its merge base),
+#   2. put every OTHER file the branch touched back to the merge base,
+#   3. run only those test files,
+#   4. restore the tree to HEAD.
+#
+# Red is the pass. A changed test file with zero failing tests is a finding; in a test file
+# the branch ADDED, every test that still passes is listed. A modified test file whose diff
+# adds no test case (fixture / mock / comment edits) is expected to stay green and is
+# reported as `note`. Not reverted: test helpers and fixtures, package.json and lockfiles
+# (dependencies are not reinstalled).
+#
+# Runners: jest, vitest, else `node --test`. Other stacks exit 2 ("unsupported").
+# The worktree must be clean. The tree is always restored on exit, and the ticket lock is
+# shared with cutter-verify.
+# Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run.
+
+set -uo pipefail
+# shellcheck source=../scripts/lib.sh
+source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
+
+id="${1:-}"; [ -n "$id" ] || die "usage: cutter-red-proof <id>"
+check_id "$id"
+path="$(wt_path "$id")"
+[ -z "$(git -C "$path" status --porcelain)" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
+[ -f "$path/package.json" ] || die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) and this worktree has no package.json"
+base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
+
+is_test()   { [[ "$1" =~ \.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$ ]]; }
+is_helper() { [[ "$1" =~ (^|/)(__tests__|__mocks__|test|tests|fixtures|e2e)/ || "$1" =~ \.(stub|mock|fixture)\. ]]; }
+is_pinned() { [[ "$1" =~ (^|/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$ ]]; }
+adds_case() { git -C "$path" diff "$base" HEAD -- "$1" | grep -qE '^\+.*\b(it|test|describe)(\.(each|only|skip|concurrent))?\('; }
+
+tests=(); added_tests=(); no_case=(); revert=(); remove=()
+while IFS=$'\t' read -r status file; do
+  [ -n "$file" ] || continue
+  if is_test "$file"; then
+    [ "$status" = D ] && continue
+    tests+=("$file")
+    if [ "$status" = A ]; then added_tests+=("$file"); elif ! adds_case "$file"; then no_case+=("$file"); fi
+  elif is_helper "$file" || is_pinned "$file"; then
+    continue
+  elif [ "$status" = A ]; then
+    remove+=("$file")
+  else
+    revert+=("$file")
+  fi
+done < <(git -C "$path" diff --name-status --no-renames "$base" HEAD)
+
+if [ ${#tests[@]} -eq 0 ]; then
+  say "$id: the branch adds or modifies no test file — nothing to prove."
+  say "  (If the plan names behaviour to verify, that is itself a finding for the reviewer.)"
+  exit 0
+fi
+if [ $(( ${#revert[@]} + ${#remove[@]} )) -eq 0 ]; then
+  say "$id: the branch changes only tests and test helpers — there is no implementation to take away."
+  exit 0
+fi
+
+out="$(task_dir "$id")/red-proof"
+mkdir -p "$out"
+take_lock "$id"
+restore() {
+  git -C "$path" restore --source=HEAD --staged --worktree -- . 2>/dev/null
+  release_lock
+  [ -z "$(git -C "$path" status --porcelain)" ] || echo "!! the worktree did NOT return to HEAD cleanly — inspect: git -C $path status" >&2
+}
+trap restore EXIT
+
+[ ${#revert[@]} -gt 0 ] && git -C "$path" restore --source="$base" --staged --worktree -- "${revert[@]}"
+for f in "${remove[@]:-}"; do [ -n "$f" ] && rm -f "$path/$f"; done
+
+json="$out/report.json"; log="$out/run.log"
+rm -f "$json"
+pm="$(package_manager "$path")"
+exec_cmd=("$pm" exec); [ "$pm" = npm ] && exec_cmd=(npx --no-install)
+if ls "$path"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
+  runner=jest
+  ( cd "$path" && "${exec_cmd[@]}" jest --ci --silent --json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1
+elif ls "$path"/vitest.config.* >/dev/null 2>&1 || node -e 'const p = require(process.argv[1]); process.exit({ ...p.dependencies, ...p.devDependencies }.vitest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
+  runner=vitest
+  ( cd "$path" && "${exec_cmd[@]}" vitest run --reporter=json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1
+else
+  runner=node-test
+  : >"$log"
+  printf '{"testResults":[' >"$json"; sep=''
+  for t in "${tests[@]}"; do
+    ( cd "$path" && node --test "$t" ) >>"$log" 2>&1 && st=passed || st=failed
+    printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
+  done
+  printf ']}' >>"$json"
+fi
+
+say "$id · red-proof against merge base ${base:0:9} · runner: $runner"
+say "  reverted ${#revert[@]} file(s), removed ${#remove[@]} added file(s), ran ${#tests[@]} changed test file(s)"
+say ""
+
+[ -s "$json" ] || { tail -20 "$log" >&2; die "the runner produced no report — see $log"; }
+
+ADDED="$(printf '%s\n' "${added_tests[@]:-}")" NOCASE="$(printf '%s\n' "${no_case[@]:-}")" node - "$json" "$path" "${tests[@]}" <<'NODE'
+const [, , jsonPath, root, ...expected] = process.argv
+const path = require('path')
+const added = new Set((process.env.ADDED || '').split('\n').filter(Boolean))
+const noCase = new Set((process.env.NOCASE || '').split('\n').filter(Boolean))
+const report = JSON.parse(require('fs').readFileSync(jsonPath, 'utf8'))
+const byFile = new Map()
+for (const r of report.testResults || []) byFile.set(path.relative(root, r.name), r)
+let green = 0, note = 0
+for (const file of expected) {
+  const r = byFile.get(file)
+  if (!r) { console.log(`RED    ${file}\n         did not load at all without the change`); continue }
+  const tests = r.assertionResults || []
+  const failed = tests.filter((t) => t.status === 'failed')
+  const passed = tests.filter((t) => t.status === 'passed')
+  const red = r.status === 'failed' || failed.length > 0
+  if (!red) {
+    if (noCase.has(file)) {
+      note++
+      console.log(`note   ${file}\n         modified without adding a test case — ${passed.length} test(s) still pass, as expected`)
+      continue
+    }
+    green++
+    console.log(`GREEN  ${file}\n         ${passed.length} test(s) pass with the implementation reverted — this file does not test the change`)
+    continue
+  }
+  const why = (failed[0]?.failureMessages?.[0] || r.message || '').split('\n').find((l) => l.trim()) || ''
+  if (!tests.length) { console.log(`RED    ${file}\n         the file failed without the change (per-test results not available from this runner — see the run log)`); continue }
+  console.log(`RED    ${file}   ${failed.length} failed / ${passed.length} passed\n         first error: ${why.trim().slice(0, 160)}`)
+  if (added.has(file) && passed.length) {
+    console.log(`         new tests that pass WITHOUT the change (${passed.length}):`)
+    for (const t of passed.slice(0, 20)) console.log(`           · ${t.fullName || t.title}`)
+  }
+}
+console.log()
+console.log(green ? `${green} changed test file(s) stayed GREEN without the change.` : `Every test file that adds a case went red without the change.${note ? ` (${note} fixture-only edit(s) noted.)` : ''}`)
+process.exit(green ? 1 : 0)
+NODE

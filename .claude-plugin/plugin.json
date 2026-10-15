@@ -1,0 +1,10 @@
+{
+  "name": "cutter",
+  "version": "0.1.0",
+  "description": "A crew of AI agents that ships your tickets — planned, verified, reviewed.",
+  "author": { "name": "Mian Yang" },
+  "homepage": "https://github.com/minanyang/cutter",
+  "repository": "https://github.com/minanyang/cutter",
+  "license": "MIT",
+  "keywords": ["claude-code", "workflow", "code-review", "worktree", "agents"]
+}

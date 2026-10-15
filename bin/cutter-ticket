@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Print a ticket as Markdown, for /cutter:work to turn into a plan.
+//
+//   cutter-ticket github <number | issue URL>     uses `gh` (run `gh auth login` once)
+
+const { execFileSync } = require('node:child_process')
+
+const [source, ref] = process.argv.slice(2)
+const die = (msg, code = 2) => {
+  process.stderr.write(`cutter-ticket: ${msg}\n`)
+  process.exit(code)
+}
+if (!source || !ref) die('usage: cutter-ticket github <number|url>')
+
+if (source === 'github') github(ref)
+else die(`unknown source '${source}' (github)`)
+
+function github(ref) {
+  let raw
+  try {
+    raw = execFileSync('gh', ['issue', 'view', ref, '--json', 'number,title,body,url,state,labels,issueType,comments'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (e) {
+    const err = String(e.stderr || e.message).trim()
+    if (e.code === 'ENOENT') die('`gh` is not installed: https://cli.github.com')
+    if (/auth|login/i.test(err)) die('`gh` is not logged in: run `gh auth login`')
+    die(err)
+  }
+  const i = JSON.parse(raw)
+  const out = [`# ${i.title}`, '', `- source: GitHub issue #${i.number} (${i.state.toLowerCase()})`, `- url: ${i.url}`]
+  if (i.issueType) out.push(`- type: ${i.issueType.name}`)
+  if (i.labels.length) out.push(`- labels: ${i.labels.map((l) => l.name).join(', ')}`)
+  out.push('', i.body.trim() || '(no description)')
+  if (i.comments.length) {
+    out.push('', '## Comments')
+    for (const c of i.comments) out.push('', `**${c.author.login}** (${c.createdAt.slice(0, 10)}):`, '', c.body.trim())
+  }
+  process.stdout.write(out.join('\n') + '\n')
+}
+

@@ -1,0 +1,144 @@
+#!/bin/bash
+# One git worktree per ticket.
+#
+#   cutter-worktree init [<id>]
+#   cutter-worktree add  <id> [--type feat] [--slug short-name] [--no-setup]
+#   cutter-worktree list
+#   cutter-worktree path <id>
+#   cutter-worktree rm   <id> [--force]
+#
+# `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
+# .cutter/ (or .cutter/<id>/, created) — run it before writing anything under .cutter/.
+# `add` cuts <type>/<id>[-<slug>] from the up-to-date base branch (config `base`, else
+# develop if origin has it, else origin's default branch), at <worktreeDir>/<id>, then runs
+# the config's `setup` command inside it (default: install dependencies when a lockfile is
+# present). Re-running `add` for an existing ticket reports the worktree and leaves it alone.
+# `rm` removes the worktree and deletes its branch only if the branch is merged
+# (`git branch -d`); an unmerged branch is kept and reported.
+
+set -euo pipefail
+# shellcheck source=../scripts/lib.sh
+source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
+
+# Has <branch> landed on the base even though git does not call it merged? True when it is an
+# ancestor of the base (a rebase dropped its already-applied commits), or when every file it
+# touched is identical on the base (a squash merge).
+landed() {
+  local base files
+  base="$(base_ref)"
+  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    git -C "$ROOT" fetch --quiet origin "$(base_branch)" || return 1
+  fi
+  git -C "$ROOT" merge-base --is-ancestor "$1" "$base" && return 0
+  files="$(git -C "$ROOT" diff --name-only "$base...$1")"
+  [ -n "$files" ] || return 1
+  printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git -C "$ROOT" diff --quiet "$1" "$base" --
+}
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+  init)
+    ensure_excluded
+    if [ -n "${1:-}" ]; then
+      check_id "$1"; mkdir -p "$(task_dir "$1")"; task_dir "$1"
+    else
+      mkdir -p "$ROOT/.cutter"; printf '%s\n' "$ROOT/.cutter"
+    fi
+    ;;
+
+  add)
+    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree add <id> [--type feat] [--slug name] [--no-setup]"
+    shift; check_id "$id"
+    type=feat; slug=""; setup=1
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --type) type="$2"; shift 2 ;;
+        --slug) slug="$2"; shift 2 ;;
+        --no-setup) setup=0; shift ;;
+        *) die "unknown option $1" ;;
+      esac
+    done
+    path="$(worktree_dir)/$id"
+    if [ -e "$path/.git" ]; then
+      say "exists: $path on $(git -C "$path" rev-parse --abbrev-ref HEAD)"
+      exit 0
+    fi
+    [ "$slug" = "$id" ] && slug=""
+    slug="${slug#"$id"-}"
+    branch="$type/$id${slug:+-$slug}"
+    ensure_excluded
+    mkdir -p "$(task_dir "$id")"
+    if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+      git -C "$ROOT" fetch --quiet origin "$(base_branch)" || die "could not fetch origin/$(base_branch)"
+    fi
+    start="$(base_ref)"
+    if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
+      git -C "$ROOT" worktree add --quiet "$path" "$branch"
+    else
+      # --no-track: starting from origin/<base> would otherwise make the base the branch's upstream,
+      # so a bare pull/push would hit the base and `branch -d` would judge "merged" against it.
+      git -C "$ROOT" worktree add --quiet --no-track -b "$branch" "$path" "$start"
+    fi
+    say "created: $path on $branch from $start ($(git -C "$path" rev-parse --short HEAD))"
+    if [ "$setup" = 1 ]; then
+      setup_cmd="$(cfg setup)"
+      if [ -z "$setup_cmd" ] && [ -f "$path/package.json" ]; then
+        pm="$(package_manager "$path")"
+        case "$pm" in
+          pnpm) setup_cmd="pnpm install --frozen-lockfile" ;;
+          yarn) setup_cmd="yarn install --frozen-lockfile" ;;
+          bun) setup_cmd="bun install --frozen-lockfile" ;;
+          npm) [ -f "$path/package-lock.json" ] && setup_cmd="npm ci" ;;
+        esac
+      fi
+      if [ -n "$setup_cmd" ]; then
+        log="$(task_dir "$id")/setup.log"
+        say "setup: $setup_cmd"
+        (cd "$path" && bash -c "$setup_cmd") >"$log" 2>&1 || { tail -20 "$log" >&2; die "setup failed — full log: $log"; }
+      fi
+    fi
+    ;;
+
+  list)
+    dir="$(worktree_dir)"
+    found=0
+    for p in "$dir"/*/; do
+      [ -e "$p/.git" ] || continue
+      found=1
+      p="${p%/}"
+      printf '%-24s %-40s %s uncommitted\n' "$(basename "$p")" "$(git -C "$p" rev-parse --abbrev-ref HEAD)" "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')"
+    done
+    [ "$found" = 1 ] || say "no ticket worktrees under $dir"
+    ;;
+
+  path)
+    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree path <id>"
+    check_id "$id"; wt_path "$id"
+    ;;
+
+  rm)
+    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree rm <id> [--force]"
+    check_id "$id"
+    force=""; [ "${2:-}" = --force ] && force=--force
+    path="$(wt_path "$id")"
+    branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
+    git -C "$ROOT" worktree remove $force "$path" || die "worktree has uncommitted changes; commit them or pass --force"
+    say "removed: $path"
+    if git -C "$ROOT" branch -d "$branch" >/dev/null 2>&1; then
+      say "deleted branch $branch (merged)"
+    elif landed "$branch"; then
+      git -C "$ROOT" branch -D "$branch" >/dev/null
+      say "deleted branch $branch (its changes are on $(base_ref))"
+    else
+      say "kept branch $branch (not merged into HEAD of the main checkout or $(base_ref))"
+      exit 0
+    fi
+    # A PR merged without "delete branch" leaves the pushed branch behind.
+    if git -C "$ROOT" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      git -C "$ROOT" push --quiet origin --delete "$branch" && say "deleted origin/$branch"
+    fi
+    ;;
+
+  *) die "usage: cutter-worktree init|add|list|path|rm ..." ;;
+esac
