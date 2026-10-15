@@ -1,12 +1,13 @@
 {
   "base": "main",
   "gates": [
-    "shellcheck bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
+    "shellcheck bin/cutter-land bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
     "node --check bin/cutter-ticket && node --check hooks/context-gate.js",
     "bash tests/guard-bash.test.sh",
     "bash tests/context-gate.test.sh",
     "bash tests/scripts.test.sh",
     "bash tests/red-proof-runners.test.sh",
+    "bash tests/skills.test.sh",
     "claude plugin validate ."
   ],
   "close": "pr-merge",

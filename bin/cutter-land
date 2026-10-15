@@ -1,0 +1,91 @@
+#!/bin/bash
+# The writes /cutter:close needs, each taking only a ticket id — the command line is built here,
+# so a permission rule for `cutter-land *` cannot be stretched into a force-push or a bypass.
+#
+#   cutter-land check  <id>
+#   cutter-land rebase <id>
+#   cutter-land push   <id>
+#   cutter-land merge  <id>
+#   cutter-land ff     <id>
+#
+# `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes.
+# `rebase` fetches origin and rebases the ticket branch onto origin/<base>; on a conflict it lists
+# the files and leaves the rebase for the user (never --skip).
+# `push` pushes the ticket branch, and only it, to origin; --force-with-lease only when origin
+# already has the branch. It refuses the base branch.
+# `merge` squash-merges the branch's open PR/MR (gh for github.com, glab for a GitLab host) after
+# checking that its base is the configured base. Never --admin, never the delete-branch flags.
+# `ff` (local mode) fast-forwards the base to the ticket branch; it refuses anything else.
+
+set -euo pipefail
+# shellcheck source=../scripts/lib.sh
+source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
+
+cmd="${1:-}"; id="${2:-}"
+[ $# -eq 2 ] || die "usage: cutter-land check|rebase|push|merge|ff <id>"
+check_id "$id"
+path="$(wt_path "$id")"
+branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
+base="$(base_branch)"
+has_origin() { git -C "$ROOT" remote get-url origin >/dev/null 2>&1; }
+
+case "$cmd" in
+  check)
+    dirty="$(git -C "$path" status --porcelain)"
+    if [ -n "$dirty" ]; then
+      say "uncommitted changes in $path:"; say "$dirty"; exit 1
+    fi
+    say "clean: $path"
+    ;;
+
+  rebase)
+    has_origin && { git -C "$ROOT" fetch --quiet origin "$base" || die "could not fetch origin/$base"; }
+    if git -C "$path" rebase "$(base_ref)" >/dev/null 2>&1; then
+      say "rebased $branch onto $(base_ref)"
+    else
+      say "rebase conflict — left in progress in $path; conflicting files:"
+      git -C "$path" diff --name-only --diff-filter=U
+      exit 1
+    fi
+    ;;
+
+  push)
+    [ "$branch" != "$base" ] || die "refusing to push the base branch $base"
+    has_origin || die "no origin to push to"
+    if git -C "$ROOT" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      git -C "$path" push --force-with-lease -u origin "$branch"
+    else
+      git -C "$path" push -u origin "$branch"
+    fi
+    ;;
+
+  merge)
+    has_origin || die "no origin"
+    url="$(git -C "$ROOT" remote get-url origin)"
+    case "$url" in
+      *github.com*)
+        got="$(gh pr view "$branch" --json baseRefName,state --jq '.baseRefName + " " + .state')" || die "no PR found for $branch"
+        [ "$got" = "$base OPEN" ] || die "PR of $branch is '$got', want '$base OPEN'"
+        gh pr merge "$branch" --squash
+        ;;
+      *gitlab*)
+        got="$(glab mr view "$branch" --output json | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state)')" || die "no MR found for $branch"
+        [ "$got" = "$base opened" ] || die "MR of $branch is '$got', want '$base opened'"
+        glab mr merge "$branch" --squash --yes
+        ;;
+      *) die "origin $url is neither github.com nor a GitLab host" ;;
+    esac
+    ;;
+
+  ff)
+    [ "$branch" != "$base" ] || die "the ticket branch is the base branch"
+    if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
+      git -C "$ROOT" merge --ff-only "$branch" || die "$base moved since the rebase — rebase again"
+    else
+      git -C "$ROOT" fetch --quiet . "$branch:$base" || die "$base moved since the rebase — rebase again"
+    fi
+    say "fast-forwarded $base to $(git -C "$ROOT" rev-parse --short "$base")"
+    ;;
+
+  *) die "usage: cutter-land check|rebase|push|merge|ff <id>" ;;
+esac

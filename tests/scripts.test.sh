@@ -157,6 +157,81 @@ expect "rm after a squash merge" 0 cutter-worktree rm T3
 grep -q 'deleted branch feat/T3 (its changes are on origin/main)' "$tmp/out" && ok "squash-merged branch deleted" || bad "squash-merged branch deleted"
 [ -z "$(git ls-remote --heads origin feat/T3)" ] && ok "merged remote branch deleted" || bad "merged remote branch deleted"
 
+# rm never forces: a worktree with uncommitted changes stays
+expect "worktree add T6" 0 cutter-worktree add T6 --no-setup
+echo wip >"$tmp/repo/.worktrees/T6/wip.txt"
+expect "rm refuses uncommitted changes" 2 cutter-worktree rm T6
+expect "rm --force is refused" 2 cutter-worktree rm T6 --force
+[ -e "$tmp/repo/.worktrees/T6/wip.txt" ] && ok "rm keeps the dirty worktree" || bad "rm keeps the dirty worktree"
+rm "$tmp/repo/.worktrees/T6/wip.txt"
+expect "rm T6" 0 cutter-worktree rm T6
+
+# cutter-land, on its own repo (origin path contains github.com so the host is detected)
+mkdir -p "$tmp/github.com" "$tmp/stub"
+git -c init.defaultBranch=main init -q --bare "$tmp/github.com/land.git"
+git -c init.defaultBranch=main init -q "$tmp/land"
+cd "$tmp/land" || exit 2
+git config user.email t@t; git config user.name t
+echo base >f.txt; echo one >g.txt
+git add -A && git commit -qm "init"
+git remote add origin "$tmp/github.com/land.git" && git push -q -u origin main
+cat >"$tmp/stub/gh" <<'STUB'
+#!/bin/bash
+echo "$*" >>"$STUB_LOG"
+case "$1 $2" in "pr view"|"mr view") echo "$STUB_VIEW" ;; esac
+exit 0
+STUB
+cp "$tmp/stub/gh" "$tmp/stub/glab"; chmod +x "$tmp/stub/gh" "$tmp/stub/glab"
+export STUB_LOG="$tmp/stub.log"
+cutter-worktree add L1 --no-setup >/dev/null
+lw="$tmp/land/.worktrees/L1"
+
+expect "check on a clean worktree" 0 cutter-land check L1
+echo dirty >"$lw/new.txt"
+expect "check on a dirty worktree" 1 cutter-land check L1
+grep -q 'new.txt' "$tmp/out" && ok "check lists the files" || bad "check lists the files"
+rm "$lw/new.txt"
+expect "land rejects extra arguments" 2 cutter-land push L1 --force
+expect "land rejects unknown subcommand" 2 cutter-land nuke L1
+
+echo feature >"$lw/feature.txt"; git -C "$lw" add -A; git -C "$lw" commit -qm "feat: feature"
+expect "push first time" 0 cutter-land push L1
+[ -n "$(git ls-remote --heads origin feat/L1)" ] && ok "branch on origin" || bad "branch on origin"
+# the base moves, then the branch is rebased and pushed again
+echo moved >>f.txt; git commit -qam "chore: move base"; git push -q origin main
+expect "rebase onto the moved base" 0 cutter-land rebase L1
+git -C "$lw" merge-base --is-ancestor origin/main HEAD && ok "branch contains the new base" || bad "branch contains the new base"
+expect "push after a rebase (lease)" 0 cutter-land push L1
+[ "$(git ls-remote --heads origin feat/L1 | cut -f1)" = "$(git -C "$lw" rev-parse HEAD)" ] && ok "origin has the rebased branch" || bad "origin has the rebased branch"
+mkdir -p .claude && echo '{"base":"feat/L1"}' >.claude/cutter.json
+expect "push refuses the base branch" 2 cutter-land push L1
+rm -r .claude
+
+# merge: only `pr merge <branch> --squash`, and only into the configured base
+: >"$tmp/stub.log"
+export PATH="$tmp/stub:$PATH"
+STUB_VIEW="develop OPEN" expect "merge refuses a PR into another base" 2 cutter-land merge L1
+! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
+STUB_VIEW="main OPEN" expect "merge" 0 cutter-land merge L1
+grep -qxF 'pr merge feat/L1 --squash' "$tmp/stub.log" && ok "gh called with exactly pr merge <branch> --squash" || bad "gh called with exactly pr merge <branch> --squash"
+git remote set-url origin "$tmp/gitlab.com/land.git"
+: >"$tmp/stub.log"
+expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
+grep -qxF 'mr merge feat/L1 --squash --yes' "$tmp/stub.log" && ok "glab called with exactly mr merge <branch> --squash --yes" || bad "glab called with exactly mr merge <branch> --squash --yes"
+git remote set-url origin "$tmp/github.com/land.git"
+
+# ff: local mode
+expect "ff fast-forwards the base" 0 cutter-land ff L1
+[ "$(git rev-parse main)" = "$(git rev-parse feat/L1)" ] && ok "base is at the ticket branch" || bad "base is at the ticket branch"
+cutter-worktree add L2 --no-setup >/dev/null
+echo two >"$tmp/land/.worktrees/L2/two.txt"; git -C "$tmp/land/.worktrees/L2" add -A; git -C "$tmp/land/.worktrees/L2" commit -qm "feat: two"
+echo more >g.txt; git commit -qam "chore: base moves"
+expect "ff refuses when the base moved" 2 cutter-land ff L2
+git checkout -q -b elsewhere
+echo again >g.txt; git commit -qam "chore: base moves on"
+expect "ff refuses (off the base) when the base moved" 2 cutter-land ff L2
+cd "$tmp/repo" || exit 2
+
 # sync-base: after a merged PR, fast-forward the main checkout's base only when that is safe
 expect "sync-base when level" 0 cutter-worktree sync-base
 grep -q 'main is up to date' "$tmp/out" && ok "level base reported up to date" || bad "level base reported up to date"

@@ -2,6 +2,22 @@
 name: close
 description: Land a ticket that /cutter:work finished — rebase it onto the current base, verify again, then open a PR, merge it, or merge locally, as the project configures; remove the worktree once merged. Use when the user runs /cutter:close <id>.
 disable-model-invocation: true
+allowed-tools:
+  - Bash(cutter-land *)
+  - Bash(cutter-verify *)
+  - Bash(cutter-worktree path *)
+  - Bash(cutter-worktree rm *)
+  - Bash(cutter-worktree sync-base)
+  - Bash(git remote get-url origin)
+  - Bash(gh auth status)
+  - Bash(gh pr view *)
+  - Bash(gh pr create *)
+  - Bash(gh pr edit *)
+  - Bash(gh issue view *)
+  - Bash(glab auth status)
+  - Bash(glab mr view *)
+  - Bash(glab mr create *)
+  - Bash(glab mr update *)
 ---
 
 # Close a ticket
@@ -16,11 +32,13 @@ disable-model-invocation: true
 
 The PR tool follows `origin`: github.com → `gh`, a GitLab host → `glab`. Any other host, or no `origin`, supports only `local`.
 
+Run one command per Bash call — no `&&`, `;` or `|` — so each call matches this skill's `allowed-tools` on its own. In `pr-merge` mode, running `/cutter:close` is the user's request to merge: state the PR URL, then merge.
+
 ## Step 0 — Take stock, stop on anything unfinished
 
 ```bash
 cutter-worktree path <id>
-git -C <worktree> status --porcelain
+cutter-land check <id>
 ```
 
 Stop and say why if any of these holds:
@@ -33,11 +51,10 @@ Stop and say why if any of these holds:
 ## Step 1 — Rebase onto the current base
 
 ```bash
-git -C <main checkout> fetch origin
-git -C <worktree> rebase origin/<base>
+cutter-land rebase <id>
 ```
 
-The base is `base` from the config, else `develop` when origin has it, else origin's default branch. On a conflict: stop, show the conflicting files, and leave the rebase for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
+The base is `base` from the config, else `develop` when origin has it, else origin's default branch. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
 
 ## Step 2 — Verify the rebased tree
 
@@ -51,17 +68,17 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 **`pr` and `pr-merge`:**
 
-1. Push: `git -C <worktree> push -u origin <branch>`. If the branch was pushed before the rebase, push with `--force-with-lease` (never plain `--force`).
+1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
 2. Open the PR against the base — unless the branch already has an open one (`gh pr view <branch> --json url,state`; a previous run that stopped before merging): then update its body if the verify result changed, and reuse it:
    - title: the ticket's title, in the repo's commit style;
    - body: the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout;
    - `gh pr create --base <base> --head <branch> --title … --body-file …`, or `glab mr create --target-branch <base> --source-branch <branch> --title … --description …`.
-3. `pr-merge` only: `gh pr merge <branch> --squash`, or `glab mr merge <branch> --squash` — without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. Then go to Step 4.
+3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. Then go to Step 4.
 4. `pr`: report the PR URL and stop. The worktree stays until the PR is merged.
 
 **`local`:**
 
-1. In the main checkout: if it is on the base branch with a clean tree, `git merge --ff-only <branch>`; otherwise `git fetch . <branch>:<base>` (fast-forward only — it refuses anything else). Either refusal means the base moved since Step 1: go back to Step 1.
+1. `cutter-land ff <id>` — fast-forward only, in the main checkout if it is on the base branch with a clean tree, otherwise by updating the base ref. A refusal means the base moved since Step 1: go back to Step 1.
 2. Go to Step 4.
 
 ## Step 4 — Clean up after the merge
@@ -84,7 +101,7 @@ What landed and where (PR URL or base commit), the final verify table, what `syn
 ## Never
 
 - Never land a branch whose rebased tree did not pass `cutter-verify`.
-- Never force-push without `--force-with-lease`, and never push the base branch in `local` mode.
+- Never force-push, and never push the base branch in `local` mode — `cutter-land push` does neither.
 - Never resolve a rebase conflict by dropping commits or `--skip`.
 - Never remove a worktree before its branch is merged.
 - Never merge in `pr` mode — that is the human's click.

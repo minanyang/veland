@@ -2,16 +2,24 @@
 name: open
 description: Open a ticket — turn an idea, a bug or an improvement into a GitHub issue grounded in the codebase, classified with the repo's own labels or issue types, ready for /cutter:work. Use when the user runs /cutter:open with something to file.
 disable-model-invocation: true
+allowed-tools:
+  - Bash(git remote get-url origin)
+  - Bash(gh auth status)
+  - Bash(gh issue list *)
+  - Bash(gh label list *)
+  - Bash(gh issue create *)
+  - Bash(cutter-worktree init)
 ---
 
 # Open a ticket
 
 `/cutter:open <what>` files one GitHub issue for later work with `/cutter:work gh-<n>`. It does not plan or implement. Opening an issue is visible to everyone who can see the repo, so it **shows the draft and waits for the user's go** before creating anything.
 
-GitHub only. Check before anything else:
+GitHub only. Run one command per Bash call — no `&&`, `;` or `|`. Check before anything else:
 
 ```bash
-git remote get-url origin && gh auth status
+git remote get-url origin
+gh auth status
 ```
 
 Stop, saying which and how to fix it, when `origin` is not on github.com, `gh` is not installed (command not found → https://cli.github.com), or not logged in (non-zero exit → `gh auth login`). Do not fall back to the web API or a browser.
