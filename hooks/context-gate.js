@@ -33,7 +33,7 @@ let warning = ''
 let file = ''
 for (let dir = path.resolve(input.cwd || process.cwd()); ; dir = path.dirname(dir)) {
   const f = path.join(dir, '.claude', 'cutter.json')
-  if (!file && fs.existsSync(f)) file = f
+  if (!file && fs.statSync(f, { throwIfNoEntry: false })?.isFile()) file = f // not a FIFO or device to block on
   if (fs.existsSync(path.join(dir, '.git'))) break
   if (path.dirname(dir) === dir) {
     file = ''

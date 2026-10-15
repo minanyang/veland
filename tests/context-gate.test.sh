@@ -66,6 +66,9 @@ check "warns on a broken config and passes" warn "/cutter:work x" "$tmp/small.js
 echo '{ "contextGate": { "maxTokens": "lots" } }' >"$tmp/proj/wt/.claude/cutter.json"
 check "warns on a non-numeric maxTokens and blocks" warn+block "/cutter:close x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
 check "does not warn on other prompts" pass "fix the bug" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
+mkdir -p "$tmp/fifo/.claude" "$tmp/fifo/.git"
+mkfifo "$tmp/fifo/.claude/cutter.json"
+check "skips a config that is not a regular file" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/fifo"
 echo '{ "contextGate": { "maxTokens": 0 } }' >"$tmp/proj/.claude/cutter.json"
 check "maxTokens 0 turns it off" pass "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj"
 if printf 'garbage' | node "$GATE" | grep -q block; then echo "FAIL  garbage input blocked"; fail=1; else echo "ok    garbage input passes"; fi

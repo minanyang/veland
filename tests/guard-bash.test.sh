@@ -45,6 +45,22 @@ check 2 'cutter-ticket github `touch /tmp/x`'
 check 2 "cutter-ticket github 7
 rm x"
 check 2 '  /opt/cutter/bin/cutter-land push gh-7 >x'
+# …also behind the wrappers and chains Claude Code strips or splits before matching a rule
+check 2 'timeout 60 cutter-ticket github 7 > tests/x.test.sh'
+check 2 'timeout -s KILL 60 cutter-ticket github 7 >x'
+check 2 'nice -n 5 cutter-ticket github 7 >x'
+check 2 'nohup cutter-ticket github 7 >x'
+check 2 'command cutter-ticket github 7 >x'
+check 2 'time cutter-ticket github 7 >x'
+check 2 'NODE_ENV=x cutter-ticket github 7 >x'
+check 2 'A=1 B=2 timeout 5 cutter-ticket github 7 >x'
+check 2 'cd .worktrees/gh-7 && cutter-ticket github 7 > x'
+check 2 'ls; cutter-ticket github 7 > x'
+check 2 'ls | cutter-ticket github 7'
+check 2 '(cutter-ticket github 7) > x'
+check 2 '{ cutter-ticket github 7; } > x'
+check 2 "ls
+cutter-ticket github 7"
 # allowed
 check 0 'rm file.txt'
 check 0 'git push origin feature'
@@ -55,6 +71,8 @@ check 0 'ls -la'
 check 0 'cutter-ticket github 7 --out .cutter/gh-7/ticket.md'
 check 0 'cutter-land push gh-7'
 check 0 'grep -rn cutter-ticket skills | head'
+check 0 'grep -rn "cutter-ticket github" skills > /tmp/hits'
+check 0 'timeout 60 cutter-verify gh-7'
 check 0 ''
 
 # unreadable input fails closed
