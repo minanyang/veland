@@ -126,6 +126,31 @@ mkdir .cutter/T1/lock
 expect "lock blocks a concurrent run" 2 cutter-verify T1
 rmdir .cutter/T1/lock
 
+# gates come from the ticket's worktree; changes against the base's list are reported
+echo '{ "gates": ["echo gate-base", "echo gate-kept"] }' >.claude/cutter.json
+git add .claude/cutter.json && git commit -qm "chore: gates" && git push -q origin main
+expect "worktree add T7" 0 cutter-worktree add T7 --no-setup
+wt7="$tmp/repo/.worktrees/T7"
+echo '{ "base": "nope", "gates": ["echo gate-kept", "echo gate-added"] }' >"$wt7/.claude/cutter.json"
+git -C "$wt7" commit -qam "chore: change gates"
+expect "verify with the worktree's gates" 0 cutter-verify T7
+s7=.cutter/T7/verify/summary.txt
+grep -q '^echo gate-added ' "$s7" && ok "gate added in the worktree runs" || bad "gate added in the worktree runs"
+! grep -q '^echo gate-base ' "$s7" && ok "gate removed in the worktree does not run" || bad "gate removed in the worktree does not run"
+grep -qxF 'gates differ from origin/main:' "$s7" && ok "difference reported against the main checkout's base" || bad "difference reported against the main checkout's base"
+grep -qxF '  + echo gate-added' "$s7" && grep -qxF '  - echo gate-base' "$s7" && ok "added and removed gates listed" || bad "added and removed gates listed"
+! grep -q 'gate-kept' <(grep '^  [+-] ' "$s7") && ok "kept gate not listed" || bad "kept gate not listed"
+echo '{ "gates": ["echo gate-base", "echo gate-kept", "echo gate-later"] }' >.claude/cutter.json
+git commit -qam "chore: base gains a gate" && git push -q origin main
+expect "verify after the base gained a gate" 0 cutter-verify T7
+! grep -q 'gate-later' "$s7" && ok "gate added on the base after the cut not listed" || bad "gate added on the base after the cut not listed"
+echo '{ "gates": ["echo gate-kept", "echo gate-base"] }' >"$wt7/.claude/cutter.json"
+git -C "$wt7" commit -qam "chore: reorder gates"
+expect "verify with reordered gates" 0 cutter-verify T7
+! grep -q '^gates differ' "$s7" && ok "same gates in another order: no report" || bad "same gates in another order: no report"
+expect "rm T7" 0 cutter-worktree rm T7
+git rm -q .claude/cutter.json && git commit -qm "chore: drop gates" && git push -q origin main
+
 # remove
 expect "rm keeps an unmerged branch" 0 cutter-worktree rm T1
 grep -q 'kept branch feat/T1-mul' "$tmp/out" && ok "unmerged branch kept" || bad "unmerged branch kept"
