@@ -11,13 +11,9 @@ allowed-tools:
   - Bash(git remote get-url origin)
   - Bash(gh auth status)
   - Bash(gh pr view *)
-  - Bash(gh pr create *)
-  - Bash(gh pr edit *)
   - Bash(gh issue view *)
   - Bash(glab auth status)
   - Bash(glab mr view *)
-  - Bash(glab mr create *)
-  - Bash(glab mr update *)
 ---
 
 # Close a ticket
@@ -101,7 +97,7 @@ What landed and where (PR URL or base commit), the final verify table, what `syn
 ## Never
 
 - Never land a branch whose rebased tree did not pass `cutter-verify`.
-- Never force-push, and never push the base branch in `local` mode — `cutter-land push` does neither.
+- Never force-push (except `cutter-land push`'s `--force-with-lease`), and never push the base branch in `local` mode.
 - Never resolve a rebase conflict by dropping commits or `--skip`.
 - Never remove a worktree before its branch is merged.
 - Never merge in `pr` mode — that is the human's click.

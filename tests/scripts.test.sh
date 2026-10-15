@@ -197,6 +197,15 @@ expect "land rejects unknown subcommand" 2 cutter-land nuke L1
 echo feature >"$lw/feature.txt"; git -C "$lw" add -A; git -C "$lw" commit -qm "feat: feature"
 expect "push first time" 0 cutter-land push L1
 [ -n "$(git ls-remote --heads origin feat/L1)" ] && ok "branch on origin" || bad "branch on origin"
+# a conflicting rebase is left in progress and lists the file
+cutter-worktree add LC --no-setup >/dev/null
+lc="$tmp/land/.worktrees/LC"
+echo ticket >"$lc/f.txt"; git -C "$lc" commit -qam "feat: ticket edits f"
+echo upstream >f.txt; git commit -qam "chore: upstream edits f"; git push -q origin main
+expect "rebase conflict" 1 cutter-land rebase LC
+grep -q 'f.txt' "$tmp/out" && ok "conflict lists the file" || bad "conflict lists the file"
+[ -e "$(git -C "$lc" rev-parse --git-path rebase-merge)" ] && ok "rebase left in progress" || bad "rebase left in progress"
+git -C "$lc" rebase --abort
 # the base moves, then the branch is rebased and pushed again
 echo moved >>f.txt; git commit -qam "chore: move base"; git push -q origin main
 expect "rebase onto the moved base" 0 cutter-land rebase L1
@@ -207,17 +216,29 @@ mkdir -p .claude && echo '{"base":"feat/L1"}' >.claude/cutter.json
 expect "push refuses the base branch" 2 cutter-land push L1
 rm -r .claude
 
+# a branch name with a leading + (a forced refspec) is refused by push and ff, origin and base untouched
+git -C "$tmp/land" branch '+feat/EVIL' main
+git -C "$tmp/land" worktree add -q "$tmp/land/.worktrees/EVIL" '+feat/EVIL'
+o_before="$(git ls-remote origin)"; b_before="$(git rev-parse main)"
+expect "push refuses a +branch" 2 cutter-land push EVIL
+expect "ff refuses a +branch" 2 cutter-land ff EVIL
+[ "$(git ls-remote origin)" = "$o_before" ] && [ "$(git rev-parse main)" = "$b_before" ] && ok "+branch left origin and base untouched" || bad "+branch left origin and base untouched"
+expect "add refuses a bad --type" 2 cutter-worktree add L9 --type '+feat' --no-setup
+expect "add refuses a bad --slug" 2 cutter-worktree add L9 --slug 'a:b' --no-setup
+expect "add refuses a slug with a slash" 2 cutter-worktree add L9 --slug 'a/b' --no-setup
+
 # merge: only `pr merge <branch> --squash`, and only into the configured base
 : >"$tmp/stub.log"
 export PATH="$tmp/stub:$PATH"
 STUB_VIEW="develop OPEN" expect "merge refuses a PR into another base" 2 cutter-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
+lwsha="$(git -C "$lw" rev-parse HEAD)"
 STUB_VIEW="main OPEN" expect "merge" 0 cutter-land merge L1
-grep -qxF 'pr merge feat/L1 --squash' "$tmp/stub.log" && ok "gh called with exactly pr merge <branch> --squash" || bad "gh called with exactly pr merge <branch> --squash"
+grep -qxF 'pr merge feat/L1 --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --squash --match-head-commit <sha>"
 git remote set-url origin "$tmp/gitlab.com/land.git"
 : >"$tmp/stub.log"
 expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
-grep -qxF 'mr merge feat/L1 --squash --yes' "$tmp/stub.log" && ok "glab called with exactly mr merge <branch> --squash --yes" || bad "glab called with exactly mr merge <branch> --squash --yes"
+grep -qxF 'mr merge feat/L1 --squash --yes --sha '"$lwsha" "$tmp/stub.log" && ok "glab called with mr merge <branch> --squash --yes --sha <sha>" || bad "glab called with mr merge <branch> --squash --yes --sha <sha>"
 git remote set-url origin "$tmp/github.com/land.git"
 
 # ff: local mode

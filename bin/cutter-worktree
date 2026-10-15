@@ -64,6 +64,8 @@ case "$cmd" in
         *) die "unknown option $1" ;;
       esac
     done
+    [[ "$type" =~ ^[a-z]+$ ]] || die "--type must match ^[a-z]+$"
+    [ -z "$slug" ] || [[ "$slug" =~ ^[A-Za-z0-9._-]+$ ]] || die "--slug must match ^[A-Za-z0-9._-]+$"
     path="$(worktree_dir)/$id"
     if [ -e "$path/.git" ]; then
       say "exists: $path on $(git -C "$path" rev-parse --abbrev-ref HEAD)"

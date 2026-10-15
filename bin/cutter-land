@@ -12,9 +12,10 @@
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base>; on a conflict it lists
 # the files and leaves the rebase for the user (never --skip).
 # `push` pushes the ticket branch, and only it, to origin; --force-with-lease only when origin
-# already has the branch. It refuses the base branch.
+# already has the branch (never a plain force-push). It refuses the base branch.
 # `merge` squash-merges the branch's open PR/MR (gh for github.com, glab for a GitLab host) after
-# checking that its base is the configured base. Never --admin, never the delete-branch flags.
+# checking that its base is the configured base, pinned to the worktree's HEAD sha
+# (--match-head-commit / --sha). Never --admin, never the delete-branch flags.
 # `ff` (local mode) fast-forwards the base to the ticket branch; it refuses anything else.
 
 set -euo pipefail
@@ -27,6 +28,8 @@ check_id "$id"
 path="$(wt_path "$id")"
 branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
 base="$(base_branch)"
+# A leading + or a : would turn the branch into a forced or re-targeted refspec.
+case "$branch" in +*|*:*) die "refusing branch name '$branch': a leading + or a : is not allowed" ;; esac
 has_origin() { git -C "$ROOT" remote get-url origin >/dev/null 2>&1; }
 
 case "$cmd" in
@@ -52,10 +55,10 @@ case "$cmd" in
   push)
     [ "$branch" != "$base" ] || die "refusing to push the base branch $base"
     has_origin || die "no origin to push to"
-    if git -C "$ROOT" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-      git -C "$path" push --force-with-lease -u origin "$branch"
+    if git -C "$ROOT" ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+      git -C "$path" push --force-with-lease="refs/heads/$branch" -u origin "refs/heads/$branch:refs/heads/$branch"
     else
-      git -C "$path" push -u origin "$branch"
+      git -C "$path" push -u origin "refs/heads/$branch:refs/heads/$branch"
     fi
     ;;
 
@@ -66,12 +69,12 @@ case "$cmd" in
       *github.com*)
         got="$(gh pr view "$branch" --json baseRefName,state --jq '.baseRefName + " " + .state')" || die "no PR found for $branch"
         [ "$got" = "$base OPEN" ] || die "PR of $branch is '$got', want '$base OPEN'"
-        gh pr merge "$branch" --squash
+        gh pr merge "$branch" --squash --match-head-commit "$(git -C "$path" rev-parse HEAD)"
         ;;
       *gitlab*)
         got="$(glab mr view "$branch" --output json | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state)')" || die "no MR found for $branch"
         [ "$got" = "$base opened" ] || die "MR of $branch is '$got', want '$base opened'"
-        glab mr merge "$branch" --squash --yes
+        glab mr merge "$branch" --squash --yes --sha "$(git -C "$path" rev-parse HEAD)"
         ;;
       *) die "origin $url is neither github.com nor a GitLab host" ;;
     esac
@@ -82,7 +85,7 @@ case "$cmd" in
     if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
       git -C "$ROOT" merge --ff-only "$branch" || die "$base moved since the rebase — rebase again"
     else
-      git -C "$ROOT" fetch --quiet . "$branch:$base" || die "$base moved since the rebase — rebase again"
+      git -C "$ROOT" fetch --quiet . "refs/heads/$branch:refs/heads/$base" || die "$base moved since the rebase — rebase again"
     fi
     say "fast-forwarded $base to $(git -C "$ROOT" rev-parse --short "$base")"
     ;;

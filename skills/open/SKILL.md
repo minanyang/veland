@@ -7,7 +7,6 @@ allowed-tools:
   - Bash(gh auth status)
   - Bash(gh issue list *)
   - Bash(gh label list *)
-  - Bash(gh issue create *)
   - Bash(cutter-worktree init)
 ---
 
