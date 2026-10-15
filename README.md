@@ -77,7 +77,7 @@ Optional `.claude/cutter.json`, committed with the project:
   "close": "pr",
   "worktreeDir": ".worktrees",
   "generated": ["src/api/generated"],
-  "contextGate": { "maxTokens": 120000 }
+  "contextGate": { "maxTokens": 200000 }
 }
 ```
 
@@ -89,9 +89,9 @@ Optional `.claude/cutter.json`, committed with the project:
 | `close` | `pr` |
 | `worktreeDir` | `.worktrees` |
 | `generated` | paths left out of the review diff (lockfiles always are) |
-| `contextGate.maxTokens` | `120000`; `0` turns the gate off |
+| `contextGate.maxTokens` | `200000`; `0` turns the gate off. A file that does not parse, or a `maxTokens` that is not a number, gets the default and a warning |
 
-`cutter-verify` reads `gates` from the ticket's worktree, so a gate the ticket adds verifies that ticket; when the list differs from the base branch's, it lists the gates added and removed. Every other key comes from the main checkout.
+`cutter-verify` reads `gates` from the ticket's worktree, so a gate the ticket adds verifies that ticket; when the list differs from the base branch's, it lists the gates added and removed. The context gate reads `contextGate` from the nearest `.claude/cutter.json` at or above the session's working directory, up to the repo root (none outside a repo), so inside a worktree it is the worktree's file. Every other key comes from the main checkout.
 
 `.cutter/` and the worktree directory are added to `.git/info/exclude` automatically — your `.gitignore` is not touched.
 
