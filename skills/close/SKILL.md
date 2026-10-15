@@ -47,7 +47,7 @@ Stop and say why if any of these holds:
 - `pr` or `pr-merge`, and the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
-- `.cutter/<id>/review.md` is missing, or lists a `blocker` / `major` with neither a fix nor a reason in `## Fixes applied` — that is `/cutter:work`'s job.
+- `.cutter/<id>/review.md` is missing, or lists a `blocker` / `major` with neither a fix nor a reason — round 1's in `## Fixes applied`, round 2's in `## Re-review` → `### Fixes applied` — that is `/cutter:work`'s job.
 
 ## Step 1 — Rebase onto the current base
 

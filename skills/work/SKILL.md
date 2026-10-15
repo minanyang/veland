@@ -160,7 +160,7 @@ Every line written in response to the review is read by a reviewer too. Build th
 cutter-review-packet <id> --fixes
 ```
 
-Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8.
+Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): report it and stop, never skip round 2 silently.
 
 Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
 
