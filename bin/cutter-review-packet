@@ -14,6 +14,10 @@
 # review.md cut before "## Fixes applied" / "## Re-review", so the implementer's account of the
 # fixes never reaches the reviewer. Exit 3 when there are no commits since review-head.
 #
+# Before anything is built, the `preReviewGates` commands from .claude/cutter.json run in the
+# worktree (logs in .cutter/<id>/pre-review/). The first that fails exits 1, naming it and printing
+# the log tail; no packet and no review-head are written. Fix, commit, rebuild.
+#
 # The packet holds only what the tree says. It never carries the implementer's report or a
 # summary of intent: the reviewer must not have them.
 
@@ -29,18 +33,35 @@ case "${2:-}" in "") ;; --fixes) fixes=1 ;; *) die "$usage" ;; esac
 path="$(wt_path "$id")"
 dir="$(task_dir "$id")"
 mkdir -p "$dir"
+
+pre_review() { # run the preReviewGates in the worktree; the first failure exits 1
+  local n=0 c log
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    n=$((n + 1)); mkdir -p "$dir/pre-review"; log="$dir/pre-review/gate-$n.log"
+    if ! ( cd "$path" && bash -c "$c" ) </dev/null >"$log" 2>&1; then
+      say "pre-review gate failed: $c" >&2
+      tail -25 "$log" >&2
+      say "(log: $log) fix, commit and rebuild the packet" >&2
+      exit 1
+    fi
+  done < <(wt_cfg "$path" preReviewGates)
+}
+
 if [ -n "$fixes" ]; then
   [ -f "$dir/review-head" ] || die "no $dir/review-head: build the round 1 packet first"
   [ -f "$dir/review.md" ] || die "no $dir/review.md: round 1's findings must be written first"
   base="$(cat "$dir/review-head")"
   git -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null || die "review head ${base:0:9} is not an ancestor of HEAD"
   if [ "$(git -C "$path" rev-parse HEAD)" = "$base" ]; then say "no fix commits since ${base:0:9}"; exit 3; fi
+  pre_review
   diff_file="$dir/fixes.diff"
   index="$dir/fixes-packet.md"
 else
   base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
   diff_file="$dir/review.diff"
   index="$dir/review-packet.md"
+  pre_review
   git -C "$path" rev-parse HEAD >"$dir/review-head"
 fi
 

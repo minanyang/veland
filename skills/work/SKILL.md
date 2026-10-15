@@ -120,11 +120,11 @@ git -C <worktree> commit -m "<message>"
 cutter-red-proof <id>
 ```
 
-Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs JavaScript/TypeScript tests; on other stacks it says unsupported — then state in the report that red-proof did not run.) Exit 2 naming test files that do not pass at HEAD is not a pass either: the test is broken, its environment is missing, or the runner is one red-proof does not support — fix it, or state in the report that red-proof could not run and why.
+Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs jest, vitest and `node --test` out of the box, and any other test runner the project declares as `redProof.command` / `redProof.tests` in `.claude/cutter.json`; without either it says unsupported — then state in the report that red-proof did not run.) Exit 2 naming test files that do not pass at HEAD is not a pass either: the test is broken, its environment is missing, or the runner is one red-proof does not support — fix it, or state in the report that red-proof could not run and why.
 
 ## Step 6 — Verify and review, concurrently
 
-Build the packet, then in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers.
+Build the packet. It runs the project's `preReviewGates` first: exit 1 means one failed (it is named, with its log tail) — fix, commit and rebuild, before verify and the reviewers start. Then, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers.
 
 ```bash
 cutter-review-packet <id>
@@ -161,7 +161,7 @@ Every line written in response to the review is read by a reviewer too. Build th
 cutter-review-packet <id> --fixes
 ```
 
-Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): report it and stop, never skip round 2 silently.
+Exit 1 means a pre-review gate failed: fix, commit and rebuild, as in Step 6. Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): report it and stop, never skip round 2 silently.
 
 Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
 
