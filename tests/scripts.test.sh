@@ -409,7 +409,27 @@ land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,
 : >"$tmp/stub.log"
 expect "ticket by origin's URL" 0 cutter-ticket github https://github.com/Acme/land/issues/7
 land_log "issue view 7 --repo github.com/acme/land --json number,title,body,url,state,labels,issueType,comments" "a URL is read as its number in origin's repo"
+cp "$tmp/out" "$tmp/ticket.stdout"
+expect "ticket --out" 0 cutter-ticket github 7 --out .cutter/gh-7/ticket.md
+[ ! -s "$tmp/out" ] && ok "ticket --out prints nothing" || bad "ticket --out prints nothing"
+cmp -s "$gd/ticket.md" "$tmp/ticket.stdout" && ok "ticket --out writes what it would print" || bad "ticket --out writes what it would print"
+echo keep >"$tmp/victim"
+ln -sf "$tmp/victim" "$gd/ticket.md"
+expect "ticket --out over a symlinked ticket.md" 0 cutter-ticket github 7 --out "$gd/ticket.md"
+[ "$(cat "$tmp/victim")" = keep ] && [ ! -L "$gd/ticket.md" ] && ok "symlink replaced, its target untouched" || bad "symlink replaced, its target untouched"
 : >"$tmp/stub.log"
+expect "ticket refuses an unknown trailing argument" 2 cutter-ticket github 7 --web
+expect "ticket refuses --out without a path" 2 cutter-ticket github 7 --out
+expect "ticket refuses an argument after --out <path>" 2 cutter-ticket github 7 --out "$gd/ticket.md" extra
+expect "ticket refuses --out outside .cutter/" 2 cutter-ticket github 7 --out "$tmp/x.md"
+expect "ticket refuses --out into another issue's dir" 2 cutter-ticket github 8 --out "$gd/ticket.md"
+expect "ticket refuses --out to another file name" 2 cutter-ticket github 7 --out "$gd/plan.md"
+mv "$gd" "$tmp/gh-7.real"
+ln -s "$tmp/gh-7.real" .cutter/gh-7
+expect "ticket refuses a symlinked gh-<n> dir" 2 cutter-ticket github 7 --out .cutter/gh-7/ticket.md
+rm .cutter/gh-7
+mv "$tmp/gh-7.real" "$gd"
+[ ! -e "$tmp/x.md" ] && ok "nothing written outside .cutter/" || bad "nothing written outside .cutter/"
 expect "ticket refuses another repo's URL" 2 cutter-ticket github https://github.com/other/land/issues/7
 expect "ticket refuses a URL on a look-alike host" 2 cutter-ticket github https://github.com.evil/acme/land/issues/7
 expect "ticket refuses a flag" 2 cutter-ticket github --web
