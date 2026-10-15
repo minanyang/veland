@@ -168,6 +168,7 @@ expect "red-proof: redProof.command without redProof.tests" 2 cutter-red-proof R
 grep -q 'redProof.tests' "$tmp/out" && ok "names the missing redProof.tests" || bad "names the missing redProof.tests"
 echo '{ "redProof": { "command": "bash tests/a.test.sh", "tests": ["tests/*.test.sh"] } }' >.claude/cutter.json
 expect "red-proof: command without {file}" 2 cutter-red-proof RP1
+grep -q '{file} placeholder' "$tmp/out" && ok "names the missing {file}" || bad "names the missing {file}"
 echo '{ "redProof": { "command": "bash {file}", "tests": ["tests/*.test.sh"] } }' >.claude/cutter.json
 expect "red-proof: shell tests, one stays green" 1 cutter-red-proof RP1
 grep -q '^RED    tests/a.test.sh' "$tmp/out" && ok "red-proof: shell test goes RED" || bad "red-proof: shell test goes RED"
