@@ -8,11 +8,14 @@
 # implementation does. This asks the question mechanically, before the review:
 #
 #   1. take the test files the branch added or modified (vs its merge base),
-#   2. put every OTHER file the branch touched back to the merge base,
-#   3. run only those test files,
-#   4. restore the tree to HEAD.
+#   2. run them at HEAD — they must all pass, or a red below would prove nothing,
+#   3. put every OTHER file the branch touched back to the merge base,
+#   4. run only those test files again,
+#   5. restore the tree to HEAD.
 #
-# Red is the pass. A changed test file with zero failing tests is a finding; in a test file
+# A file that fails at HEAD — the wrong runner (mocha, ava, bun test and monorepo workspaces
+# fall through to `node --test`), a broken test, missing environment — exits 2 before the
+# tree is touched. Red is the pass. A changed test file with zero failing tests is a finding; in a test file
 # the branch ADDED, every test that still passes is listed. A modified test file whose diff
 # adds no test case (fixture / mock / comment edits) is expected to stay green and is
 # reported as `note`. Not reverted: test helpers and fixtures, package.json and lockfiles
@@ -21,7 +24,8 @@
 # Runners: jest, vitest, else `node --test`. Other stacks exit 2 ("unsupported").
 # The worktree must be clean. The tree is always restored on exit, and the ticket lock is
 # shared with cutter-verify.
-# Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run.
+# Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run
+# (including: a changed test file does not pass at HEAD).
 
 set -uo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -75,29 +79,51 @@ restore() {
 }
 trap restore EXIT
 
-[ ${#revert[@]} -gt 0 ] && git -C "$path" restore --source="$base" --staged --worktree -- "${revert[@]}"
-for f in "${remove[@]:-}"; do [ -n "$f" ] && rm -f "$path/$f"; done
-
-json="$out/report.json"; log="$out/run.log"
-rm -f "$json"
 pm="$(package_manager "$path")"
 exec_cmd=("$pm" exec); [ "$pm" = npm ] && exec_cmd=(npx --no-install)
 if ls "$path"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
   runner=jest
-  ( cd "$path" && "${exec_cmd[@]}" jest --ci --silent --json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1
 elif ls "$path"/vitest.config.* >/dev/null 2>&1 || node -e 'const p = require(process.argv[1]); process.exit({ ...p.dependencies, ...p.devDependencies }.vitest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
   runner=vitest
-  ( cd "$path" && "${exec_cmd[@]}" vitest run --reporter=json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1
 else
   runner=node-test
-  : >"$log"
-  printf '{"testResults":[' >"$json"; sep=''
-  for t in "${tests[@]}"; do
-    ( cd "$path" && node --test "$t" ) >>"$log" 2>&1 && st=passed || st=failed
-    printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
-  done
-  printf ']}' >>"$json"
 fi
+
+run_tests() { # <json> <log> — run the changed test files, write a jest-shaped report
+  local json=$1 log=$2 t st sep=''
+  rm -f "$json"
+  case "$runner" in
+    jest)   ( cd "$path" && "${exec_cmd[@]}" jest --ci --silent --json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1 ;;
+    vitest) ( cd "$path" && "${exec_cmd[@]}" vitest run --reporter=json --outputFile="$json" "${tests[@]}" ) >"$log" 2>&1 ;;
+    *)
+      : >"$log"
+      printf '{"testResults":[' >"$json"
+      for t in "${tests[@]}"; do
+        ( cd "$path" && node --test "$t" ) >>"$log" 2>&1 && st=passed || st=failed
+        printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
+      done
+      printf ']}' >>"$json" ;;
+  esac
+}
+
+# At HEAD first: a file that cannot pass with the change would go red without it too.
+run_tests "$out/head.json" "$out/head.log"
+[ -s "$out/head.json" ] || { tail -20 "$out/head.log" >&2; die "the runner ($runner) produced no report at HEAD — see $out/head.log"; }
+node - "$out/head.json" "$path" "${tests[@]}" <<'NODE' || die "these test files do not pass at HEAD with $runner, so red without the change would prove nothing — fix the test or its environment, or this is a runner red-proof does not support (log: $out/head.log)"
+const [, , jsonPath, root, ...expected] = process.argv
+const path = require('path')
+const report = JSON.parse(require('fs').readFileSync(jsonPath, 'utf8'))
+const byFile = new Map((report.testResults || []).map((r) => [path.relative(root, r.name), r]))
+const bad = expected.filter((f) => { const r = byFile.get(f); return !r || r.status !== 'passed' })
+for (const f of bad) console.error(`  ${f}: ${byFile.has(f) ? 'fails' : 'missing from the report'}`)
+process.exit(bad.length ? 1 : 0)
+NODE
+
+[ ${#revert[@]} -gt 0 ] && git -C "$path" restore --source="$base" --staged --worktree -- "${revert[@]}"
+for f in "${remove[@]:-}"; do [ -n "$f" ] && rm -f "$path/$f"; done
+
+json="$out/report.json"; log="$out/run.log"
+run_tests "$json" "$log"
 
 say "$id · red-proof against merge base ${base:0:9} · runner: $runner"
 say "  reverted ${#revert[@]} file(s), removed ${#remove[@]} added file(s), ran ${#tests[@]} changed test file(s)"
