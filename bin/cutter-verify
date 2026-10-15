@@ -11,6 +11,10 @@
 # HEAD and the number of uncommitted paths are recorded before and after. If either moved
 # during the run, the result describes no single tree and the run fails.
 #
+# When the worktree is cutter itself (.claude-plugin/plugin.json names cutter), the files under
+# bin/ and scripts/ that differ from the copy running this script are listed: the loop runs the
+# installed scripts, never the ticket's, and this says when the two are not the same.
+#
 # Output: a table on stdout and in .cutter/<id>/verify/summary.txt, full logs beside it.
 # Exit 0 only when every gate passed on a tree that stood still; 1 otherwise; 2 on misuse.
 
@@ -40,6 +44,14 @@ fork="$(git -C "$path" merge-base "$(base_ref)" HEAD 2>/dev/null)"
 changes="$(gate_changes "$base_cfg" "$path/.claude/cutter.json")"
 rm -f "$base_cfg"
 [ -z "$changes" ] || printf 'gates differ from %s:\n%s\n' "$(base_ref)" "$changes" | tee -a "$summary"
+
+# On cutter itself the ticket's scripts are judged by the running copy; name every file where the two differ.
+if [ "$(cfg_in "$path/.claude-plugin/plugin.json" name 2>/dev/null)" = cutter ]; then
+  plugin="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+  drift="$({ (cd "$plugin" && find bin scripts -type f 2>/dev/null); (cd "$path" && find bin scripts -type f 2>/dev/null); } |
+    LC_ALL=C sort -u | while IFS= read -r f; do cmp -s "$plugin/$f" "$path/$f" || printf '  %s\n' "$f"; done)"
+  [ -z "$drift" ] || printf 'scripts differ from the running copy (%s):\n%s\n' "$plugin" "$drift" | tee -a "$summary"
+fi
 
 names=(); cmds=()
 while IFS= read -r c; do [ -n "$c" ] && names+=("$c") && cmds+=("$c"); done < <(cfg_in "$gates_file" gates)

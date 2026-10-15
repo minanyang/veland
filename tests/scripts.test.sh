@@ -169,6 +169,38 @@ expect "verify with reordered gates" 0 cutter-verify T7
 expect "rm T7" 0 cutter-worktree rm T7
 git rm -q .claude/cutter.json && git commit -qm "chore: drop gates" && git push -q origin main
 
+# on cutter itself, verify lists the worktree's bin/ and scripts/ files that differ from the running copy
+git -c init.defaultBranch=main init -q --bare "$tmp/self-origin.git"
+git -c init.defaultBranch=main init -q "$tmp/self"
+cd "$tmp/self" || exit 2
+git config user.email t@t; git config user.name t
+mkdir -p .claude-plugin .claude
+echo '{ "name": "cutter" }' >.claude-plugin/plugin.json
+echo '{ "gates": ["echo gate-self"] }' >.claude/cutter.json
+cp -R "$BIN" bin && cp -R "$BIN/../scripts" scripts
+git add -A && git commit -qm "init" && git remote add origin "$tmp/self-origin.git" && git push -q -u origin main
+expect "worktree add on cutter itself" 0 cutter-worktree add S1 --no-setup
+wts="$tmp/self/.worktrees/S1"
+ss=.cutter/S1/verify/summary.txt
+expect "verify with identical scripts" 0 cutter-verify S1
+! grep -q '^scripts differ' "$ss" && ok "identical scripts: no report" || bad "identical scripts: no report"
+echo '# changed' >>"$wts/bin/cutter-verify"; echo '# changed' >>"$wts/scripts/lib.sh"; echo '#!/bin/bash' >"$wts/bin/cutter-extra"
+git -C "$wts" add -A && git -C "$wts" commit -qm "feat: change scripts"
+expect "verify with changed scripts" 0 cutter-verify S1
+grep -q '^scripts differ from the running copy (.*):$' "$ss" && ok "changed scripts reported" || bad "changed scripts reported"
+[ "$(grep '^  [a-z]' "$ss")" = "$(printf '  bin/cutter-extra\n  bin/cutter-verify\n  scripts/lib.sh')" ] &&
+  ok "changed, added and lib files listed, sorted" || { bad "changed, added and lib files listed, sorted"; cat "$ss"; }
+grep -q '^echo gate-self .*pass' "$ss" && ok "gates still run with the report" || bad "gates still run with the report"
+echo '{ "name": "other" }' >"$wts/.claude-plugin/plugin.json"
+git -C "$wts" commit -qam "chore: another plugin"
+expect "verify on another plugin" 0 cutter-verify S1
+! grep -q '^scripts differ' "$ss" && ok "another plugin's name: no report" || bad "another plugin's name: no report"
+echo '{ broken' >"$wts/.claude-plugin/plugin.json"
+git -C "$wts" commit -qam "chore: broken plugin.json"
+expect "verify with a broken plugin.json" 0 cutter-verify S1
+! grep -q '^scripts differ' "$ss" && ok "broken plugin.json: no report" || bad "broken plugin.json: no report"
+cd "$tmp/repo" || exit 2
+
 # remove
 expect "rm keeps an unmerged branch" 0 cutter-worktree rm T1
 grep -q 'kept branch feat/T1-mul' "$tmp/out" && ok "unmerged branch kept" || bad "unmerged branch kept"
