@@ -46,7 +46,7 @@ if (file) {
     if (gate && Number.isFinite(gate.maxTokens)) limit = gate.maxTokens
     else if (gate) warning = 'contextGate.maxTokens is not a number'
   } catch (e) {
-    warning = `cannot read it (${e.message})`
+    warning = `cannot read it (${e.name})` // not e.message: it can quote the file's contents
   }
 }
 if (warning) warning = `cutter: ${file}: ${warning}; using the default ${DEFAULT / 1000}k context limit.`

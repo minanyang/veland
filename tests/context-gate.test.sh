@@ -63,6 +63,13 @@ echo '{ "base": "main" }' >"$tmp/proj/wt/.claude/cutter.json"
 check "a config without contextGate is final and silent" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
 echo '{ nope' >"$tmp/proj/wt/.claude/cutter.json"
 check "warns on a broken config and passes" warn "/cutter:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub"
+echo 'TOKEN=s3cret' >"$tmp/proj/wt/.claude/cutter.json"
+out="$(run "/cutter:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub")"
+case "$out" in
+  *s3cret*) echo "FAIL  the warning quotes the file (got: $out)"; fail=1 ;;
+  *SyntaxError*) echo "ok    the warning names the error type, not the file's contents" ;;
+  *) echo "FAIL  the warning names no error type (got: ${out:-nothing})"; fail=1 ;;
+esac
 echo '{ "contextGate": { "maxTokens": "lots" } }' >"$tmp/proj/wt/.claude/cutter.json"
 check "warns on a non-numeric maxTokens and blocks" warn+block "/cutter:close x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
 check "does not warn on other prompts" pass "fix the bug" "$tmp/big.jsonl" "$tmp/proj/wt/sub"

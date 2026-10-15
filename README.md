@@ -137,7 +137,7 @@ Agents use `memory: project`, stored under `.claude/agent-memory/cutter-<name>/`
 
 ## Hooks
 
-- **Guard** — blocks destructive Bash commands: `rm -rf`, force push (`--force-with-lease` is allowed), `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- .`, package publishing, raw disk writes. A cutter script (pre-approved by the skills) must run alone: no redirection, pipe, chaining or command substitution, so the grant cannot be stretched into another write or command; this check applies even when a project ships its own guard. It is **best-effort, not a sandbox**: it matches the command text, so a script, alias or `eval` gets past it, and a command that merely contains such a string (in a heredoc, say) is blocked too. If a project ships its own guard at `.claude/scripts/guard-bash.sh`, cutter's steps aside.
+- **Guard** — blocks destructive Bash commands: `rm -rf`, force push (`--force-with-lease` is allowed), `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- .`, package publishing, raw disk writes. It is **best-effort, not a sandbox**: it matches the command text, so a script, alias or `eval` gets past it, and a command that merely contains such a string (in a heredoc, say) is blocked too. If a project ships its own guard at `.claude/scripts/guard-bash.sh`, cutter's steps aside.
 - **Context gate** — refuses `/cutter:work` and `/cutter:close` when the session already carries more than `contextGate.maxTokens`, and asks for `/clear` first.
 
 ## License
