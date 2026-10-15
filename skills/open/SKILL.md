@@ -8,7 +8,6 @@ allowed-tools:
   - Bash(gh issue list *)
   - Bash(gh label list *)
   - Bash(cutter-worktree init)
-  - Bash(cutter-land issue *)
 ---
 
 # Open a ticket
@@ -27,6 +26,8 @@ Stop, saying which and how to fix it, when `origin` is not on github.com, `gh` i
 ## Step 1 — Ground it
 
 Read just enough of the codebase to make the ticket concrete: which module, route, component or file it is about, and what happens there today. Search before claiming something is missing.
+
+Every file, route or current behaviour the draft's Context names carries its evidence: `path:line`, or the command run and its output. A claim with none is looked up before the draft is shown — never shown as a guess.
 
 Look for an existing issue first:
 
@@ -50,11 +51,11 @@ gh api graphql -f query='query($o:String!,$r:String!){repository(owner:$o,name:$
 - Issue types (organisation repos only; `null` elsewhere): pick the one that matches — typically `Bug`, `Feature`, `Task`.
 - Labels: the matching existing label — `bug` for a bug, `enhancement` for a feature or improvement, `documentation` for docs — if the repo has it. No match, no label.
 
-If the repo has issue templates (`.github/ISSUE_TEMPLATE/`), follow the matching template's sections instead of the layout below.
+If the repo has issue forms (`.github/ISSUE_TEMPLATE/*.yml` or `*.yaml`, except `config.yml`), pick the form by the kind: a bug takes the form whose `labels` include the repo's bug label; a feature, improvement, docs or chore takes the one labelled `enhancement`, else the closest by `name`. Read it whole and draft in its shape instead of the layout below: `Form: <file name>` in the header, the form's `labels` as `Labels:`, its `title` as the title's prefix, and one `### <field label>` section per field that is not `type: markdown`, in the form's order — every `required: true` field filled. Markdown (`.md`) templates: follow the matching template's sections.
 
 ## Step 3 — Draft and stop
 
-Run `cutter-worktree init` and write the draft to `.cutter/drafts/<short-slug>.md` (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only) and `Type: <name>` lines follow directly; then a blank line and the body:
+Run `cutter-worktree init` and write the draft to `.cutter/drafts/<short-slug>.md` (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only), `Type: <name>` and `Form: <file name>` lines follow directly; then a blank line and the body:
 
 ```markdown
 # <title>
@@ -68,7 +69,8 @@ What happens today and where — name the files or routes. For a bug: steps to r
 The outcome, in one or two sentences.
 
 ## Acceptance criteria
-- [ ] Each one checkable: a behaviour, a test, a command's output.
+- [ ] AC1 — Each one checkable and numbered: a behaviour, a test, a command's output.
+- [ ] AC2 — One checkbox per line.
 
 ## Out of scope
 What a reader might expect here but this ticket does not cover. Omit if nothing.
@@ -77,7 +79,11 @@ What a reader might expect here but this ticket does not cover. Omit if nothing.
 Decisions the grill did not settle with the user, each with the answer taken. Omit if none.
 ```
 
-Show the user the title, the kind with the label or type it maps to, and the body. Title: short, imperative, in the repo's language and style (`gh issue list --limit 10` shows it). **Stop** until the user approves or edits it.
+Title: a bug by the problem observed (`Close reports a merged PR as open`), a feature by the need (`A way to file issues that follow the repo's forms`), in the repo's language — never a `scope:` prefix unless the form's `title` sets one, even when existing issues have one.
+
+Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases in `references/banned-phrases.txt` at the plugin root — `cutter-land issue` refuses them outside code, as it refuses an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
+
+Show the user the title, the kind with the label, type or form it maps to, and the body. **Stop** until the user approves or edits it.
 
 ## Step 4 — Create
 
@@ -85,13 +91,13 @@ Show the user the title, the kind with the label or type it maps to, and the bod
 cutter-land issue <short-slug>
 ```
 
-It reads only that draft, refuses a label the repo does not have, and creates the issue in origin's repo.
+It reads only that draft, refuses a label the repo does not have or a draft that fails the checks above (naming the line or field — fix the draft and run it again), and creates the issue in origin's repo. It is not in this skill's `allowed-tools` on purpose: creating a public issue always asks for permission, so the approval does not rest on the model stopping.
 
 Report the issue URL and the next step, `/cutter:work gh-<n>`. Delete the draft only after the issue exists.
 
 ## Several at once
 
-When the user lists several things, draft each, show them together, and create the ones the user approves. One issue per independent piece of work: a piece that can ship and be reviewed alone is its own ticket.
+When one request yields several tickets, first show a table of the request's goals, each mapped to the ticket and the criterion that covers it. A goal with no row is raised with the user before any draft is written. Then draft each, show them together, and create the ones the user approves. One issue per independent piece of work: a piece that can ship and be reviewed alone is its own ticket.
 
 ## Never
 
@@ -99,3 +105,4 @@ When the user lists several things, draft each, show them together, and create t
 - Never create labels, issue types, milestones or projects.
 - Never assign people, set milestones or add to projects unless asked.
 - Never put secrets, tokens, internal URLs or customer data in an issue body — it may be public.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.

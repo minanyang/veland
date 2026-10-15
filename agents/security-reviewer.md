@@ -118,3 +118,4 @@ The truly destructive Bash commands are blocked at the harness level by cutter's
 - Never escalate severity to seem more thorough. Calibrate honestly.
 - Never silently expand scope. If you notice something out of the review scope, mention it — do not investigate it unprompted.
 - If the guard script blocks a command you genuinely need, do **not** try to bypass by rephrasing. Surface it in **Blockers / open questions** and stop.
+- Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.
