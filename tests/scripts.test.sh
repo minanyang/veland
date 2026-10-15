@@ -246,6 +246,12 @@ mkdir -p .claude/agent-memory/cutter-c && echo x >.claude/agent-memory/cutter-c/
 expect "memory: a symlinked directory in the worktree stops" 2 cutter-worktree memory T8
 [ -z "$(ls "$tmp/outside")" ] && [ -f .claude/agent-memory/cutter-c/MEMORY.md ] && ok "memory: nothing written through the worktree's symlink" || bad "memory: nothing written through the worktree's symlink"
 rm "$wt8/.claude/agent-memory/cutter-c" .claude/agent-memory/cutter-c/MEMORY.md; rmdir .claude/agent-memory/cutter-c
+echo branch-new >"$wt8/$m/kept.md" && git -C "$wt8" commit -qam "chore(memory): newer on the branch"
+echo stale-edit >"$m/kept.md"
+head8="$(git -C "$wt8" rev-parse HEAD)"
+expect "memory: a main checkout copy edited from an older version stops" 2 cutter-worktree memory T8
+grep -qF "$m/kept.md" "$tmp/out" && [ "$(cat "$m/kept.md")" = stale-edit ] && [ "$(cat "$wt8/$m/kept.md")" = branch-new ] && [ "$(git -C "$wt8" rev-parse HEAD)" = "$head8" ] && ok "memory: newer branch copy kept, nothing moved" || bad "memory: newer branch copy kept, nothing moved"
+git checkout -q -- "$m/kept.md"
 expect "rm T8" 0 cutter-worktree rm T8
 
 # remove

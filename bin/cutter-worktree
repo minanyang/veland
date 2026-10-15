@@ -24,8 +24,9 @@
 # `memory` commits agent memory (.claude/agent-memory/) on the ticket branch: new or changed files
 # in the main checkout, where agents write it, are moved into the worktree (a new file is removed
 # from the main checkout, a tracked one restored there), then those and the worktree's own memory
-# changes go in one commit, nothing else. A path changed differently in both places, or a symlink
-# on either side, stops it before anything moves. Prints each committed path.
+# changes go in one commit, nothing else. A path changed differently in both places, a main
+# checkout copy edited from another version than the branch's, or a symlink on a path being
+# moved, stops it before anything moves. Prints each committed path.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
@@ -189,8 +190,12 @@ case "$cmd" in
         [ ! -L "$path/$d" ] || die "$d in the worktree is a symlink; nothing moved"
         d="$(dirname "$d")"
       done
-      if [ -e "$path/$f" ] && ! cmp -s "$ROOT/$f" "$path/$f" && [ -n "$(git -C "$path" status --porcelain -- "$f")" ]; then
-        die "$f is changed differently in the main checkout and the worktree; nothing moved — reconcile it yourself"
+      if [ -e "$path/$f" ] && ! cmp -s "$ROOT/$f" "$path/$f"; then
+        [ -z "$(git -C "$path" status --porcelain -- "$f")" ] ||
+          die "$f is changed differently in the main checkout and the worktree; nothing moved — reconcile it yourself"
+        # The main checkout may be behind the branch: its copy was edited from an older version.
+        [ "$(git -C "$ROOT" rev-parse -q --verify "HEAD:$f")" = "$(git -C "$path" rev-parse -q --verify "HEAD:$f")" ] ||
+          die "$f in the main checkout starts from another version than the branch's; nothing moved — reconcile it yourself"
       fi
       moves+=("$st" "$f")
     done < <(git -C "$ROOT" status --porcelain -z --untracked-files=all -- "$mem")
