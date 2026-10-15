@@ -27,21 +27,18 @@ source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
 # Has <branch> landed on the base even though git does not call it merged? True when it is an
 # ancestor of the base (a rebase dropped its already-applied commits), or when every file it
-# touched is identical on the base (a squash merge). Checks origin/<base> (a merged PR) and the
-# local base (a local squash, not pushed); sets landed_on to the one it is on.
+# touched is identical on the base (a squash merge). In local mode the base is the local base once a
+# squash put it ahead of origin (see base_ref).
 landed() {
   local base files
   if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
     git -C "$ROOT" fetch --quiet origin "$(base_branch)" || return 1
   fi
-  for base in $(printf '%s\n' "$(base_ref)" "$(base_branch)" | uniq); do
-    landed_on="$base"
-    git -C "$ROOT" merge-base --is-ancestor "$1" "$base" && return 0
-    files="$(git -C "$ROOT" diff --name-only "$base...$1")"
-    [ -n "$files" ] || continue
-    printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git -C "$ROOT" diff --quiet "$1" "$base" -- && return 0
-  done
-  return 1
+  base="$(base_ref)"
+  git -C "$ROOT" merge-base --is-ancestor "$1" "$base" && return 0
+  files="$(git -C "$ROOT" diff --name-only "$base...$1")"
+  [ -n "$files" ] || return 1
+  printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git -C "$ROOT" diff --quiet "$1" "$base" --
 }
 
 cmd="${1:-}"; shift || true
@@ -141,7 +138,7 @@ case "$cmd" in
       say "deleted branch $branch (merged)"
     elif landed "$branch"; then
       git -C "$ROOT" branch -D "$branch" >/dev/null
-      say "deleted branch $branch (its changes are on $landed_on)"
+      say "deleted branch $branch (its changes are on $(base_ref))"
     else
       say "kept branch $branch (not merged into HEAD of the main checkout or $(base_ref))"
       exit 0

@@ -160,10 +160,13 @@ case "$cmd" in
     [ "$branch" != "$base" ] || die "the ticket branch is the base branch"
     td="$(task_dir "$id")"
     need_file "$td/commit-msg"
-    git -C "$ROOT" merge-base --is-ancestor "refs/heads/$base" "refs/heads/$branch" || die "$base moved since the rebase — rebase again"
-    [ "$(git -C "$ROOT" rev-parse "refs/heads/$base")" != "$(git -C "$ROOT" rev-parse "refs/heads/$branch")" ] || die "$branch has no commits beyond $base"
+    ! base_diverged || die "$base and origin/$base have diverged — reconcile the local base first"
+    # The ref the branch was rebased onto: the local base, or origin/<base> when the local base is behind it.
+    onto="$(base_ref)"
+    git -C "$ROOT" merge-base --is-ancestor "$onto" "refs/heads/$branch" || die "$onto moved since the rebase — rebase again"
+    [ "$(git -C "$ROOT" rev-parse "$onto")" != "$(git -C "$ROOT" rev-parse "refs/heads/$branch")" ] || die "$branch has no commits beyond $onto"
     # Rebased onto the base, the branch's tree is the squashed result.
-    commit="$(git -C "$ROOT" commit-tree "refs/heads/$branch^{tree}" -p "refs/heads/$base" -F "$td/commit-msg")"
+    commit="$(git -C "$ROOT" commit-tree "refs/heads/$branch^{tree}" -p "$onto" -F "$td/commit-msg")"
     if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
       git -C "$ROOT" merge --ff-only --quiet "$commit" || die "$base moved since the rebase — rebase again"
     else

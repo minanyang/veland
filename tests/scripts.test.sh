@@ -387,6 +387,11 @@ git add .claude/cutter.json && git commit -qm "chore: local mode" && git push -q
 echo extra >"$lw/extra.txt"; git -C "$lw" add -A; git -C "$lw" commit -qm "feat: extra"
 expect "rebase L1 in local mode" 0 cutter-land rebase L1
 expect "squash refuses without a commit message" 2 cutter-land squash L1
+: >"$td/commit-msg"
+expect "squash refuses an empty commit message" 2 cutter-land squash L1
+rm "$td/commit-msg"; echo outside >"$tmp/outside-msg"; ln -s "$tmp/outside-msg" "$td/commit-msg"
+expect "squash refuses a symlinked commit message" 2 cutter-land squash L1
+rm "$td/commit-msg"
 printf 'feat: land L1\n\nBody line.\n' >"$td/commit-msg"
 before="$(git rev-parse main)"
 expect "squash lands the branch" 0 cutter-land squash L1
@@ -428,6 +433,16 @@ echo upstream >"$tmp/land-other/up.txt"
 git -C "$tmp/land-other" add -A && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qm "feat: upstream" && git -C "$tmp/land-other" push -q origin main
 expect "add with the local base behind origin" 0 cutter-worktree add L4 --no-setup
 grep -q 'from origin/main (' "$tmp/out" && ok "behind: starts from origin/main" || bad "behind: starts from origin/main"
+echo four >"$tmp/land/.worktrees/L4/four.txt"; git -C "$tmp/land/.worktrees/L4" add -A; git -C "$tmp/land/.worktrees/L4" commit -qm "feat: four"
+mkdir -p .cutter/L4 && echo "feat: four" >.cutter/L4/commit-msg
+expect "rebase with the local base behind origin" 0 cutter-land rebase L4
+grep -q 'onto origin/main$' "$tmp/out" && ok "behind: rebased onto origin/main" || bad "behind: rebased onto origin/main"
+expect "squash with the local base behind origin" 0 cutter-land squash L4
+[ "$(git rev-parse main^)" = "$(git rev-parse origin/main)" ] && [ -z "$(git rev-list main..origin/main)" ] && ok "behind: squash lands on origin/main, not diverged" || bad "behind: squash lands on origin/main, not diverged"
+[ -z "$(git status --porcelain)" ] && [ -f up.txt ] && ok "behind: checkout has the upstream file" || bad "behind: checkout has the upstream file"
+echo upstream2 >"$tmp/land-other/up.txt"
+git -C "$tmp/land-other" pull -q && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qam "feat: upstream again" && git -C "$tmp/land-other" push -q origin main
+git fetch -q origin
 echo local >h.txt; git add h.txt && git commit -qm "chore: local only"
 expect "add refuses a diverged base" 2 cutter-worktree add L5 --no-setup
 [ ! -e "$tmp/land/.worktrees/L5" ] && ok "no worktree for a diverged base" || bad "no worktree for a diverged base"
