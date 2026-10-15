@@ -1,0 +1,1 @@
+- [Threat model](threat_model.md) — allowed-tools grants on wrapper scripts are the trust boundary; check argv, repo pinning, file paths, content
