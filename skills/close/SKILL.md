@@ -66,17 +66,20 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 ## Step 4 — Clean up after the merge
 
-Only once the branch is merged (squash-merged PR, or the local fast-forward):
+Only once the branch is merged (squash-merged PR, or the local fast-forward). After a merged PR (`pr-merge`, or `pr` on its cleanup run) bring the main checkout's base up to date first; skip `sync-base` in `local` mode, whose base is already ahead:
 
 ```bash
+cutter-worktree sync-base
 cutter-worktree rm <id>
 ```
+
+`sync-base` fast-forwards the base only when the main checkout is on it with no uncommitted tracked changes; otherwise it leaves it and says why. Never pull, reset or switch branches in the main checkout to make it go through.
 
 It removes the worktree and deletes the branch once its changes are on the base — merged as git sees it, or squash-merged (every file it touched is identical on `origin/<base>`) — along with the pushed branch on origin if a merged PR left it behind. A branch whose changes are not on the base is kept and reported; never delete it yourself. Keep `.cutter/<id>/` — it is the ticket's record.
 
 ## Step 5 — Report
 
-What landed and where (PR URL or base commit), the final verify table, and what was cleaned up or left.
+What landed and where (PR URL or base commit), the final verify table, what `sync-base` did to the local base (fast-forwarded to which commit, or left behind and why), and what was cleaned up or left.
 
 ## Never
 

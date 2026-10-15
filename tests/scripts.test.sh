@@ -135,5 +135,34 @@ expect "rm after a squash merge" 0 cutter-worktree rm T3
 grep -q 'deleted branch feat/T3 (its changes are on origin/main)' "$tmp/out" && ok "squash-merged branch deleted" || bad "squash-merged branch deleted"
 [ -z "$(git ls-remote --heads origin feat/T3)" ] && ok "merged remote branch deleted" || bad "merged remote branch deleted"
 
+# sync-base: after a merged PR, fast-forward the main checkout's base only when that is safe
+expect "sync-base when level" 0 cutter-worktree sync-base
+grep -q 'main is up to date' "$tmp/out" && ok "level base reported up to date" || bad "level base reported up to date"
+git clone -q "$tmp/origin.git" "$tmp/other"
+merged() { # land a commit on origin/main from elsewhere, as a merged PR would
+  echo "$1" >"$tmp/other/$1.txt"
+  git -C "$tmp/other" add -A && git -C "$tmp/other" -c user.email=t@t -c user.name=t commit -qm "feat: $1" && git -C "$tmp/other" push -q origin main
+}
+merged pr1
+before=$(git rev-parse main)
+git switch -q -c side
+expect "sync-base off the base" 0 cutter-worktree sync-base
+grep -q 'main is behind origin/main, not updated: the main checkout is on side' "$tmp/out" && ok "off the base: left behind" || bad "off the base: left behind"
+git switch -q main && git branch -q -D side
+echo 'export const add = (a, b) => b + a' >src/math.mjs
+expect "sync-base with uncommitted changes" 0 cutter-worktree sync-base
+grep -q 'not updated: the main checkout has uncommitted changes' "$tmp/out" && ok "dirty tree: left behind" || bad "dirty tree: left behind"
+[ "$(git rev-parse main)" = "$before" ] && ok "base untouched when not safe" || bad "base untouched when not safe"
+git checkout -q -- src/math.mjs
+expect "sync-base on a clean base" 0 cutter-worktree sync-base
+grep -q "fast-forwarded main to $(git rev-parse --short origin/main)" "$tmp/out" && ok "clean base fast-forwarded" || bad "clean base fast-forwarded"
+[ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ] && ok "base equals origin/main" || bad "base equals origin/main"
+merged pr2
+echo local >local.txt && git add local.txt && git commit -qm "chore: local only"
+before=$(git rev-parse main)
+expect "sync-base with local commits" 0 cutter-worktree sync-base
+grep -q 'not updated: main has commits origin/main does not' "$tmp/out" && ok "diverged base: left behind" || bad "diverged base: left behind"
+[ "$(git rev-parse main)" = "$before" ] && ok "diverged base untouched" || bad "diverged base untouched"
+
 [ "$fail" -eq 0 ] && echo "scripts: all cases pass"
 exit "$fail"
