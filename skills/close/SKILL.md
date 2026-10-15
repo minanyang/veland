@@ -3,7 +3,12 @@ name: close
 description: Land a ticket that /cutter:work finished — rebase it onto the current base, verify again, then open a PR, merge it, or merge locally, as the project configures; remove the worktree once merged. Use when the user runs /cutter:close <id>.
 disable-model-invocation: true
 allowed-tools:
-  - Bash(cutter-land *)
+  - Bash(cutter-land check *)
+  - Bash(cutter-land rebase *)
+  - Bash(cutter-land push *)
+  - Bash(cutter-land merge *)
+  - Bash(cutter-land ff *)
+  - Bash(cutter-land pr *)
   - Bash(cutter-verify *)
   - Bash(cutter-worktree path *)
   - Bash(cutter-worktree rm *)
@@ -65,10 +70,8 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 **`pr` and `pr-merge`:**
 
 1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
-2. Open the PR against the base — unless the branch already has an open one (`gh pr view <branch> --json url,state`; a previous run that stopped before merging): then update its body if the verify result changed, and reuse it:
-   - title: the ticket's title, in the repo's commit style;
-   - body: the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout;
-   - `gh pr create --base <base> --head <branch> --title … --body-file …`, or `glab mr create --target-branch <base> --source-branch <branch> --title … --description …`.
+2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base. Body:
+   - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout.
 3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. Then go to Step 4.
 4. `pr`: report the PR URL and stop. The worktree stays until the PR is merged.
 

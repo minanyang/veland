@@ -203,7 +203,10 @@ git remote add origin "$tmp/github.com/land.git" && git push -q -u origin main
 cat >"$tmp/stub/gh" <<'STUB'
 #!/bin/bash
 echo "$*" >>"$STUB_LOG"
-case "$1 $2" in "pr view"|"mr view") echo "$STUB_VIEW" ;; esac
+case "$1 $2" in
+  "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
+  "label list") printf '%s\n' "${STUB_LABELS-}" ;;
+esac
 exit 0
 STUB
 cp "$tmp/stub/gh" "$tmp/stub/glab"; chmod +x "$tmp/stub/gh" "$tmp/stub/glab"
@@ -252,18 +255,108 @@ expect "add refuses a bad --type" 2 cutter-worktree add L9 --type '+feat' --no-s
 expect "add refuses a bad --slug" 2 cutter-worktree add L9 --slug 'a:b' --no-setup
 expect "add refuses a slug with a slash" 2 cutter-worktree add L9 --slug 'a/b' --no-setup
 
-# merge: only `pr merge <branch> --squash`, and only into the configured base
+# merge: only `pr merge <branch> --squash`, only into the configured base, pinned to origin's repo, never a fork's PR
 : >"$tmp/stub.log"
 export PATH="$tmp/stub:$PATH"
-STUB_VIEW="develop OPEN" expect "merge refuses a PR into another base" 2 cutter-land merge L1
+git remote set-url origin git@github.com:acme/land.git
+STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 cutter-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
+STUB_VIEW="main OPEN true" expect "merge refuses a fork's PR" 2 cutter-land merge L1
+! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a fork's PR" || bad "no merge call for a fork's PR"
 lwsha="$(git -C "$lw" rev-parse HEAD)"
-STUB_VIEW="main OPEN" expect "merge" 0 cutter-land merge L1
-grep -qxF 'pr merge feat/L1 --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --squash --match-head-commit <sha>"
-git remote set-url origin "$tmp/gitlab.com/land.git"
+STUB_VIEW="main OPEN false" expect "merge" 0 cutter-land merge L1
+grep -qxF 'pr view feat/L1 --repo github.com/acme/land --json baseRefName,state,isCrossRepository --jq .baseRefName + " " + .state + " " + (.isCrossRepository | tostring)' "$tmp/stub.log" && ok "gh pr view pinned to origin's repo" || bad "gh pr view pinned to origin's repo"
+grep -qxF 'pr merge feat/L1 --repo github.com/acme/land --squash --match-head-commit '"$lwsha" "$tmp/stub.log" && ok "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>" || bad "gh called with pr merge <branch> --repo <o/r> --squash --match-head-commit <sha>"
+git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
-expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
-grep -qxF 'mr merge feat/L1 --squash --yes --sha '"$lwsha" "$tmp/stub.log" && ok "glab called with mr merge <branch> --squash --yes --sha <sha>" || bad "glab called with mr merge <branch> --squash --yes --sha <sha>"
+STUB_VIEW="main OPEN false" expect "merge refuses a host that only contains github.com" 2 cutter-land merge L1
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host on merge" || bad "no gh call for a look-alike host on merge"
+git remote set-url origin https://evil.example/x@github.com/acme/land.git
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN false" expect "merge refuses an @ in the path posing as the host" 2 cutter-land merge L1
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for an @-spoofed host" || bad "no gh call for an @-spoofed host"
+git remote set-url origin https://gitlab.example.com/grp/land.git
+: >"$tmp/stub.log"
+expect "merge via glab refuses an MR without project ids" 2 env STUB_VIEW='{"target_branch":"main","state":"opened"}' cutter-land merge L1
+expect "merge via glab refuses a fork's MR" 2 env STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":2,"target_project_id":1}' cutter-land merge L1
+! grep -q 'mr merge' "$tmp/stub.log" && ok "no glab merge call for a fork's MR" || bad "no glab merge call for a fork's MR"
+expect "merge via glab" 0 env STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":1,"target_project_id":1}' cutter-land merge L1
+grep -qxF 'mr view feat/L1 -R https://gitlab.example.com/grp/land --output json' "$tmp/stub.log" && ok "glab mr view pinned to origin's project" || bad "glab mr view pinned to origin's project"
+grep -qxF 'mr merge feat/L1 -R https://gitlab.example.com/grp/land --squash --yes --sha '"$lwsha" "$tmp/stub.log" && ok "glab called with mr merge <branch> -R <url> --squash --yes --sha <sha>" || bad "glab called with mr merge <branch> -R <url> --squash --yes --sha <sha>"
+git remote set-url origin "$tmp/github.com/land.git"
+
+# pr / issue: argv is built from files under .cutter/ and origin alone
+land_log() { grep -qxF -- "$1" "$tmp/stub.log" && ok "$2" || { bad "$2"; cat "$tmp/stub.log"; }; }
+mkdir -p "$tmp/land/.cutter/L1" "$tmp/land/.cutter/drafts"
+td="$(cd "$tmp/land/.cutter/L1" && pwd -P)"
+git remote set-url origin git@github.com:acme/land.git
+expect "pr refuses a missing title and body" 2 cutter-land pr L1
+printf 'feat: the feature\nignored second line\n' >"$td/pr-title"
+expect "pr refuses a missing body" 2 cutter-land pr L1
+printf 'Closes #1\n' >"$td/pr-body.md"
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr creates via gh" 0 cutter-land pr L1
+land_log "pr create --repo github.com/acme/land --base main --head feat/L1 --title feat: the feature --body-file $td/pr-body.md" "gh pr create argv"
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN false" expect "pr updates via gh" 0 cutter-land pr L1
+land_log "pr edit feat/L1 --repo github.com/acme/land --body-file $td/pr-body.md" "gh pr edit argv"
+: >"$tmp/stub.log"
+STUB_VIEW="develop OPEN false" expect "pr refuses an open PR into another base" 2 cutter-land pr L1
+! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a wrong base" || bad "no edit or create for a wrong base"
+STUB_VIEW="main OPEN true" expect "pr refuses a fork's open PR" 2 cutter-land pr L1
+! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a fork's PR" || bad "no edit or create for a fork's PR"
+git remote set-url origin https://gitlab.example.com/grp/sub/land.git
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr creates via glab" 0 cutter-land pr L1
+land_log "mr create -R https://gitlab.example.com/grp/sub/land --target-branch main --source-branch feat/L1 --title feat: the feature --description Closes #1 --yes" "glab mr create argv"
+: >"$tmp/stub.log"
+STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":2,"target_project_id":1}' expect "pr refuses a fork's open MR" 2 cutter-land pr L1
+! grep -qE 'mr (update|create)' "$tmp/stub.log" && ok "no update or create for a fork's MR" || bad "no update or create for a fork's MR"
+STUB_VIEW='{"target_branch":"main","state":"opened","source_project_id":1,"target_project_id":1}' expect "pr updates via glab" 0 cutter-land pr L1
+land_log "mr update feat/L1 -R https://gitlab.example.com/grp/sub/land --description Closes #1" "glab mr update argv"
+git remote set-url origin git@github.com:acme/land.git
+: >"$tmp/stub.log"
+expect "pr rejects extra arguments" 2 cutter-land pr L1 --fill
+expect "pr rejects a bad id" 2 cutter-land pr '../x'
+: >"$td/pr-title"
+expect "pr refuses an empty title" 2 cutter-land pr L1
+printf 'feat: the feature\n' >"$td/pr-title"
+mv "$td/pr-body.md" "$tmp/real-body.md"; ln -s "$tmp/real-body.md" "$td/pr-body.md"
+expect "pr refuses a symlinked body" 2 cutter-land pr L1
+[ ! -s "$tmp/stub.log" ] && ok "no call for refused pr" || bad "no call for refused pr"
+rm "$td/pr-body.md"
+
+printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n' >"$tmp/land/.cutter/drafts/thing.md"
+STUB_LABELS=$'bug\nui\nother'
+export STUB_LABELS
+: >"$tmp/stub.log"
+expect "issue create" 0 cutter-land issue thing
+grep -qE -- '^issue create --repo github.com/acme/land --title Add the thing --body-file .+ --label bug --label ui --type Bug$' "$tmp/stub.log" && ok "gh issue create argv" || bad "gh issue create argv"
+expect "issue rejects a path slug" 2 cutter-land issue ../x
+expect "issue rejects a slash slug" 2 cutter-land issue a/b
+expect "issue rejects extra arguments" 2 cutter-land issue thing --label x
+printf '# T\nLabels: bug, nope\n\nb\n' >"$tmp/land/.cutter/drafts/bad.md"
+: >"$tmp/stub.log"
+expect "issue refuses an unknown label" 2 cutter-land issue bad
+! grep -q 'issue create' "$tmp/stub.log" && ok "no create call for an unknown label" || bad "no create call for an unknown label"
+ln -s "$tmp/land/.cutter/drafts/thing.md" "$tmp/land/.cutter/drafts/link.md"
+expect "issue refuses a symlinked draft" 2 cutter-land issue link
+printf '# T\nLabels:\n\nb\n' >"$tmp/land/.cutter/drafts/nolabel.md"
+: >"$tmp/stub.log"
+expect "issue with an empty Labels: line" 0 cutter-land issue nolabel
+! grep -q -- '--label' "$tmp/stub.log" && ok "no --label for an empty Labels: line" || bad "no --label for an empty Labels: line"
+mv "$tmp/land/.cutter/drafts" "$tmp/drafts-elsewhere"; ln -s "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
+expect "issue refuses a draft under a symlinked drafts dir" 2 cutter-land issue thing
+rm "$tmp/land/.cutter/drafts"; mv "$tmp/drafts-elsewhere" "$tmp/land/.cutter/drafts"
+ln "$tmp/real-body.md" "$td/pr-body.md"
+expect "pr refuses a hard-linked body" 2 cutter-land pr L1
+rm "$td/pr-body.md"; printf 'Closes #1\n' >"$td/pr-body.md"
+git remote set-url origin https://notgithub.com/acme/land.git
+: >"$tmp/stub.log"
+expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1
+expect "issue refuses a host that only contains github.com" 2 cutter-land issue thing
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host" || bad "no gh call for a look-alike host"
+unset STUB_LABELS
 git remote set-url origin "$tmp/github.com/land.git"
 
 # ff: local mode

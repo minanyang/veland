@@ -13,13 +13,13 @@ const bad = (m) => { console.log(`FAIL  ${m}`); fail = 1 }
 
 // Commands left to the user's own permissions, per skill (prefix of the placeholder-normalised line).
 const userOwn = {
-  close: ["gh pr create ", "gh pr edit ", "glab mr create ", "glab mr update "],
+  close: [],
   work: ["git -C X add ", "git -C X commit "],
-  open: ["gh api graphql ", "gh issue create "],
+  open: ["gh api graphql "],
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
-const bareGrants = ["cutter-worktree *"]
+const bareGrants = ["cutter-worktree *", "cutter-land *"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 
