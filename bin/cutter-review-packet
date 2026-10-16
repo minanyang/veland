@@ -14,6 +14,14 @@
 # review.md cut before "## Fixes applied" / "## Re-review", so the implementer's account of the
 # fixes never reaches the reviewer. Exit 3 when there are no commits since review-head.
 #
+# Both modes write a `## Plan checks` section (`none` when empty), always against the whole branch (merge
+# base...HEAD), so cases added in round 1 do not show as missing in round 2: each `## Tests` case name of
+# .cutter/<id>/plan.md not found in the added lines of its test file, and each `(gone)` Readers term still at
+# HEAD on a line that diff did not add (lockfiles, `generated` paths and CHANGELOG* excluded).
+# Both write `- security review: required (<reasons>)` when the packet's diff touches a bin/ script named in a
+# `Bash(<name> …)` entry of any skills/*/SKILL.md's allowed-tools, the frontmatter of a skills/*/SKILL.md,
+# hooks/hooks.json, or a file its commands name under ${CLAUDE_PLUGIN_ROOT}; no such line otherwise.
+#
 # Before anything is built, the `preReviewGates` commands from .claude/cutter.json run in the
 # worktree (logs in .cutter/<id>/pre-review/). The first that fails exits 1, naming it and printing
 # the log tail; no packet and no review-head are written. Fix, commit, rebuild.
@@ -70,6 +78,107 @@ while IFS= read -r g; do [ -n "$g" ] && excludes+=(":(exclude)$g"); done < <(cfg
 
 git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
 
+here="$(dirname "$(readlink -f "$0")")/.."
+if [ -n "$fixes" ]; then mb="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"; else mb="$base"; fi
+# shellcheck disable=SC2016  # JavaScript, not shell
+plan_checks="$(node -e '
+  const fs = require("fs"), { execFileSync } = require("child_process")
+  const [wt, planPath, mb, mdCheck, ...excl] = process.argv.slice(1)
+  const { blank, sections } = require(mdCheck)
+  if (!fs.existsSync(planPath)) process.exit(0)
+  const git = (args) => {
+    try { return execFileSync("git", ["-C", wt, ...args], { encoding: "utf8", maxBuffer: 1 << 30 }) }
+    catch (e) { if (e.status === 1) return ""; throw e }
+  }
+  // Added lines per file of merge base..HEAD: their text, and their line numbers at HEAD.
+  const added = new Map()
+  let file = null, n = 0, header = false
+  for (const l of git(["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", mb, "HEAD"]).split("\n")) {
+    if (l.startsWith("diff --git ")) { header = true; file = null; continue }
+    if (header && l.startsWith("+++ ")) { file = l === "+++ /dev/null" ? null : l.slice(6); if (file) added.set(file, { text: [], nums: new Set() }); continue }
+    const h = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+    if (h) { header = false; n = Number(h[1]); continue }
+    if (!header && file && l.startsWith("+")) { const a = added.get(file); a.text.push(l.slice(1)); a.nums.add(n++) }
+  }
+  const src = fs.readFileSync(planPath, "utf8"), lines = src.split("\n"), text = blank(lines)
+  const sec = (name) => sections(src).find((s) => s.name.toLowerCase() === name.toLowerCase())
+  const unquote = (c) => c.replace(/^`+|`+$/g, "").trim()
+  const out = []
+  const tests = sec("Tests")
+  if (tests) {
+    const rows = []
+    for (let k = tests.from; k < tests.to; k++) if (text[k] !== null && /^\s*\|/.test(lines[k]) && !/^\s*\|[\s:|-]+$/.test(lines[k])) rows.push(k)
+    for (const k of rows.slice(1)) {
+      const c = lines[k].trim().replace(/^\||\|$/g, "").split("|").map((s) => s.trim())
+      const tf = unquote(c[1] || ""), name = unquote(c[2] || "")
+      if (!tf || /^[—–-]+$/.test(tf) || !name) continue
+      if (!(added.get(tf) || { text: [] }).text.some((t) => t.includes(name)))
+        out.push("- test case `" + name + "` (" + c[0] + ") is not among the lines `" + tf + "` adds")
+    }
+  }
+  const readers = sec("Readers")
+  if (readers) for (let k = readers.from; k < readers.to; k++) {
+    if (text[k] === null || !/^[-*+]\s/.test(text[k]) || !/\(gone\)\s*$/.test(lines[k])) continue
+    const m = lines[k].match(/`([^`]+)`/)
+    if (!m) continue
+    for (const r of git(["grep", "-nzF", "-e", m[1], "HEAD", "--", ".", ...excl]).split("\n")) {
+      const [p, num] = r.split("\0")
+      if (num === undefined) continue
+      const f = p.replace(/^HEAD:/, "")
+      if (!(added.get(f) && added.get(f).nums.has(Number(num)))) out.push("- gone term `" + m[1] + "` still at `" + f + ":" + num + "`")
+    }
+  }
+  console.log(out.join("\n"))
+' "$path" "$dir/plan.md" "$mb" "$here/scripts/md-check.js" "${excludes[@]}" ':(exclude,glob)**/CHANGELOG*')" || die "could not run the plan checks"
+# shellcheck disable=SC2016  # JavaScript, not shell
+security="$(node -e '
+  const { execFileSync } = require("child_process")
+  const [wt, base] = process.argv.slice(1)
+  const git = (args) => {
+    try { return execFileSync("git", ["-C", wt, ...args], { encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "ignore"] }) }
+    catch (e) { return null }
+  }
+  const show = (rev, p) => git(["show", rev + ":" + p])
+  const changed = git(["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base, "HEAD"]).split("\n").filter(Boolean)
+  const skillRe = /^skills\/[^/]+\/SKILL\.md$/
+  const frontmatter = (s) => { // [1, n] of the --- block opening a file, or null
+    if (s === null) return null
+    const l = s.split("\n")
+    if (l[0].trim() !== "---") return null
+    const e = l.findIndex((x, i) => i > 0 && x.trim() === "---")
+    return e < 0 ? null : [1, e + 1]
+  }
+  // bin/<name> -> the skills whose allowed-tools grant Bash(<name> ...), at HEAD
+  const granted = new Map()
+  for (const p of (git(["ls-tree", "-r", "--name-only", "HEAD", "--", "skills"]) || "").split("\n").filter((p) => skillRe.test(p))) {
+    const s = show("HEAD", p), fm = frontmatter(s)
+    if (!fm) continue
+    for (const m of s.split("\n").slice(0, fm[1]).join("\n").matchAll(/Bash\(([^\s:)]+)/g)) {
+      const b = "bin/" + m[1]
+      if (git(["cat-file", "-e", "HEAD:" + b]) === null) continue
+      if (!granted.has(b)) granted.set(b, [])
+      if (!granted.get(b).includes(p)) granted.get(b).push(p)
+    }
+  }
+  const hooks = show("HEAD", "hooks/hooks.json") || ""
+  const registered = new Set([...hooks.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\x27\s\\]+)/g)].map((m) => m[1]))
+  const reasons = []
+  for (const f of changed) {
+    if (granted.has(f)) reasons.push(f + " is in the allowed-tools of " + granted.get(f).join(", "))
+    if (f === "hooks/hooks.json") reasons.push(f + " changed")
+    if (registered.has(f)) reasons.push(f + " is registered in hooks/hooks.json")
+    if (skillRe.test(f)) {
+      const was = frontmatter(show(base, f)), now = frontmatter(show("HEAD", f))
+      const meets = (r, a, n) => r && n > 0 && a <= r[1] && a + n - 1 >= r[0]
+      for (const h of (git(["diff", "-U0", "--no-color", "--no-ext-diff", base, "HEAD", "--", f]) || "").matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+        const [a, b, c, d] = [h[1], h[2] ?? "1", h[3], h[4] ?? "1"].map(Number)
+        if (meets(was, a, b) || meets(now, c, d)) { reasons.push(f + ": frontmatter changed"); break }
+      }
+    }
+  }
+  console.log(reasons.join("; "))
+' "$path" "$base")" || die "could not work out whether a security review is required"
+
 {
   if [ -n "$fixes" ]; then echo "# Review packet — $id, fix commits"; else echo "# Review packet — $id"; fi
   echo
@@ -78,6 +187,11 @@ git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
   if [ -n "$fixes" ]; then echo "- range: round 1 reviewed up to \`${base:0:9}\`; this diff is the commits since"
   else echo "- base: \`$(base_ref)\`, merge base \`${base:0:9}\`"; fi
   echo "- uncommitted paths: $(git -C "$path" status --porcelain | wc -l | tr -d ' ') (the diff is committed work only)"
+  [ -z "$security" ] || echo "- security review: required ($security)"
+  echo
+  echo "## Plan checks"
+  echo
+  echo "${plan_checks:-none}"
   echo
   echo "## Read these first, in one message"
   echo
