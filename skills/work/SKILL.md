@@ -11,6 +11,9 @@ allowed-tools:
   - Bash(cutter-red-proof *)
   - Bash(cutter-review-packet *)
   - Bash(cutter-verify *)
+  - Bash(git fetch)
+  - Bash(gh pr list *)
+  - Bash(glab mr list *)
 ---
 
 # Work a ticket
@@ -238,7 +241,7 @@ Agents write their memory (`.claude/agent-memory/`) under the session's working 
 cutter-worktree memory <id>
 ```
 
-It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep, as an `asked` line. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, as an `asked` line, then run the command again. No reviewer reads memory and `/cutter:close` pushes it, so show the user the branch's whole memory diff in the report, `git -C <worktree> diff origin/<base>...HEAD -- .claude/agent-memory` — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
+It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep, as an `asked` line. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, as an `asked` line, then run the command again. No reviewer reads memory and `/cutter:close` pushes it, so show the user the branch's whole memory diff in the report, `git diff origin/<base>...<branch> -- .claude/agent-memory` — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
 
 The report has this shape, in this order, with at most three lines of prose around it (the tables, lists, diffs and lines below are not prose):
 

@@ -511,6 +511,7 @@ esac
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
+  "issue create") exit "${STUB_CREATE_RC:-0}" ;;
   "issue view") echo '{"number":7,"title":"T","body":"b","url":"https://github.com/acme/land/issues/7","state":"OPEN","labels":[],"issueType":null,"comments":[]}' ;;
 esac
 exit 0
@@ -767,6 +768,11 @@ export STUB_LABELS
 : >"$tmp/stub.log"
 expect "issue create" 0 cutter-land issue thing
 grep -qE -- '^issue create --repo github.com/acme/land --title Add the thing --body-file .+ --label bug --label ui --type Bug$' "$tmp/stub.log" && ok "gh issue create argv" || bad "gh issue create argv"
+[ ! -e "$tmp/land/.cutter/drafts/thing.md" ] && ok "issue deletes the draft once the issue exists" || bad "issue deletes the draft once the issue exists"
+printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$tmp/land/.cutter/drafts/thing.md"
+: >"$tmp/stub.log"
+STUB_CREATE_RC=1 expect "issue exits with gh's code when gh issue create fails" 1 cutter-land issue thing
+grep -q 'issue create' "$tmp/stub.log" && [ -f "$tmp/land/.cutter/drafts/thing.md" ] && ok "issue keeps the draft when gh issue create fails" || bad "issue keeps the draft when gh issue create fails"
 expect "issue rejects a path slug" 2 cutter-land issue ../x
 expect "issue rejects a slash slug" 2 cutter-land issue a/b
 expect "issue rejects extra arguments" 2 cutter-land issue thing --label x

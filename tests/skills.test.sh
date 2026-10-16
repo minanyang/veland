@@ -1,5 +1,5 @@
 #!/bin/bash
-# The skills' `allowed-tools` must cover every command their fenced bash blocks run, and must not
+# The skills' `allowed-tools` must cover every command their fenced bash blocks run and every command their prose names in inline code (unless Claude Code allows it as read-only, it is left to the user, or it is named but never run), and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
 # open and work must load the shared references/grill.md (beside the skills directory).
@@ -20,6 +20,17 @@ const userOwn = {
   close: [],
   work: ["git -C X add ", "git -C X commit ", "cutter-land comment "],
   open: ["gh api graphql ", "cutter-land issue "],
+}
+const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
+// Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
+// `git log *` or `git diff *` instead would also allow `--output=<file>`.
+const readOnly = ["git log --name-only HEAD..origin/X", "git log -n 5 --oneline", "git worktree list",
+  "git diff --name-only X...X", "git diff origin/X...X -- .claude/agent-memory"]
+// Commands a skill's prose names for the user or as an explanation, never runs itself.
+const notRun = {
+  close: ["gh auth login", "glab auth login", "git rebase --skip", "git merge --ff-only"],
+  work: [],
+  open: ["gh auth login"],
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
@@ -47,6 +58,7 @@ for (const skill of Object.keys(userOwn)) {
     bodies.push(body)
   }
   if (entries.length) ok(`${skill}: entries are well-formed and safe`)
+  const covered = (line) => bodies.some((b) => b.endsWith(" *") ? line === b.slice(0, -2) || line.startsWith(b.slice(0, -1)) : line === b)
 
   const lines = []
   for (const blk of text.matchAll(/```bash\n([\s\S]*?)```/g))
@@ -55,10 +67,42 @@ for (const skill of Object.keys(userOwn)) {
   for (const raw of lines) {
     const line = norm(raw)
     if (/&&|\|\||;|\|/.test(line)) { bad(`${skill}: chained command: ${raw}`); continue }
-    const covered = bodies.some((b) => b.endsWith(" *") ? line === b.slice(0, -2) || line.startsWith(b.slice(0, -1)) : line === b)
-    if (covered) ok(`${skill}: covered: ${raw}`)
-    else if (userOwn[skill].some((p) => line.startsWith(p))) ok(`${skill}: left to the user: ${raw}`)
+    if (covered(line)) ok(`${skill}: covered: ${raw}`)
+    else if (ownedBy(skill, line)) ok(`${skill}: left to the user: ${raw}`)
     else bad(`${skill}: not covered by allowed-tools: ${raw}`)
+  }
+
+  // Prose: fenced blocks of every kind are removed first, then each inline-code span that is a command.
+  const prose = []
+  let fence = 0
+  for (const l of text.split("\n")) {
+    const f = /^\s*(`{3,})/.exec(l)
+    if (!fence && f) fence = f[1].length
+    else if (fence && f && f[1].length >= fence && /^\s*`+\s*$/.test(l)) fence = 0
+    else if (!fence) prose.push(l)
+  }
+  const spans = new Set()
+  const p = prose.join("\n")
+  for (let i = 0; i < p.length;) {
+    const run = /^`+/.exec(p.slice(i))
+    if (!run) { i++; continue }
+    const n = run[0].length
+    const close = new RegExp(`(?<!\`)\`{${n}}(?!\`)`, "g")
+    close.lastIndex = i + n
+    const c = close.exec(p)
+    if (!c) { i += n; continue }
+    spans.add(p.slice(i + n, c.index).replace(/\n/g, " ").trim())
+    i = c.index + n
+  }
+  for (const raw of spans) {
+    const line = norm(raw)
+    if (!/^(git|gh|glab|cutter-[a-z-]+) /.test(line)) continue
+    if (/&&|\|\||;|\|/.test(line)) bad(`${skill}: chained command in prose: ${raw}`)
+    else if (covered(line)) ok(`${skill}: covered (prose): ${raw}`)
+    else if (ownedBy(skill, line)) ok(`${skill}: left to the user: ${raw}`)
+    else if (readOnly.includes(line)) ok(`${skill}: left to Claude Code's read-only rules: ${raw}`)
+    else if (notRun[skill].includes(line)) ok(`${skill}: named, not run: ${raw}`)
+    else bad(`${skill}: prose command not covered by allowed-tools: ${raw}`)
   }
 }
 
