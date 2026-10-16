@@ -215,10 +215,26 @@ printf -- '---\nname: s\nallowed-tools:\n  - Bash(tool-a *)\n---\n\n# S\n\nbody 
 printf -- '---\nname: t\ndescription: t\nallowed-tools: Bash(tool-c:*) Bash(git status:*)\n---\n\n# T\n' >skills/t/SKILL.md
 printf '#!/bin/bash\n' | tee bin/tool-a bin/tool-b bin/tool-c >/dev/null
 printf '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/h.js\\"" } ] } ] } }\n' >hooks/hooks.json
-echo '// h' >hooks/h.js
+mkdir -p skills/u scripts
+printf -- '---\nname: u\nallowed-tools: Bash(cutter-land *)\n---\n\n# U\n' >skills/u/SKILL.md
+cat >bin/cutter-land <<'EOF'
+#!/bin/bash
+source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
+source "$dir/dynamic.sh"
+source "$(dirname "$0")/../../outside.sh"
+EOF
+echo 'source "$(dirname "$(readlink -f "$0")")/deep.sh"' >scripts/lib.sh
+for f in scripts/deep.sh scripts/dynamic.sh scripts/other.sh scripts/md-check.js hooks/helper.js; do echo '# x' >"$f"; done
+cat >hooks/h.js <<'EOF'
+// h
+require(path.join(__dirname, '..', 'scripts', 'md-check.js'))
+require('./helper')
+require('./missing')
+require(p)
+EOF
 echo 'export const keptTerm = 1' >src/keep.mjs
 echo '- oldTerm was renamed' >CHANGELOG.md
-git add skills bin hooks src/keep.mjs CHANGELOG.md && git commit -qm "chore: packet fixtures" && git push -q origin main
+git add skills bin hooks scripts src/keep.mjs CHANGELOG.md && git commit -qm "chore: packet fixtures" && git push -q origin main
 expect "worktree add PK" 0 cutter-worktree add PK --no-setup
 wpk="$tmp/repo/.worktrees/PK"
 mkdir -p .cutter/PK "$wpk/tests"
@@ -282,6 +298,27 @@ fixes_after() { # <commit message> — mark HEAD reviewed, commit the worktree's
   git -C "$wpk" commit -qam "$1"
   expect "fixes packet PK: $1" 0 cutter-review-packet PK --fixes
 }
+echo '# changed' >>"$wpk/scripts/lib.sh"
+fixes_after "fix: lib.sh"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (scripts/lib.sh is loaded by bin/cutter-land)' ] &&
+  ok "packet requires security review for a file a granted script sources" || { bad "packet requires security review for a file a granted script sources"; cat .cutter/PK/fixes-packet.md; }
+echo '# changed' >>"$wpk/scripts/deep.sh"
+fixes_after "fix: deep.sh"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: a file loaded by a loaded file needs no security review" || { bad "fixes packet: a file loaded by a loaded file needs no security review"; cat .cutter/PK/fixes-packet.md; }
+echo '# changed' >>"$wpk/scripts/dynamic.sh"
+fixes_after "fix: dynamic.sh"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "packet ignores load paths it cannot resolve" || { bad "packet ignores load paths it cannot resolve"; cat .cutter/PK/fixes-packet.md; }
+echo '# changed' >>"$wpk/scripts/other.sh"
+fixes_after "fix: other.sh"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: an unrelated scripts/ file needs no security review" || { bad "fixes packet: an unrelated scripts/ file needs no security review"; cat .cutter/PK/fixes-packet.md; }
+echo '# changed' >>"$wpk/scripts/md-check.js"
+fixes_after "fix: md-check.js"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (scripts/md-check.js is loaded by hooks/h.js)' ] &&
+  ok "packet requires security review for a file a registered hook requires" || { bad "packet requires security review for a file a registered hook requires"; cat .cutter/PK/fixes-packet.md; }
+echo '# changed' >>"$wpk/hooks/helper.js"
+fixes_after "fix: helper.js"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (hooks/helper.js is loaded by hooks/h.js)' ] &&
+  ok "packet resolves a relative require without its extension" || { bad "packet resolves a relative require without its extension"; cat .cutter/PK/fixes-packet.md; }
 printf -- '---\nname: s\nallowed-tools:\n  - Bash(tool-a *)\n---\n\n# S\n\nanother body line\n' >"$wpk/skills/s/SKILL.md"
 fixes_after "docs: skill body"
 ! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: a skill body change needs no security review" || { bad "fixes packet: a skill body change needs no security review"; cat .cutter/PK/fixes-packet.md; }
