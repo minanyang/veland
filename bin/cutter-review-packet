@@ -27,7 +27,8 @@
 # HEAD on a line that diff did not add (lockfiles, `generated` paths and CHANGELOG* excluded).
 # Both write `- security review: required (<reasons>)` when the packet's diff touches a bin/ script named in a
 # `Bash(<name> …)` entry of any skills/*/SKILL.md's allowed-tools, the frontmatter of a skills/*/SKILL.md or agents/*.md,
-# hooks/hooks.json, or a file its commands name under ${CLAUDE_PLUGIN_ROOT}; no such line otherwise.
+# hooks/hooks.json, a file its commands name under ${CLAUDE_PLUGIN_ROOT}, or a file one of those scripts loads (one
+# level) by a `source "$(dirname …)/…"` or a relative `require` resolvable without running it; no such line otherwise.
 #
 # Before anything is built, the `preReviewGates` commands from .claude/cutter.json run in the
 # worktree (logs in .cutter/<id>/pre-review/). The first that fails exits 1, naming it and printing
@@ -143,7 +144,7 @@ plan_checks="$(node -e '
 ' "$path" "$dir/plan.md" "$mb" "$here/scripts/md-check.js" "${excludes[@]}" ':(exclude,glob)**/CHANGELOG*')" || die "could not run the plan checks"
 # shellcheck disable=SC2016  # JavaScript, not shell
 security="$(node -e '
-  const { execFileSync } = require("child_process")
+  const path = require("path"), { execFileSync } = require("child_process")
   const [wt, base] = process.argv.slice(1)
   const git = (args) => {
     try { return execFileSync("git", ["-C", wt, ...args], { encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "ignore"] }) }
@@ -174,6 +175,26 @@ security="$(node -e '
   }
   const hooks = show("HEAD", "hooks/hooks.json") || ""
   const registered = new Set([...hooks.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\x27\s\\]+)/g)].map((m) => m[1]))
+  // file -> the granted scripts and registered hooks that load it by a static, script-relative path; one level only
+  const isFile = (p) => [base, "HEAD"].some((rev) => git(["cat-file", "-t", rev + ":" + p]) === "blob\n")
+  const loaded = new Map()
+  for (const loader of new Set([...granted.keys(), ...registered])) {
+    const s = show("HEAD", loader)
+    if (s === null) continue
+    const found = [] // [path relative to the loader, is a require]
+    for (const m of s.matchAll(/(?:^|\s)(?:source|\.) +"(?:\$\(dirname "\$\(readlink -f "\$0"\)"\)|\$\(dirname "\$0"\))(\/[^$`"]*)"/gm)) found.push([m[1], false])
+    for (const m of s.matchAll(/\brequire\(\s*(?:path\.)?join\(\s*__dirname\s*((?:,\s*(?:\x27[^\x27]*\x27|"[^"]*")\s*)+)\)\s*\)/g))
+      found.push([[...m[1].matchAll(/\x27([^\x27]*)\x27|"([^"]*)"/g)].map((l) => l[1] ?? l[2]).join("/"), true])
+    for (const m of s.matchAll(/\brequire\(\s*(\x27|")(\.\.?\/[^\x27"]*)\1\s*\)/g)) found.push([m[2], true])
+    for (const [rel, req] of found) {
+      const p = path.posix.normalize(path.posix.join(path.posix.dirname(loader), rel))
+      if (p === ".." || p.startsWith("../")) continue
+      const f = [p, ...(req ? [p + ".js", p + ".json", p + "/index.js"] : [])].find(isFile)
+      if (f === undefined) continue
+      if (!loaded.has(f)) loaded.set(f, [])
+      if (!loaded.get(f).includes(loader)) loaded.get(f).push(loader)
+    }
+  }
   const reasons = []
   for (const f of changed) {
     if (granted.has(f)) reasons.push(f + " is in the allowed-tools of " + granted.get(f).join(", "))
@@ -187,6 +208,7 @@ security="$(node -e '
         if (meets(was, a, b) || meets(now, c, d)) { reasons.push(f + ": frontmatter changed"); break }
       }
     }
+    if (loaded.has(f)) reasons.push(f + " is loaded by " + loaded.get(f).join(", "))
   }
   console.log(reasons.join("; "))
 ' "$path" "$base")" || die "could not work out whether a security review is required"
