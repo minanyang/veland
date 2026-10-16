@@ -187,7 +187,7 @@ The packet's `## Plan checks` lists each `## Tests` case not found in the test f
 
 **The tree is frozen** until every reviewer and the verify run have returned: no edits in the worktree while they read or test it.
 
-Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, verbatim in substance, headed with the verdict and the criteria they were judged against. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line. A criterion whose `## Tests` row has `—` as test file is `met` once the last review round that read it — round 1, or round 2 when round 1 had a finding against it — returns with no open finding against it: cite that verdict and the row's method. When the last round's finding against it is fixed under `### Fixes applied`, cite that finding and the fix commit instead.
+Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md` as a round: `## Round <n> — full` (`1`, or the next number after a plan change, Step 7b), then a `Verdict:` line and a `Criteria:` line (the criteria they were judged against), then the findings verbatim in substance with the reviewer's own headings demoted to `####` or deeper, then `### Plan checks`. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line. A criterion whose `## Tests` row has `—` as test file is `met` once the latest full round (each reads the whole branch), or the fixes round after it when that round had a finding against the criterion, returns with no open finding against it: cite that verdict and the row's method. When the finding against it is fixed under `### Fixes applied`, cite that finding and the fix commit instead.
 
 ## Step 7 — Act on the findings
 
@@ -199,10 +199,10 @@ Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, v
 
 - A finding you believe is wrong is not "fixed" to make it go away: say why in `review.md` and leave the code.
 - A problem the change causes or leaves inconsistent is fixed in this ticket, even in a file `## Files` does not list: add the file to `## Files` (no new approval; the report lists the additions).
-- Anything else — a `minor` arguing for work the change did not cause, scope beyond the ticket — is asked to the user before the report, as an `asked` line. Record the answer in `review.md` under `### Decisions`, in the user's words.
+- Anything else — a `minor` arguing for work the change did not cause, scope beyond the ticket — is asked to the user before the report, as an `asked` line. Record the answer in the current round of `review.md` under `### Decisions`, in the user's words.
 - Small fixes in files you can name: do them yourself. Larger: one engineer agent, handed the findings verbatim and the files.
 
-Fixes are further commits on the branch. Then `cutter-red-proof <id>` again if tests changed. Append `## Fixes applied` to `review.md` (per finding: what changed or why not, and the commit), never overwrite the original findings.
+Fixes are further commits on the branch. Then `cutter-red-proof <id>` again if tests changed. Add `### Fixes applied` to the current round of `review.md` (per finding: what changed or why not, and the commit), never overwrite its findings.
 
 ## Step 7a — Review the fixes, once
 
@@ -212,15 +212,27 @@ Every line written in response to the review is read by a reviewer too. Build th
 cutter-review-packet <id> --fixes
 ```
 
-Exit 1 means a pre-review gate failed: fix, commit and rebuild, as in Step 6. Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): write it as an `asked` line, report it and stop, never skip round 2 silently.
+Exit 1 means a pre-review gate failed: fix, commit and rebuild, as in Step 6. Exit 3 means there are no commits since the review: no fixes round, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): write it as an `asked` line, report it and stop, never skip the fixes round silently. It also refuses when `review.md` has no `## Round <n> — full|fixes` heading, and when its last round is a `— fixes` round (those fixes are verified, not reviewed again).
 
-Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion — the change they touch, or the fixes packet's `security review: required`. Every item in the fixes packet's `## Plan checks` is a finding, as in Step 6. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Every item under the packet's `## Plan checks` is a finding. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
+Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in the full round, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion — the change they touch, or the fixes packet's `security review: required`. Every item in the fixes packet's `## Plan checks` is a finding, as in Step 6. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the review of the round the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Every item under the packet's `## Plan checks` is a finding. Findings only."* The packet carries the plan and the last round's findings, never its `### Fixes applied` — do not add it. The tree is frozen until all have returned.
 
-Append the findings to `review.md` as `## Re-review`, headed with the verdict. Act on them with the same table. This round is the last: fixes it calls for are recorded under `## Re-review` → `### Fixes applied`, followed by `cutter-red-proof <id>` if tests changed and `cutter-verify <id>` on the final tree — no third review.
+Append the findings to `review.md` as `## Round <n+1> — fixes`, in the same format as Step 6. Act on them with the same table. A fixes round is never reviewed: fixes it calls for are recorded under its own `### Fixes applied`, followed by `cutter-red-proof <id>` if tests changed and `cutter-verify <id>` on the final tree — no further review.
+
+## Step 7b — After a plan change
+
+Applies only when the user approves a change to `plan.md`: a new or changed criterion, or scope that a `### Decisions` answer added.
+
+1. Act on the current round's findings and record them under its `### Fixes applied`. A pending fixes round is skipped, because the new full round reads the whole branch.
+2. Edit the plan, add new criteria to `evidence.md` as `pending`, and run `cutter-plan-check`.
+3. Show the change, and any product answers written to `comment.md`. On approval, post the comment, and keep `Status: approved`.
+4. Continue from Step 3 in the existing worktree; a new session gets there through Step 0 → Step 2, and `cutter-worktree add` re-runs.
+5. Run a new full round (Step 6, next number), then at most one fixes round (Step 7a).
+
+Without an approved plan change, there is no further full round.
 
 ## Step 8 — Commit agent memory, report and stop
 
-Agents write their memory (`.claude/agent-memory/`) under the session's working directory — the main checkout, or the worktree once the session has moved there. Once both review rounds are over, commit it on the ticket branch — not after each round: moving it out of the main checkout would hide round 1's memory from round 2's reviewers, and a memory commit would enter round 2's diff.
+Agents write their memory (`.claude/agent-memory/`) under the session's working directory — the main checkout, or the worktree once the session has moved there. Once the last round is over, commit it on the ticket branch — also again after a Step 7b loop that reopened the work after an earlier report. Not after each round: moving memory out of the main checkout would hide it from the next round's reviewers. The packets leave `.claude/agent-memory` out of their diff, so a memory commit is never reviewed.
 
 ```bash
 cutter-worktree memory <id>
@@ -233,7 +245,7 @@ The report has this shape, in this order, with at most three lines of prose arou
 - `Branch: <branch>`, then one line per commit, `<short hash> <subject>`;
 - the final `cutter-verify` summary as printed, in a code fence;
 - `Red-proof:` then the last run's per-file `RED` lines;
-- one `Round <n>: <verdict> — <count> findings: <n> fixed, <n> answered` line per review round, plan checks and security findings counted in — `Round 2: none — no commits after round 1` when Step 7a exited 3 — then `Review: .cutter/<id>/review.md`;
+- one `Round <n>: <verdict> — <count> findings: <n> fixed, <n> answered` line per review round, plan checks and security findings counted in — `Round <n+1>: none — no commits after round <n>` when Step 7a exited 3 — then `Review: .cutter/<id>/review.md`;
 - `Memory:` then the committed memory files and their full diff in a `diff` fence — only when `cutter-worktree memory` committed something;
 - `Files added:` then the files added to `## Files` in Step 7 — only when there are any;
 - `Deferred:` then one line per criterion marked `deferred`, with the user's words — only when there are any;

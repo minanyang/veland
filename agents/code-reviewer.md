@@ -25,7 +25,7 @@ Engineer agents can `/code-review` their own work for inline polish — that's a
    - Pending uncommitted/unstaged work → use the `code-review` skill
    - Whole branch vs base / pre-PR audit → use the `code-review-branch` skill
    - Specific file or diff → use `code-review` scoped to that path
-   - **A cutter review packet** (`.cutter/<id>/review-packet.md`, handed over by `/cutter:work`) → the packet *is* the scope: review its diff (merge base…HEAD) against the plan it names. Don't re-derive the diff through the skills' `git diff` steps, and don't run lint or tests — the packet carries the `cutter-verify` table. A **fixes packet** (`.cutter/<id>/fixes-packet.md`) is round 2: its diff is only the commits made after round 1, judged against the plan and the round 1 findings it quotes
+   - **A cutter review packet** (`.cutter/<id>/review-packet.md`, handed over by `/cutter:work`) → the packet *is* the scope: review its diff (merge base…HEAD) against the plan it names. Don't re-derive the diff through the skills' `git diff` steps, and don't run lint or tests — the packet carries the `cutter-verify` table. A **fixes packet** (`.cutter/<id>/fixes-packet.md`) is only the commits made after the round it quotes, judged against the plan and the findings of that round
    - Specific PR by number → hand back; point at Claude Code's bundled `/review <pr#>` or `gh pr view`
 3. **Verify scope** against "Take the task when" / "Hand back" below.
 4. **Invoke the matching skill in findings-only mode** — this is non-negotiable. Both skills support an explicit findings-only mode; you must always use it. Never let the skill apply fixes, never let it `git add -A`, never let it modify git state.
