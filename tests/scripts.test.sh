@@ -284,6 +284,15 @@ printf '{ "hooks": {} }\n' >"$wpk/hooks/hooks.json"
 fixes_after "feat: hooks.json"
 [ -n "$h1" ] && [ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (hooks/hooks.json changed)' ] &&
   ok "packet requires security review for a hook change" || { bad "packet requires security review for a hook change"; cat .cutter/PK/fixes-packet.md; }
+mkdir -p "$wpk/agents" && printf -- '---\nname: a\ntools: Read\n---\n\n# A\n' >"$wpk/agents/a.md" && git -C "$wpk" add agents/a.md
+fixes_after "feat: agent"
+printf -- '---\nname: a\ntools: Read, Bash\n---\n\n# A\n' >"$wpk/agents/a.md"
+fixes_after "feat: agent tools"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (agents/a.md: frontmatter changed)' ] &&
+  ok "packet requires security review for an agent frontmatter change" || { bad "packet requires security review for an agent frontmatter change"; cat .cutter/PK/fixes-packet.md; }
+printf -- '\nanother body line\n' >>"$wpk/agents/a.md"
+fixes_after "docs: agent body"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: an agent body change needs no security review" || { bad "fixes packet: an agent body change needs no security review"; cat .cutter/PK/fixes-packet.md; }
 expect "rm PK" 0 cutter-worktree rm PK
 
 # lock

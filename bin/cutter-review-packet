@@ -19,7 +19,7 @@
 # .cutter/<id>/plan.md not found in the added lines of its test file, and each `(gone)` Readers term still at
 # HEAD on a line that diff did not add (lockfiles, `generated` paths and CHANGELOG* excluded).
 # Both write `- security review: required (<reasons>)` when the packet's diff touches a bin/ script named in a
-# `Bash(<name> …)` entry of any skills/*/SKILL.md's allowed-tools, the frontmatter of a skills/*/SKILL.md,
+# `Bash(<name> …)` entry of any skills/*/SKILL.md's allowed-tools, the frontmatter of a skills/*/SKILL.md or agents/*.md,
 # hooks/hooks.json, or a file its commands name under ${CLAUDE_PLUGIN_ROOT}; no such line otherwise.
 #
 # Before anything is built, the `preReviewGates` commands from .claude/cutter.json run in the
@@ -141,6 +141,7 @@ security="$(node -e '
   const show = (rev, p) => git(["show", rev + ":" + p])
   const changed = git(["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base, "HEAD"]).split("\n").filter(Boolean)
   const skillRe = /^skills\/[^/]+\/SKILL\.md$/
+  const fmRe = /^(?:skills\/[^/]+\/SKILL|agents\/[^/]+)\.md$/ // files whose frontmatter grants tools
   const frontmatter = (s) => { // [1, n] of the --- block opening a file, or null
     if (s === null) return null
     const l = s.split("\n")
@@ -167,7 +168,7 @@ security="$(node -e '
     if (granted.has(f)) reasons.push(f + " is in the allowed-tools of " + granted.get(f).join(", "))
     if (f === "hooks/hooks.json") reasons.push(f + " changed")
     if (registered.has(f)) reasons.push(f + " is registered in hooks/hooks.json")
-    if (skillRe.test(f)) {
+    if (fmRe.test(f)) {
       const was = frontmatter(show(base, f)), now = frontmatter(show("HEAD", f))
       const meets = (r, a, n) => r && n > 0 && a <= r[1] && a + n - 1 >= r[0]
       for (const h of (git(["diff", "-U0", "--no-color", "--no-ext-diff", base, "HEAD", "--", f]) || "").matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
