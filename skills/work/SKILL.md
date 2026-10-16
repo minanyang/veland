@@ -34,7 +34,7 @@ Work out the id from the argument:
 | an id that has `.cutter/<id>/` | that id | already there |
 | words describing a task | a short kebab-case slug of it, ≤ 30 characters | the user's words |
 
-If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, show it, and `.cutter/<id>/comment.md` verbatim when there is one, and ask for approval or changes; on approval, continue as at the end of Step 1. Otherwise Step 1.
+If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, show it once — its path on one line, then the file verbatim as rendered markdown, never summarised again in the same reply — and `.cutter/<id>/comment.md` the same way when there is one, and ask for approval or changes; on approval, continue as at the end of Step 1. Otherwise Step 1.
 
 ## Step 1 — Plan, then stop
 
@@ -112,7 +112,7 @@ Exit 1 names every line at fault: fix them and run it again until it exits 0.
 
 When `## Files` has more than 3 top-level bullets, have the plan read cold: spawn the `Explore` agent with only the paths of `.cutter/<id>/ticket.md` and `.cutter/<id>/plan.md` and: *"Read both files whole, then the repository files the plan names. List every point where implementing this plan would need a guess — a name, a format, an order, a case it does not settle. Mark those the code answers, with the file and line."* Answer from the code what it can; ask the user the rest in one grill round, a recommended answer each (product answers also go into `comment.md` for a GitHub issue); update the plan. Run `cutter-plan-check <id>` again after this and after any later change to the plan, before it is shown.
 
-Show the plan, and `comment.md` verbatim when there is one, and **stop**. On approval, when `comment.md` exists, post it first — it is public, and the user has now seen it:
+Show the plan once — its path on one line, then the file verbatim as rendered markdown, never summarised again in the same reply — and `comment.md` the same way when there is one, and **stop**. On approval, when `comment.md` exists, post it first — it is public, and the user has now seen it:
 
 ```bash
 cutter-land comment <id>
@@ -228,7 +228,28 @@ cutter-worktree memory <id>
 
 It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep, as an `asked` line. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, as an `asked` line, then run the command again. No reviewer reads this commit and `/cutter:close` pushes it, so show the user its full diff in the report — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
 
-Report: the branch and commits, the memory files committed and their diff, the final `cutter-verify` table, red-proof's result, both review rounds' verdicts and what was done about each finding, the files added to `## Files` in Step 7, and each criterion marked `deferred` with the user's words. Nothing else stays open: every criterion in `evidence.md` is `met` or `deferred` before the report. Then stop. The next step is `/cutter:close <id>`.
+The report has this shape, in this order, with at most three lines of prose around it (the tables, lists, diffs and lines below are not prose):
+
+- `Branch: <branch>`, then one line per commit, `<short hash> <subject>`;
+- the final `cutter-verify` summary as printed, in a code fence;
+- `Red-proof:` then the last run's per-file `RED` lines;
+- one `Round <n>: <verdict> — <count> findings: <n> fixed, <n> answered` line per review round, plan checks and security findings counted in — `Round 2: none — no commits after round 1` when Step 7a exited 3 — then `Review: .cutter/<id>/review.md`;
+- `Memory:` then the committed memory files and their full diff in a `diff` fence — only when `cutter-worktree memory` committed something;
+- `Files added:` then the files added to `## Files` in Step 7 — only when there are any;
+- `Deferred:` then one line per criterion marked `deferred`, with the user's words — only when there are any;
+- the next step, `/cutter:close <id>`.
+
+Nothing else stays open: every criterion in `evidence.md` is `met` or `deferred` before the report. Then stop. The next step is `/cutter:close <id>`.
+
+## Replies
+
+- Lead with the result. No first sentence that announces what comes next, and no closing recap or offer.
+- Between routine tool calls, at most one line per phase change — a phase is one of this skill's numbered steps.
+- Say each fact once: what the reply has already shown is not summarised again.
+
+Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/cutter:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.cutter/`.
+
+The final reply is Step 8's report, in its shape.
 
 ## Never
 

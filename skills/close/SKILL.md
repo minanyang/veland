@@ -110,6 +110,16 @@ It removes the worktree and deletes the branch once its changes are on the base 
 
 What landed and where (PR URL or base commit), the final verify table, what `sync-base` did to the local base (fast-forwarded to which commit, or left behind and why), and what was cleaned up or left.
 
+## Replies
+
+- Lead with the result. No first sentence that announces what comes next, and no closing recap or offer.
+- Between routine tool calls, at most one line per phase change — a phase is one of this skill's numbered steps.
+- Say each fact once: what the reply has already shown is not summarised again.
+
+Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/cutter:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.cutter/`.
+
+The final reply is Step 5's report.
+
 ## Never
 
 - Never land a branch whose rebased tree did not pass `cutter-verify`.

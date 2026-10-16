@@ -83,7 +83,7 @@ Title: a bug by the problem observed (`Close reports a merged PR as open`), a fe
 
 Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases in `references/banned-phrases.txt` at the plugin root — `cutter-land issue` refuses them outside code, as it refuses an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
 
-Show the user the title, the kind with the label, type or form it maps to, and the body. **Stop** until the user approves or edits it.
+Show the draft once: one line `Kind: <kind> → <label, type or form>` (the kind is not in the file), the draft's path on one line, then the file verbatim as rendered markdown — never summarised again in the same reply. **Stop** until the user approves or edits it.
 
 ## Step 4 — Create
 
@@ -97,7 +97,17 @@ Report the issue URL and the next step, `/cutter:work gh-<n>`. Delete the draft 
 
 ## Several at once
 
-When one request yields several tickets, first show a table of the request's goals, each mapped to the ticket and the criterion that covers it. A goal with no row is raised with the user before any draft is written. Then draft each, show them together, and create the ones the user approves. One issue per independent piece of work: a piece that can ship and be reviewed alone is its own ticket.
+When one request yields several tickets, first show a table of the request's goals, each mapped to the ticket and the criterion that covers it. A goal with no row is raised with the user before any draft is written. Then draft each, show them together — each as in Step 3, its `Kind:` line, path and file verbatim, shown once — and create the ones the user approves. One issue per independent piece of work: a piece that can ship and be reviewed alone is its own ticket.
+
+## Replies
+
+- Lead with the result. No first sentence that announces what comes next, and no closing recap or offer.
+- Between routine tool calls, at most one line per phase change — a phase is one of this skill's numbered steps.
+- Say each fact once: what the reply has already shown is not summarised again.
+
+Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/cutter:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.cutter/`.
+
+The final reply is Step 4's: the issue URL and the next step.
 
 ## Never
 
