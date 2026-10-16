@@ -134,18 +134,30 @@ grep -q 'src/mul.mjs' .cutter/T1/review-packet.md && [ -s .cutter/T1/review.diff
 grep -q 'gates already ran' .cutter/T1/review-packet.md && ok "packet carries the verify summary" || bad "packet carries the verify summary"
 [ "$(cat .cutter/T1/review-head)" = "$(git -C "$wt" rev-parse HEAD)" ] && ok "packet records the reviewed head" || bad "packet records the reviewed head"
 
-# fixes packet: only the commits since the reviewed head, with round 1's findings
+# fixes packet: only the commits since the reviewed head, with the last round's findings
 expect "fixes packet refuses without review.md" 2 cutter-review-packet T1 --fixes
-printf '# T1 — review\n\n- [minor] round-one-finding\n\n## Fixes applied\n\n- implementer-account\n' >.cutter/T1/review.md
+printf '# T1 — review\n\n- [minor] unnumbered-finding\n' >.cutter/T1/review.md
+expect "fixes packet refuses a review.md without rounds" 2 cutter-review-packet T1 --fixes
+grep -q 'Round <n>' "$tmp/out" && ok "refusal names the round heading" || bad "refusal names the round heading"
+printf '## Round 1 — full\n\nVerdict: x\n\n- [minor] round-one-finding\n\n### Fixes applied\n\n- round-one-account\n\n## Round 2 — fixes\n\nVerdict: y\n' >.cutter/T1/review.md
+expect "fixes packet refuses after a fixes round" 2 cutter-review-packet T1 --fixes
+grep -q 'already a fixes review' "$tmp/out" && ok "refusal says the fixes are not reviewed again" || bad "refusal says the fixes are not reviewed again"
+printf '\n## Round 3 — full\n\nVerdict: z\nCriteria: AC1\n\n#### [minor] round-three-finding\n\n### Plan checks\n\nnone\n\n### Decisions\n\n- decision-three\n\n### Fixes applied\n\n- implementer-account\n\n#### nested-heading\n\nnested-fix-text\n' >>.cutter/T1/review.md
 expect "fixes packet with no fix commits" 3 cutter-review-packet T1 --fixes
 [ ! -e .cutter/T1/fixes-packet.md ] && ok "no fixes packet without fix commits" || bad "no fixes packet without fix commits"
 echo 'export const sq = (a) => a * a' >"$wt/src/sq.mjs"
-git -C "$wt" add src/sq.mjs && git -C "$wt" commit -qm "fix: add sq"
+mkdir -p "$wt/.claude/agent-memory/cutter-y" && echo 'memory-note' >"$wt/.claude/agent-memory/cutter-y/n.md"
+git -C "$wt" add src/sq.mjs .claude/agent-memory && git -C "$wt" commit -qm "fix: add sq"
 expect "fixes packet" 0 cutter-review-packet T1 --fixes
 grep -q 'src/sq.mjs' .cutter/T1/fixes.diff && ! grep -q 'src/mul.mjs' .cutter/T1/fixes.diff && ok "fixes diff holds only the fix commits" || bad "fixes diff holds only the fix commits"
-grep -q 'round-one-finding' .cutter/T1/fixes-packet.md && ok "fixes packet carries round 1's findings" || bad "fixes packet carries round 1's findings"
-! grep -q 'implementer-account' .cutter/T1/fixes-packet.md && ok "fixes packet leaves out Fixes applied" || bad "fixes packet leaves out Fixes applied"
-grep -q 'src/mul.mjs' .cutter/T1/review.diff && ok "round 1 diff kept" || bad "round 1 diff kept"
+fp=.cutter/T1/fixes-packet.md
+grep -q '^## Round 3 findings — what these commits respond to' "$fp" && grep -q 'round-three-finding' "$fp" && ! grep -qE 'round-one|unnumbered-finding' "$fp" && ok "fixes packet quotes only the last round" || bad "fixes packet quotes only the last round"
+grep -q 'decision-three' "$fp" && ! grep -qE 'implementer-account|nested-heading|nested-fix-text' "$fp" && ok "fixes packet leaves out the round's Fixes applied and keeps its Decisions" || bad "fixes packet leaves out the round's Fixes applied and keeps its Decisions"
+grep -qF -- '- range: round 3 reviewed up to' "$fp" && ok "fixes packet names the round" || bad "fixes packet names the round"
+no_memory_section() { awk '/^## Agent memory/ { s = 1; next } /^## / { s = 0 } !s' "$1"; }
+! grep -q 'agent-memory' .cutter/T1/review.diff .cutter/T1/fixes.diff && ! no_memory_section .cutter/T1/review-packet.md | grep -q 'agent-memory' && ! no_memory_section "$fp" | grep -q 'agent-memory' && ok "packets leave agent memory out" || bad "packets leave agent memory out"
+grep -q 'cutter-x/kept.md' .cutter/T1/review-packet.md && grep -q 'cutter-y/n.md' "$fp" && ok "packets list the commits that touch agent memory" || bad "packets list the commits that touch agent memory"
+grep -q 'src/mul.mjs' .cutter/T1/review.diff && ok "full diff kept" || bad "full diff kept"
 expect "packet rejects an unknown flag" 2 cutter-review-packet T1 --nope
 git -C "$wt" rev-parse HEAD >.cutter/T1/review-head
 git -C "$wt" commit -q --amend -m "fix: add sq (amended)"
@@ -252,7 +264,7 @@ echo 'export const kept = 1' >"$wpk/src/keep.mjs"
 git -C "$wpk" commit -qam "feat: case two"
 expect "packet PK, round 1 again" 0 cutter-review-packet PK
 [ "$(plan_checks_in "$pk")" = none ] && ok "packet lists no plan checks when all are met" || { bad "packet lists no plan checks when all are met"; cat "$pk"; }
-echo '# PK — review' >.cutter/PK/review.md
+printf '## Round 1 — full\n\nVerdict: x\n' >.cutter/PK/review.md
 echo 'export const fix = 1' >"$wpk/src/fix.mjs"
 git -C "$wpk" add -A && git -C "$wpk" commit -qm "fix: fix"
 expect "fixes packet PK" 0 cutter-review-packet PK --fixes
