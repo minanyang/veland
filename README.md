@@ -133,7 +133,7 @@ Invoke as `cutter:<name>` (the Agent tool needs the prefix).
 | `cutter:code-reviewer` | cold-context review; reports only findings it is ≥ 80% confident in, read-only | fixes |
 | `cutter:security-reviewer` | security review, threat modelling, dependency audit, read-only | fixes |
 
-Agents use `memory: project`, stored under `.claude/agent-memory/cutter-<name>/` and committed: `/cutter:work` moves what agents wrote during the ticket onto its branch (`cutter-worktree memory`), so it is reviewed and merged with the work. `mcp__context7` and `mcp__playwright` are used when those MCP servers are installed, and skipped otherwise.
+Agents use `memory: project`, stored under `.claude/agent-memory/cutter-<name>/` and committed: `/cutter:work` moves what agents wrote during the ticket onto its branch (`cutter-worktree memory`), so it is merged with the work. Review packets leave it out of their diff and list the commits that touch it; the report shows you the branch's whole memory diff. `mcp__context7` and `mcp__playwright` are used when those MCP servers are installed, and skipped otherwise.
 
 ## Other skills
 

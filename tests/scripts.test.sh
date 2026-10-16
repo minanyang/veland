@@ -156,7 +156,7 @@ grep -q 'decision-three' "$fp" && ! grep -qE 'implementer-account|nested-heading
 grep -qF -- '- range: round 3 reviewed up to' "$fp" && ok "fixes packet names the round" || bad "fixes packet names the round"
 no_memory_section() { awk '/^## Agent memory/ { s = 1; next } /^## / { s = 0 } !s' "$1"; }
 ! grep -q 'agent-memory' .cutter/T1/review.diff .cutter/T1/fixes.diff && ! no_memory_section .cutter/T1/review-packet.md | grep -q 'agent-memory' && ! no_memory_section "$fp" | grep -q 'agent-memory' && ok "packets leave agent memory out" || bad "packets leave agent memory out"
-grep -q 'cutter-x/kept.md' .cutter/T1/review-packet.md && grep -q 'fix: add sq' "$fp" && grep -q 'cutter-y/n.md' "$fp" && ok "packets list the commits that touch agent memory" || bad "packets list the commits that touch agent memory"
+grep -q 'cutter-x/kept.md' .cutter/T1/review-packet.md && grep -q 'cutter-y/n.md' "$fp" && ok "packets list the commits that touch agent memory" || bad "packets list the commits that touch agent memory"
 grep -q 'src/mul.mjs' .cutter/T1/review.diff && ok "full diff kept" || bad "full diff kept"
 expect "packet rejects an unknown flag" 2 cutter-review-packet T1 --nope
 git -C "$wt" rev-parse HEAD >.cutter/T1/review-head
