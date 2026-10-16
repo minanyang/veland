@@ -55,6 +55,8 @@ for (const skill of Object.keys(userOwn)) {
     if (toks.slice(0, -1).some((t) => t.includes("*")) || (toks.at(-1).includes("*") && toks.at(-1) !== "*"))
       bad(`${skill}: ${e} has a * that is not the last token`)
     if (bareGrants.includes(body) || forbidden.some((f) => body === f || body.startsWith(f + " "))) bad(`${skill}: ${e} is a forbidden grant`)
+    // Only the exact `git fetch`: with arguments, `--upload-pack=<cmd>` runs arbitrary code.
+    if (body.startsWith("git fetch ")) bad(`${skill}: ${e} grants git fetch with arguments`)
     bodies.push(body)
   }
   if (entries.length) ok(`${skill}: entries are well-formed and safe`)

@@ -474,6 +474,7 @@ case "$cmd" in
     for l in ${labels[@]+"${labels[@]}"}; do args+=(--label "$l"); done
     [ -z "$itype" ] || args+=(--type "$itype")
     gh "${args[@]}"
+    need_file "$draft"
     rm -f "$draft"
     ;;
 
