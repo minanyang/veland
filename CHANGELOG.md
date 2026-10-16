@@ -14,5 +14,5 @@
 - Skills: `commit`, `code-review`, `code-review-branch`.
 - Hooks: guard against destructive Bash commands; context gate for the flow skills.
 - Project config in `.claude/cutter.json`; ticket files in `.cutter/<id>/`, kept out of git via `.git/info/exclude`.
-- CI: `.github/workflows/ci.yml` runs the project's gates (`scripts/ci-gates.sh`) on Linux and macOS for pushes to `main` and pull requests; `cutter-land merge` on GitHub refuses a PR whose head is not pushed or whose checks are not green.
+- CI: `.github/workflows/ci.yml` runs the project's gates (`scripts/ci-gates.sh`) on Linux and macOS for pushes to `main` and pull requests; `cutter-land merge` on GitHub refuses a PR whose head is not pushed or whose checks are not green. In `pr-merge` mode `/cutter:close` waits for pending checks in the background (`cutter-land wait`, up to 30 minutes) and then merges by itself; `merge` exits 3 when checks are only pending and 4 when `origin/<base>` moved since the rebase, which sends close back to rebase (at most 3 rounds).
 - Self-tests for the guard, the context gate and the scripts.

@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(cutter-land rebase *)
   - Bash(cutter-land push *)
   - Bash(cutter-land merge *)
+  - Bash(cutter-land wait *)
   - Bash(cutter-land squash *)
   - Bash(cutter-land pr *)
   - Bash(cutter-verify *)
@@ -72,7 +73,18 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
 2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base. Body:
    - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout.
-3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. If it refuses over checks (pending, failed, or no result yet), stop: report the PR URL and the checks it named, tell the user to run `/cutter:close <id>` again once CI finishes, and never merge around it. Otherwise go to Step 4.
+3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
+   - **3** — checks still running or not registered yet. Wait for them in the background, never in a foreground polling loop:
+
+     ```bash
+     cutter-land wait <id>
+     ```
+
+     Run it with `run_in_background`; you are woken when it exits. Exit 0: run `cutter-land merge <id>` again and act on its exit code the same way. Exit 1 (a check failed, or still pending after 30 minutes) or 2 (a refusal): stop, report the PR URL and the checks it named; the worktree stays.
+   - **4** — `origin/<base>` moved since the rebase: go back to Step 1 (rebase, verify, push, `cutter-land pr <id>` to refresh the body) and merge again. At most 3 rounds of rebase in all; after the third, stop and report the PR URL.
+   - **2** — failed checks or any other refusal: stop, report the PR URL and what it named.
+
+   Never merge around a refusal.
 4. `pr`: report the PR URL and stop. The worktree stays until the PR is merged.
 
 **`local`:**

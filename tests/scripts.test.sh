@@ -352,7 +352,15 @@ git remote add origin "$tmp/github.com/land.git" && git push -q -u origin main
 cat >"$tmp/stub/gh" <<'STUB'
 #!/bin/bash
 echo "$*" >>"$STUB_LOG"
-case "$*" in *headRefOid*) echo "${STUB_CHECKS-}"; exit 0 ;; esac
+# STUB_CHECKS_SEQ: a directory of rollups 1, 2, …, one per checks call, the last one repeated.
+case "$*" in *headRefOid*)
+  if [ -n "${STUB_CHECKS_SEQ-}" ]; then
+    n=$(($(cat "$STUB_CHECKS_SEQ/n" 2>/dev/null || echo 0) + 1)); echo "$n" >"$STUB_CHECKS_SEQ/n"
+    while [ ! -f "$STUB_CHECKS_SEQ/$n" ]; do n=$((n - 1)); done
+    cat "$STUB_CHECKS_SEQ/$n"
+  else echo "${STUB_CHECKS-}"; fi
+  exit 0 ;;
+esac
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
@@ -361,6 +369,9 @@ esac
 exit 0
 STUB
 cp "$tmp/stub/gh" "$tmp/stub/glab"; chmod +x "$tmp/stub/gh" "$tmp/stub/glab"
+# merge fetches origin: an ssh origin (git@github.com:…) is served from the local bare repo.
+printf '#!/bin/bash\nexec git upload-pack "%s"\n' "$tmp/github.com/land.git" >"$tmp/stub/ssh"; chmod +x "$tmp/stub/ssh"
+export GIT_SSH_COMMAND="$tmp/stub/ssh"
 export STUB_LOG="$tmp/stub.log"
 cutter-worktree add L1 --no-setup >/dev/null
 lw="$tmp/land/.worktrees/L1"
@@ -389,6 +400,12 @@ git -C "$lc" rebase --abort
 echo moved >>f.txt; git commit -qam "chore: move base"; git push -q origin main
 expect "rebase onto the moved base" 0 cutter-land rebase L1
 git -C "$lw" merge-base --is-ancestor origin/main HEAD && ok "branch contains the new base" || bad "branch contains the new base"
+# a fetch refspec that does not cover the base: rebase still lands on origin's current base
+git config remote.origin.fetch '+refs/heads/none:refs/remotes/origin/none'
+echo moved-again >>f.txt; git commit -qam "chore: move base again"; git push -q origin main
+expect "rebase onto the moved base, fetch refspec not covering it" 0 cutter-land rebase L1
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git -C "$lw" merge-base --is-ancestor "$(git rev-parse main)" HEAD && ok "narrowed refspec: branch contains the new base" || bad "narrowed refspec: branch contains the new base"
 expect "push after a rebase (lease)" 0 cutter-land push L1
 [ "$(git ls-remote --heads origin feat/L1 | cut -f1)" = "$(git -C "$lw" rev-parse HEAD)" ] && ok "origin has the rebased branch" || bad "origin has the rebased branch"
 # a push URL naming another repo is refused before anything is pushed; the same repo in another form is not
@@ -442,11 +459,14 @@ merge_checks() { # <description> <exit> <rollup json> — the merge call is made
 merge_checks "all checks green" 0 '[{"__typename":"CheckRun","name":"gates (ubuntu-latest)","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"StatusContext","context":"legacy","state":"SUCCESS"}]'
 merge_checks "a failed check" 2 '[{"__typename":"CheckRun","name":"gates (ubuntu-latest)","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"gates (macos-latest)","status":"COMPLETED","conclusion":"FAILURE"}]'
 grep -q 'gates (macos-latest): FAILURE' "$tmp/out" && ok "merge: names the failed check" || bad "merge: names the failed check"
-merge_checks "a check in progress" 2 '[{"__typename":"CheckRun","name":"gates (macos-latest)","status":"IN_PROGRESS","conclusion":""}]'
+merge_checks "a check in progress" 3 '[{"__typename":"CheckRun","name":"gates (macos-latest)","status":"IN_PROGRESS","conclusion":""}]'
 grep -q 'gates (macos-latest): IN_PROGRESS' "$tmp/out" && ok "merge: names the pending check" || bad "merge: names the pending check"
-merge_checks "a pending status context" 2 '[{"__typename":"StatusContext","context":"legacy","state":"PENDING"}]'
+merge_checks "a pending status context" 3 '[{"__typename":"StatusContext","context":"legacy","state":"PENDING"}]'
 grep -q 'legacy: PENDING' "$tmp/out" && ok "merge: names the pending context" || bad "merge: names the pending context"
 merge_checks "a failed status context" 2 '[{"__typename":"StatusContext","context":"legacy","state":"ERROR"}]'
+merge_checks "an expected status context" 3 '[{"__typename":"StatusContext","context":"legacy","state":"EXPECTED"}]'
+merge_checks "a failed check while another runs" 2 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"CheckRun","name":"b","status":"QUEUED","conclusion":""}]'
+grep -q 'a: FAILURE' "$tmp/out" && grep -q 'b: QUEUED' "$tmp/out" && ok "merge: names the failed and the pending check" || bad "merge: names the failed and the pending check"
 merge_checks "neutral and skipped checks" 0 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"NEUTRAL"},{"__typename":"CheckRun","name":"b","status":"COMPLETED","conclusion":"SKIPPED"}]'
 : >"$tmp/stub.log"
 STUB_VIEW="main OPEN false" STUB_CHECKS='{"headRefOid":"0000000000000000000000000000000000000000","statusCheckRollup":[]}' expect "merge: PR head is not the worktree's HEAD" 2 cutter-land merge L1
@@ -456,7 +476,7 @@ mkdir -p "$lw/.github/workflows"
 printf 'on:\n  pull_request:\n' >"$lw/.github/workflows/ci.yml"
 git -C "$lw" add -A && git -C "$lw" commit -qm "ci: workflow"
 lwsha="$(git -C "$lw" rev-parse HEAD)"
-merge_checks "no checks, a pull_request workflow on the branch" 2 '[]'
+merge_checks "no checks, a pull_request workflow on the branch" 3 '[]'
 grep -q 'still pending' "$tmp/out" && ok "merge: no checks yet is still pending" || bad "merge: no checks yet is still pending"
 printf 'on:\n  push:\n' >"$lw/.github/workflows/ci.yml"
 git -C "$lw" commit -qam "ci: push only"
@@ -468,9 +488,61 @@ wf="$(printf 'on:\n  pull_request:\n' | git -C "$lw" hash-object -w --stdin)"
 gh_tree="$(printf '100644 blob %s\tci.yml\n' "$wf" | git -C "$lw" mktree)"
 gh_tree="$(printf '040000 tree %s\tworkflows\n' "$gh_tree" | git -C "$lw" mktree)"
 base_tree="$( { git -C "$lw" ls-tree "$om"; printf '040000 tree %s\t.github\n' "$gh_tree"; } | git -C "$lw" mktree)"
-git -C "$lw" update-ref refs/remotes/origin/main "$(git -C "$lw" commit-tree "$base_tree" -p "$om" -m "ci: base workflow")"
-merge_checks "no checks, the base's pull_request workflow dropped on the branch" 2 '[]'
-git -C "$lw" update-ref refs/remotes/origin/main "$om"
+lw_before="$(git -C "$lw" rev-parse HEAD)"
+base_wf="$(git -C "$lw" commit-tree "$base_tree" -p "$om" -m "ci: base workflow")"
+git -C "$lw" push -q "$tmp/github.com/land.git" "$base_wf:refs/heads/main"
+git -C "$lw" reset -q --hard "$(git -C "$lw" commit-tree "$lw_before^{tree}" -p "$base_wf" -m "ci: push only")"
+lwsha="$(git -C "$lw" rev-parse HEAD)"
+merge_checks "no checks, the base's pull_request workflow dropped on the branch" 3 '[]'
+# merge: origin/<base> moved since the rebase
+other="$(git -C "$lw" commit-tree "$base_wf^{tree}" -p "$base_wf" -m "elsewhere")"
+git -C "$lw" push -q "$tmp/github.com/land.git" "$other:refs/heads/main"
+git config remote.origin.fetch '+refs/heads/none:refs/remotes/origin/none'
+merge_checks "origin/main moved, fetch refspec not covering the base" 4 '[]'
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+merge_checks "origin/main moved since the rebase" 4 '[]'
+grep -q 'origin/main moved' "$tmp/out" && ok "merge: says the base moved" || bad "merge: says the base moved"
+git -C "$lw" push -q -f "$tmp/github.com/land.git" "$om:refs/heads/main"
+git -C "$lw" fetch -q origin
+git -C "$lw" reset -q --hard "$lw_before"
+lwsha="$lw_before"
+
+# wait: polls the same rule until green, failed or the cap
+wait_checks() { # <description> <exit> <rollup json> [env...]
+  local d=$1 want=$2 r=$3; shift 3
+  : >"$tmp/stub.log"
+  STUB_VIEW="main OPEN false" STUB_CHECKS="$(checks "$r")" expect "wait: $d" "$want" env CUTTER_WAIT_INTERVAL=0 CUTTER_WAIT_CAP=0 "$@" cutter-land wait L1
+}
+wait_checks "all green" 0 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]'
+wait_checks "a failed check" 1 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"FAILURE"}]'
+grep -q 'a: FAILURE' "$tmp/out" && ok "wait: names the failed check" || bad "wait: names the failed check"
+wait_checks "a failed check while another runs" 1 '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"CheckRun","name":"b","status":"IN_PROGRESS","conclusion":""}]' CUTTER_WAIT_CAP=60
+grep -q 'a: FAILURE' "$tmp/out" && ok "wait: stops on the first failure" || bad "wait: stops on the first failure"
+wait_checks "pending past the cap" 1 '[{"__typename":"CheckRun","name":"gates (macos-latest)","status":"QUEUED","conclusion":""}]'
+grep -q 'still pending after 0s' "$tmp/out" && grep -q 'gates (macos-latest): QUEUED' "$tmp/out" && ok "wait: names the checks still running at the cap" || bad "wait: names the checks still running at the cap"
+: >"$tmp/stub.log"
+STUB_VIEW="main OPEN false" STUB_CHECKS='{"headRefOid":"0000000000000000000000000000000000000000","statusCheckRollup":[]}' expect "wait: PR head is not the worktree's HEAD" 2 env CUTTER_WAIT_INTERVAL=0 CUTTER_WAIT_CAP=0 cutter-land wait L1
+grep -q 'push first' "$tmp/out" && ok "wait: says push first" || bad "wait: says push first"
+STUB_VIEW="develop OPEN false" expect "wait refuses a PR into another base" 2 env CUTTER_WAIT_INTERVAL=0 cutter-land wait L1
+expect "wait refuses a non-number cap" 2 env CUTTER_WAIT_CAP=1m cutter-land wait L1
+grep -qxF 'pr view feat/L1 --repo github.com/acme/land --json headRefOid,statusCheckRollup' "$tmp/stub.log" && ok "wait: pinned to origin's repo and the branch" || bad "wait: pinned to origin's repo and the branch"
+seq_dir="$tmp/seq"; mkdir -p "$seq_dir"
+checks '[{"__typename":"CheckRun","name":"a","status":"QUEUED","conclusion":""}]' >"$seq_dir/1"
+checks '[{"__typename":"CheckRun","name":"a","status":"IN_PROGRESS","conclusion":""}]' >"$seq_dir/2"
+checks '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]' >"$seq_dir/3"
+wait_checks "pending, then green" 0 '[]' CUTTER_WAIT_CAP=60 STUB_CHECKS_SEQ="$seq_dir"
+[ "$(grep -c headRefOid "$tmp/stub.log")" -eq 3 ] && ok "wait: polled until green" || bad "wait: polled until green"
+rm -r "$seq_dir"; mkdir -p "$seq_dir"
+mkdir -p "$lw/.github/workflows"; printf 'on:\n  pull_request:\n' >"$lw/.github/workflows/ci.yml"
+git -C "$lw" commit -qam "ci: pull_request"; lwsha="$(git -C "$lw" rev-parse HEAD)"
+checks '[]' >"$seq_dir/1"; checks '[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]' >"$seq_dir/2"
+wait_checks "no checks yet, then green" 0 '[]' CUTTER_WAIT_CAP=60 STUB_CHECKS_SEQ="$seq_dir"
+wait_checks "no checks yet past the cap" 1 '[]'
+grep -q 'no checks yet, but a workflow runs on pull_request' "$tmp/out" && ok "wait: names the missing checks at the cap" || bad "wait: names the missing checks at the cap"
+git -C "$lw" reset -q --hard "$lw_before"; lwsha="$lw_before"
+git remote set-url origin https://gitlab.example.com/grp/land.git
+expect "wait refuses a GitLab origin" 2 cutter-land wait L1
+git remote set-url origin git@github.com:acme/land.git
 STUB_CHECKS="$(checks '[]')"; export STUB_CHECKS
 
 git remote set-url origin https://notgithub.com/acme/land.git
