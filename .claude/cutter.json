@@ -1,10 +1,11 @@
 {
   "base": "main",
   "gates": [
-    "shellcheck bin/cutter-land bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
-    "node --check bin/cutter-ticket && node --check hooks/context-gate.js",
+    "shellcheck bin/cutter-land bin/cutter-plan-check bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
+    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js",
     "bash tests/guard-bash.test.sh",
     "bash tests/context-gate.test.sh",
+    "bash tests/stop-gate.test.sh",
     "bash tests/scripts.test.sh",
     "bash tests/red-proof-runners.test.sh",
     "bash tests/skills.test.sh",
@@ -15,8 +16,8 @@
     "tests": ["tests/*.test.sh"]
   },
   "preReviewGates": [
-    "shellcheck bin/cutter-land bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
-    "node --check bin/cutter-ticket && node --check hooks/context-gate.js"
+    "shellcheck bin/cutter-land bin/cutter-plan-check bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh",
+    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js"
   ],
   "close": "pr-merge",
   "contextGate": {
