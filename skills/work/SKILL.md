@@ -187,7 +187,7 @@ The packet's `## Plan checks` lists each `## Tests` case not found in the test f
 
 **The tree is frozen** until every reviewer and the verify run have returned: no edits in the worktree while they read or test it.
 
-Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, verbatim in substance, headed with the verdict and the criteria they were judged against. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line. A criterion whose `## Tests` row has `—` as test file is `met` once the last review round that read it — round 1, or round 2 when round 1 had a finding against it — returns with no open finding against it: cite that verdict and the row's method.
+Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, verbatim in substance, headed with the verdict and the criteria they were judged against. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line. A criterion whose `## Tests` row has `—` as test file is `met` once the last review round that read it — round 1, or round 2 when round 1 had a finding against it — returns with no open finding against it: cite that verdict and the row's method. When the last round's finding against it is fixed under `### Fixes applied`, cite that finding and the fix commit instead.
 
 ## Step 7 — Act on the findings
 
