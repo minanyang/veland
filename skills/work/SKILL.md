@@ -232,13 +232,13 @@ Without an approved plan change, there is no further full round.
 
 ## Step 8 — Commit agent memory, report and stop
 
-Agents write their memory (`.claude/agent-memory/`) under the session's working directory — the main checkout, or the worktree once the session has moved there. Once the last round is over, commit it on the ticket branch — also again after a Step 7b loop that reopened the work after an earlier report. Not after each round: moving memory out of the main checkout would hide it from the next round's reviewers. The packets leave `.claude/agent-memory` out of their diff, so a memory commit is never reviewed.
+Agents write their memory (`.claude/agent-memory/`) under the session's working directory — the main checkout, or the worktree once the session has moved there. Once the last round is over, commit it on the ticket branch — also again after a Step 7b loop that reopened the work after an earlier report. Not after each round: moving memory out of the main checkout would hide it from the next round's reviewers. The packets leave `.claude/agent-memory` out of their diff, so a memory commit is never reviewed; they list each commit that touches it, with its paths, and one that is not the memory commit is a finding.
 
 ```bash
 cutter-worktree memory <id>
 ```
 
-It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep, as an `asked` line. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, as an `asked` line, then run the command again. No reviewer reads this commit and `/cutter:close` pushes it, so show the user its full diff in the report — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
+It moves the main checkout's new or changed memory files into the worktree, leaving the main checkout clean, and commits them with the worktree's own in one commit, nothing else. Exit 2 moves nothing. For a path changed differently in both places, show the user both versions and ask which to keep, as an `asked` line. For a symlink, name the path and never read or show what it points to; ask the user to remove or replace it, as an `asked` line, then run the command again. No reviewer reads memory and `/cutter:close` pushes it, so show the user the branch's whole memory diff in the report, `git -C <worktree> diff origin/<base>...HEAD -- .claude/agent-memory` — memory can hold notes that must not be published. `/cutter:close` verifies again, so this commit needs no `cutter-verify` run of its own.
 
 The report has this shape, in this order, with at most three lines of prose around it (the tables, lists, diffs and lines below are not prose):
 
@@ -246,7 +246,7 @@ The report has this shape, in this order, with at most three lines of prose arou
 - the final `cutter-verify` summary as printed, in a code fence;
 - `Red-proof:` then the last run's per-file `RED` lines;
 - one `Round <n>: <verdict> — <count> findings: <n> fixed, <n> answered` line per review round, plan checks and security findings counted in — `Round <n+1>: none — no commits after round <n>` when Step 7a exited 3 — then `Review: .cutter/<id>/review.md`;
-- `Memory:` then the committed memory files and their full diff in a `diff` fence — only when `cutter-worktree memory` committed something;
+- `Memory:` then the branch's memory files and their whole diff in a `diff` fence — only when the branch touches `.claude/agent-memory`;
 - `Files added:` then the files added to `## Files` in Step 7 — only when there are any;
 - `Deferred:` then one line per criterion marked `deferred`, with the user's words — only when there are any;
 - the next step, `/cutter:close <id>`.

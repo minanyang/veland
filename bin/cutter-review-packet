@@ -18,7 +18,8 @@
 # Exit 2 when review.md has no round heading or its last round is a fixes round; exit 3 when there
 # are no commits since review-head.
 #
-# Both modes leave .claude/agent-memory out of the diff, the changed-files table, the stat and the counts.
+# Both modes leave .claude/agent-memory out of the diff, the changed-files table, the stat and the counts,
+# and list the commits that touch it, with their paths, so a memory edit is never hidden.
 #
 # Both modes write a `## Plan checks` section (`none` when empty), always against the whole branch (merge
 # base...HEAD), so cases added before the full review do not show as missing in the fixes packet: each `## Tests` case name of
@@ -222,6 +223,17 @@ security="$(node -e '
     else echo "| $st | $(wc -l <"$path/$f" | tr -d ' ') | \`$path/$f\` |"; fi
   done
   echo
+  memory="$(git -C "$path" -c core.quotePath=false log --format='%h %s' --name-status "$base"..HEAD -- .claude/agent-memory)"
+  if [ -n "$memory" ]; then
+    echo "## Agent memory — left out of the diff, paths only"
+    echo
+    echo "Only the \`chore(memory): commit agent memory written during $id\` commit should touch these; any other commit that does is a finding."
+    echo
+    echo '```'
+    echo "$memory"
+    echo '```'
+    echo
+  fi
   echo "## Stat (generated files and lockfiles included here, excluded from the diff)"
   echo
   echo '```'
