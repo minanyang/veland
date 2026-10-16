@@ -177,7 +177,8 @@ case "$cmd" in
     ;;
 
   rebase)
-    has_origin && { git -C "$ROOT" fetch --quiet origin "$base" || die "could not fetch origin/$base"; }
+    # An explicit refspec, as in merge: a narrowed remote.origin.fetch would leave origin/<base> stale.
+    has_origin && { git -C "$ROOT" fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" || die "could not fetch origin/$base"; }
     ! base_diverged || die "$(base_branch) and origin/$(base_branch) have diverged — reconcile the local base first"
     if git -C "$path" rebase "$(base_ref)" >/dev/null 2>&1; then
       say "rebased $branch onto $(base_ref)"

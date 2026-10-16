@@ -400,6 +400,12 @@ git -C "$lc" rebase --abort
 echo moved >>f.txt; git commit -qam "chore: move base"; git push -q origin main
 expect "rebase onto the moved base" 0 cutter-land rebase L1
 git -C "$lw" merge-base --is-ancestor origin/main HEAD && ok "branch contains the new base" || bad "branch contains the new base"
+# a fetch refspec that does not cover the base: rebase still lands on origin's current base
+git config remote.origin.fetch '+refs/heads/none:refs/remotes/origin/none'
+echo moved-again >>f.txt; git commit -qam "chore: move base again"; git push -q origin main
+expect "rebase onto the moved base, fetch refspec not covering it" 0 cutter-land rebase L1
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git -C "$lw" merge-base --is-ancestor "$(git rev-parse main)" HEAD && ok "narrowed refspec: branch contains the new base" || bad "narrowed refspec: branch contains the new base"
 expect "push after a rebase (lease)" 0 cutter-land push L1
 [ "$(git ls-remote --heads origin feat/L1 | cut -f1)" = "$(git -C "$lw" rev-parse HEAD)" ] && ok "origin has the rebased branch" || bad "origin has the rebased branch"
 # a push URL naming another repo is refused before anything is pushed; the same repo in another form is not
