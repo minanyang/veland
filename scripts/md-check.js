@@ -1,0 +1,66 @@
+// Markdown matching shared by cutter-land issue, cutter-plan-check, cutter-review-packet and hooks/stop-gate.js,
+// so every check reads code, fences and the banned list the same way.
+
+const fs = require('node:fs')
+
+// Per line: null inside a fence (its fence lines included) or before <start>, else the line with inline code
+// spans blanked.
+function blank(lines, start = 0) {
+  let fence = null
+  return lines.map((s, k) => {
+    if (k < start) return null
+    const f = s.match(/^\s*(`{3,}|~{3,})/)
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && /^\s*[`~]+\s*$/.test(s)) fence = null
+      return null
+    }
+    if (f) { fence = f[1]; return null }
+    return s.replace(/(`+)[^`]*?\1/g, ' ')
+  })
+}
+
+const phrases = (bannedPath) =>
+  fs.readFileSync(bannedPath, 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'))
+
+// [{ line, phrase }] for each phrase of <bannedPath> in the blanked lines <text>, on word boundaries and
+// case-insensitive; ordered by phrase, then line. <line> is 1-based.
+function bannedHits(text, bannedPath) {
+  const esc = (p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const hits = []
+  for (const p of phrases(bannedPath)) {
+    const re = new RegExp('(?<![\\w])' + esc(p).replace(/\s+/g, '\\s+') + '(?![\\w])', 'i')
+    text.forEach((s, k) => { if (s !== null && re.test(s)) hits.push({ line: k + 1, phrase: p }) })
+  }
+  return hits
+}
+
+// The `## ` sections of a Markdown text, headings inside fences ignored:
+// [{ name, line, from, to }] — <line> is the heading's 1-based line, [from, to) the 0-based body lines.
+function sections(text) {
+  const lines = text.split('\n'), b = blank(lines)
+  const out = []
+  b.forEach((s, k) => {
+    const m = s !== null && s.match(/^(#{1,2})\s+(.*?)\s*#*\s*$/)
+    if (!m) return
+    if (out.length && out[out.length - 1].to === lines.length) out[out.length - 1].to = k
+    if (m[1].length === 2) out.push({ name: lines[k].replace(/^##\s+/, '').trim(), line: k + 1, from: k + 1, to: lines.length })
+  })
+  return out
+}
+
+// The criteria of a plan: top-level bullets `- AC<n> — <text>` (a dash or colon after the number) under
+// `## Acceptance criteria`. [{ id, n, line, text }] — <line> is 1-based.
+function criteria(text) {
+  const lines = text.split('\n'), b = blank(lines)
+  const sec = sections(text).find((s) => s.name.toLowerCase() === 'acceptance criteria')
+  if (!sec) return []
+  const out = []
+  for (let k = sec.from; k < sec.to; k++) {
+    if (b[k] === null || !/^[-*+]\s+AC\d+\s*[—–:-]/.test(b[k])) continue
+    const m = lines[k].match(/^[-*+]\s+AC(\d+)\s*[—–:-]\s*(.*)$/)
+    if (m) out.push({ id: 'AC' + m[1], n: Number(m[1]), line: k + 1, text: m[2] })
+  }
+  return out
+}
+
+module.exports = { blank, bannedHits, sections, criteria }

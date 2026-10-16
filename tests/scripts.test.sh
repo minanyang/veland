@@ -197,6 +197,104 @@ echo '{ "preReviewGates": ["echo gate-ran"] }' >.claude/cutter.json
 expect "packet builds when the pre-review gate passes" 0 cutter-review-packet T1
 [ -s .cutter/T1/review-packet.md ] && ok "packet written after the gate passed" || bad "packet written after the gate passed"
 
+# packet: plan checks against the whole branch, and the security review line
+mkdir -p skills/s skills/t bin hooks
+printf -- '---\nname: s\nallowed-tools:\n  - Bash(tool-a *)\n---\n\n# S\n\nbody line\n' >skills/s/SKILL.md
+printf -- '---\nname: t\ndescription: t\nallowed-tools: Bash(tool-c:*) Bash(git status:*)\n---\n\n# T\n' >skills/t/SKILL.md
+printf '#!/bin/bash\n' | tee bin/tool-a bin/tool-b bin/tool-c >/dev/null
+printf '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/h.js\\"" } ] } ] } }\n' >hooks/hooks.json
+echo '// h' >hooks/h.js
+echo 'export const keptTerm = 1' >src/keep.mjs
+echo '- oldTerm was renamed' >CHANGELOG.md
+git add skills bin hooks src/keep.mjs CHANGELOG.md && git commit -qm "chore: packet fixtures" && git push -q origin main
+expect "worktree add PK" 0 cutter-worktree add PK --no-setup
+wpk="$tmp/repo/.worktrees/PK"
+mkdir -p .cutter/PK "$wpk/tests"
+cat >.cutter/PK/plan.md <<'EOF'
+# PK — fixture
+
+## Acceptance criteria
+- AC1 — one
+- AC2 — two
+- AC3 — three
+
+## Readers
+- `keptTerm` — `grep -rn keptTerm .` (gone)
+  - `src/keep.mjs:1` — renamed.
+- `oldTerm` — `grep -rn oldTerm .` (gone)
+  - `CHANGELOG.md:1` — history; stays.
+- `newTerm` — `grep -rn newTerm .` (gone)
+  - no hits
+- `add` — `grep -rn add .`
+  - `src/math.mjs:1` — stays.
+
+## Tests
+| AC | Test file | Case |
+|---|---|---|
+| AC1 | `tests/a.test.sh` | `case one` |
+| AC2 | `tests/a.test.sh` | `case two` |
+| AC3 | — | read the diff |
+EOF
+echo 'ok "case one"' >"$wpk/tests/a.test.sh"
+echo 'export const newTerm = 2' >"$wpk/src/new.mjs"
+git -C "$wpk" add -A && git -C "$wpk" commit -qm "feat: case one"
+pk=.cutter/PK/review-packet.md
+plan_checks_in() { awk '/^## Plan checks/ { on = 1; next } on && /^## / { exit } on && NF' "$1"; }
+expect "packet PK, round 1" 0 cutter-review-packet PK
+plan_checks_in "$pk" | grep -qxF -- '- test case `case two` (AC2) is not among the lines `tests/a.test.sh` adds' && ! plan_checks_in "$pk" | grep -q 'case one' &&
+  ok "packet lists a test case missing from the diff" || { bad "packet lists a test case missing from the diff"; cat "$pk"; }
+plan_checks_in "$pk" | grep -qxF -- '- gone term `keptTerm` still at `src/keep.mjs:1`' && ! plan_checks_in "$pk" | grep -qE 'newTerm|`add`' &&
+  ok "packet lists a gone term still present" || { bad "packet lists a gone term still present"; cat "$pk"; }
+plan_checks_in "$pk" | grep -q 'keptTerm' && ! plan_checks_in "$pk" | grep -q 'oldTerm' && ok "packet ignores a gone term in the changelog" || bad "packet ignores a gone term in the changelog"
+! grep -q 'security review' "$pk" && ok "packet does not require security review otherwise" || bad "packet does not require security review otherwise"
+echo 'ok "case two"' >>"$wpk/tests/a.test.sh"
+echo 'export const kept = 1' >"$wpk/src/keep.mjs"
+git -C "$wpk" commit -qam "feat: case two"
+expect "packet PK, round 1 again" 0 cutter-review-packet PK
+[ "$(plan_checks_in "$pk")" = none ] && ok "packet lists no plan checks when all are met" || { bad "packet lists no plan checks when all are met"; cat "$pk"; }
+echo '# PK — review' >.cutter/PK/review.md
+echo 'export const fix = 1' >"$wpk/src/fix.mjs"
+git -C "$wpk" add -A && git -C "$wpk" commit -qm "fix: fix"
+expect "fixes packet PK" 0 cutter-review-packet PK --fixes
+! grep -q 'tests/a.test.sh' .cutter/PK/fixes.diff && [ "$(plan_checks_in .cutter/PK/fixes-packet.md)" = none ] &&
+  ok "fixes packet checks the plan against the whole branch" || { bad "fixes packet checks the plan against the whole branch"; cat .cutter/PK/fixes-packet.md; }
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: no security review for src/ alone" || bad "fixes packet: no security review for src/ alone"
+for b in tool-a tool-b tool-c; do echo '# changed' >>"$wpk/bin/$b"; done
+git -C "$wpk" commit -qam "feat: tools"
+expect "packet PK with bin changes" 0 cutter-review-packet PK
+sec() { grep '^- security review: required (' "$1"; }
+sec "$pk" | grep -qF 'bin/tool-a is in the allowed-tools of skills/s/SKILL.md' && sec "$pk" | grep -qF 'bin/tool-c is in the allowed-tools of skills/t/SKILL.md' && ! sec "$pk" | grep -q 'tool-b' &&
+  ok "packet requires security review for an allowed-tools script" || { bad "packet requires security review for an allowed-tools script"; cat "$pk"; }
+fixes_after() { # <commit message> — mark HEAD reviewed, commit the worktree's changes, build the fixes packet
+  git -C "$wpk" rev-parse HEAD >.cutter/PK/review-head
+  git -C "$wpk" commit -qam "$1"
+  expect "fixes packet PK: $1" 0 cutter-review-packet PK --fixes
+}
+printf -- '---\nname: s\nallowed-tools:\n  - Bash(tool-a *)\n---\n\n# S\n\nanother body line\n' >"$wpk/skills/s/SKILL.md"
+fixes_after "docs: skill body"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: a skill body change needs no security review" || { bad "fixes packet: a skill body change needs no security review"; cat .cutter/PK/fixes-packet.md; }
+printf -- '---\nname: t\ndescription: t, changed\nallowed-tools: Bash(tool-c:*) Bash(git status:*)\n---\n\n# T\n' >"$wpk/skills/t/SKILL.md"
+fixes_after "feat: skill frontmatter"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (skills/t/SKILL.md: frontmatter changed)' ] &&
+  ok "packet requires security review for a skill frontmatter change" || { bad "packet requires security review for a skill frontmatter change"; cat .cutter/PK/fixes-packet.md; }
+echo '// changed' >>"$wpk/hooks/h.js"
+fixes_after "feat: hook script"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (hooks/h.js is registered in hooks/hooks.json)' ] && h1=1 || h1=""
+printf '{ "hooks": {} }\n' >"$wpk/hooks/hooks.json"
+fixes_after "feat: hooks.json"
+[ -n "$h1" ] && [ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (hooks/hooks.json changed)' ] &&
+  ok "packet requires security review for a hook change" || { bad "packet requires security review for a hook change"; cat .cutter/PK/fixes-packet.md; }
+mkdir -p "$wpk/agents" && printf -- '---\nname: a\ntools: Read\n---\n\n# A\n' >"$wpk/agents/a.md" && git -C "$wpk" add agents/a.md
+fixes_after "feat: agent"
+printf -- '---\nname: a\ntools: Read, Bash\n---\n\n# A\n' >"$wpk/agents/a.md"
+fixes_after "feat: agent tools"
+[ "$(sec .cutter/PK/fixes-packet.md)" = '- security review: required (agents/a.md: frontmatter changed)' ] &&
+  ok "packet requires security review for an agent frontmatter change" || { bad "packet requires security review for an agent frontmatter change"; cat .cutter/PK/fixes-packet.md; }
+printf -- '\nanother body line\n' >>"$wpk/agents/a.md"
+fixes_after "docs: agent body"
+! grep -q 'security review' .cutter/PK/fixes-packet.md && ok "fixes packet: an agent body change needs no security review" || { bad "fixes packet: an agent body change needs no security review"; cat .cutter/PK/fixes-packet.md; }
+expect "rm PK" 0 cutter-worktree rm PK
+
 # lock
 mkdir .cutter/T1/lock
 expect "lock blocks a concurrent run" 2 cutter-verify T1
@@ -664,6 +762,129 @@ printf '# T\n\n`handle edge cases` and\n```\netc.\n```\n\n## Acceptance criteria
 expect "issue ignores banned phrases in code and accepts every dash" 0 cutter-land issue code
 printf '# T\n\nappropriately, inappropriate, /etc/hosts and TBDs\n\n## Acceptance criteria\n- [ ] AC1: ok\n' >"$dr/word.md"
 expect "issue matches banned phrases on word boundaries" 0 cutter-land issue word
+
+# plan-check: a plan in the template's format passes; every line at fault is named
+mkdir -p "$tmp/land/.cutter/P1"
+pc_part() { # <part> — one piece of the fixture plan
+  case "$1" in
+    head) cat <<'EOF'
+# P1 — fixture
+
+Status: approved
+
+## Goal
+A thing.
+
+## Acceptance criteria
+- AC1 — the first thing.
+  - a nested note
+- AC2: the second thing.
+
+## Approach
+Code may say `etc.` here.
+
+## Files
+- `src/a.mjs` — the change.
+EOF
+    ;;
+    readers) cat <<'EOF'
+## Readers
+- `oldName` — `grep -rn oldName .` (gone)
+  - `src/a.mjs:3` — renamed.
+- `other` — `grep -rn other .`
+  - no hits
+EOF
+    ;;
+    readers-empty) printf '## Readers\n\n' ;;
+    readers-nohit) cat <<'EOF'
+## Readers
+- `oldName` — `grep -rn oldName .` (gone)
+  - `src/a.mjs:3` — renamed.
+- `other` — `grep -rn other .`
+EOF
+    ;;
+    tools) cat <<'EOF'
+## Tool behaviour relied on
+- `node` prints its version:
+  ```
+  $ node --version
+  v22.0.0
+  ```
+EOF
+    ;;
+    tools-nooutput) cat <<'EOF'
+## Tool behaviour relied on
+- `node` prints its version:
+  ```
+  $ node --version
+  ```
+EOF
+    ;;
+    overlap) printf '## Overlap\n- `origin/main`: none — `git log --oneline HEAD..origin/main` printed nothing.\n' ;;
+    overlap-empty) printf '## Overlap\n\n' ;;
+    tests) cat <<'EOF'
+## Tests
+| AC | Test file | Case |
+|---|---|---|
+| AC1 | `tests/a.test.sh` | `does the first thing` |
+| AC2 | — | read the diff |
+EOF
+    ;;
+    tests-noac2) printf '## Tests\n| AC | Test file | Case |\n|---|---|---|\n| AC1 | `tests/a.test.sh` | `does the first thing` |\n' ;;
+    tests-header) printf '## Tests\n| Criterion | Test | Case |\n|---|---|---|\n| AC1 | `tests/a.test.sh` | `x` |\n| AC2 | — | read the diff |\n' ;;
+  esac
+}
+pc_plan() { # <part>... — write .cutter/P1/plan.md from the parts, in order
+  local p; for p in "$@"; do pc_part "$p"; echo; done >"$tmp/land/.cutter/P1/plan.md"
+}
+pc_names() { # <case> <text>... — the last run named each text
+  local d=$1 t; shift
+  for t in "$@"; do grep -qF -- "$t" "$tmp/out" || { bad "$d: names '$t'"; cat "$tmp/out"; return; }; done
+  ok "$d: names each line"
+}
+pc_plan head readers tools overlap tests
+expect "plan-check accepts a plan in the template's format" 0 cutter-plan-check P1
+pc_plan head readers tools overlap tests-noac2
+expect "plan-check refuses a criterion with no Tests row" 1 cutter-plan-check P1
+pc_names "plan-check refuses a criterion with no Tests row" 'line 11: AC2 has no row in "## Tests"'
+! grep -q 'AC1 has no row' "$tmp/out" && ok "plan-check: a covered criterion is not named" || bad "plan-check: a covered criterion is not named"
+pc_plan head readers tools overlap tests-header
+expect "plan-check refuses a Tests table with another header" 1 cutter-plan-check P1
+pc_names "plan-check refuses a Tests table with another header" 'Tests table header must be "| AC | Test file | Case |"'
+pc_plan head readers tools overlap
+expect "plan-check refuses a plan without a Tests section" 1 cutter-plan-check P1
+pc_names "plan-check refuses a plan without a Tests section" 'no "## Tests" section'
+pc_plan head readers tools overlap tests
+sed 's/^A thing\.$/A thing, as needed./' "$tmp/land/.cutter/P1/plan.md" >"$tmp/pc" && mv "$tmp/pc" "$tmp/land/.cutter/P1/plan.md"
+expect "plan-check refuses a banned phrase" 1 cutter-plan-check P1
+pc_names "plan-check refuses a banned phrase" 'line 6: banned phrase "as needed"'
+pc_plan head readers tools overlap tests
+printf '## Notes\n`as needed` and\n```\nTBD etc.\n```\n' >>"$tmp/land/.cutter/P1/plan.md"
+expect "plan-check ignores a banned phrase in code" 0 cutter-plan-check P1
+pc_plan head readers-empty tools overlap tests
+expect "plan-check refuses an empty Readers" 1 cutter-plan-check P1
+pc_names "plan-check refuses an empty Readers" 'line 19: "## Readers" is empty'
+pc_plan head tools overlap tests
+expect "plan-check refuses a missing Readers" 1 cutter-plan-check P1
+pc_names "plan-check refuses a missing Readers" 'no "## Readers" section'
+pc_plan head readers-nohit tools overlap tests
+expect "plan-check refuses a Readers entry with no hits" 1 cutter-plan-check P1
+pc_names "plan-check refuses a Readers entry with no hits" 'line 22: Readers entry has no hit line'
+! grep -q 'line 20:' "$tmp/out" && ok "plan-check: an entry with a hit is not named" || bad "plan-check: an entry with a hit is not named"
+pc_plan head readers tools-nooutput overlap tests
+expect "plan-check refuses a tool claim without output" 1 cutter-plan-check P1
+pc_names "plan-check refuses a tool claim without output" 'line 26: tool claim has no fenced `$ <command>` block'
+pc_plan head readers tools overlap-empty tests
+expect "plan-check refuses an empty Overlap" 1 cutter-plan-check P1
+pc_names "plan-check refuses an empty Overlap" 'line 32: "## Overlap" is empty'
+pc_plan head readers-nohit tools-nooutput overlap-empty tests-noac2
+sed 's/^A thing\.$/A thing, as needed./' "$tmp/land/.cutter/P1/plan.md" >"$tmp/pc" && mv "$tmp/pc" "$tmp/land/.cutter/P1/plan.md"
+expect "plan-check names every refusal" 1 cutter-plan-check P1
+pc_names "plan-check names every refusal" 'line 6: banned phrase' 'line 11: AC2 has no row' 'line 22: Readers entry has no hit line' 'line 25: tool claim' 'line 30: "## Overlap" is empty'
+rm "$tmp/land/.cutter/P1/plan.md"
+expect "plan-check exits 2 without a plan" 2 cutter-plan-check P1
+expect "plan-check exits 2 without an id" 2 cutter-plan-check
+expect "plan-check exits 2 on a bad id" 2 cutter-plan-check ../P1
 
 # with the repo's own forms
 mkdir -p "$tmp/land/.github/ISSUE_TEMPLATE"
