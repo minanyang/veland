@@ -2,20 +2,27 @@
 # Build a cold reviewer's starting material in one place, so the review opens with one Read
 # and one parallel batch instead of many one-slice-per-turn reads.
 #
-#   cutter-review-packet <id>            round 1: the whole branch
-#   cutter-review-packet <id> --fixes    round 2: only the commits made after round 1
+#   cutter-review-packet <id>            full packet: the whole branch
+#   cutter-review-packet <id> --fixes    fixes packet: only the commits made after the last full review
 #
-# Round 1 writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles
+# review.md is a sequence of "## Round <n> — full" and "## Round <n> — fixes" sections.
+#
+# The full packet writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles
 # excluded) and .cutter/<id>/review-packet.md (tree identity, convention files, changed files
 # with line counts, stat, commits, the last verify summary), and records the reviewed HEAD in
 # .cutter/<id>/review-head.
 #
-# --fixes writes fixes.diff and fixes-packet.md for review-head...HEAD, with round 1's findings:
-# review.md cut before "## Fixes applied" / "## Re-review", so the implementer's account of the
-# fixes never reaches the reviewer. Exit 3 when there are no commits since review-head.
+# --fixes writes fixes.diff and fixes-packet.md for review-head...HEAD, with the findings of the last
+# "## Round <n>" section of review.md (to the end of the file) minus its "### Fixes applied" subsection,
+# so the implementer's account of the fixes never reaches the reviewer; its "### Decisions" stay.
+# Exit 2 when review.md has no round heading or its last round is a fixes round; exit 3 when there
+# are no commits since review-head.
+#
+# Both modes leave .claude/agent-memory out of the diff, the changed-files table, the stat and the counts,
+# and list the commits that touch it, with their paths, so a memory edit is never hidden.
 #
 # Both modes write a `## Plan checks` section (`none` when empty), always against the whole branch (merge
-# base...HEAD), so cases added in round 1 do not show as missing in round 2: each `## Tests` case name of
+# base...HEAD), so cases added before the full review do not show as missing in the fixes packet: each `## Tests` case name of
 # .cutter/<id>/plan.md not found in the added lines of its test file, and each `(gone)` Readers term still at
 # HEAD on a line that diff did not add (lockfiles, `generated` paths and CHANGELOG* excluded).
 # Both write `- security review: required (<reasons>)` when the packet's diff touches a bin/ script named in a
@@ -57,8 +64,12 @@ pre_review() { # run the preReviewGates in the worktree; the first failure exits
 }
 
 if [ -n "$fixes" ]; then
-  [ -f "$dir/review-head" ] || die "no $dir/review-head: build the round 1 packet first"
-  [ -f "$dir/review.md" ] || die "no $dir/review.md: round 1's findings must be written first"
+  [ -f "$dir/review-head" ] || die "no $dir/review-head: build the full packet first"
+  [ -f "$dir/review.md" ] || die "no $dir/review.md: the last round's findings must be written first"
+  last="$(awk '/^## Round [0-9]+ — (full|fixes)[ \t]*$/ { l = NR ": " $0 } END { print l }' "$dir/review.md")"
+  [[ "$last" =~ ^([0-9]+):\ ##\ Round\ ([0-9]+)\ —\ (full|fixes) ]] || die "no \"## Round <n> — full|fixes\" heading in $dir/review.md"
+  round_line="${BASH_REMATCH[1]}"; round="${BASH_REMATCH[2]}"
+  [ "${BASH_REMATCH[3]}" = full ] || die "round $round in $dir/review.md is already a fixes review: its fixes are verified, not reviewed again"
   base="$(cat "$dir/review-head")"
   git -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null || die "review head ${base:0:9} is not an ancestor of HEAD"
   if [ "$(git -C "$path" rev-parse HEAD)" = "$base" ]; then say "no fix commits since ${base:0:9}"; exit 3; fi
@@ -73,7 +84,7 @@ else
   git -C "$path" rev-parse HEAD >"$dir/review-head"
 fi
 
-excludes=(':(exclude)pnpm-lock.yaml' ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)bun.lock' ':(exclude)bun.lockb')
+excludes=(':(exclude)pnpm-lock.yaml' ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)bun.lock' ':(exclude)bun.lockb' "$MEMORY_EXCLUDE")
 while IFS= read -r g; do [ -n "$g" ] && excludes+=(":(exclude)$g"); done < <(cfg generated)
 
 git -C "$path" diff "$base" HEAD -- . "${excludes[@]}" >"$diff_file"
@@ -185,7 +196,7 @@ security="$(node -e '
   echo
   echo "- worktree: \`$path\`"
   echo "- branch: \`$(git -C "$path" rev-parse --abbrev-ref HEAD)\` at \`$(git -C "$path" rev-parse --short HEAD)\`"
-  if [ -n "$fixes" ]; then echo "- range: round 1 reviewed up to \`${base:0:9}\`; this diff is the commits since"
+  if [ -n "$fixes" ]; then echo "- range: round $round reviewed up to \`${base:0:9}\`; this diff is the commits since"
   else echo "- base: \`$(base_ref)\`, merge base \`${base:0:9}\`"; fi
   echo "- uncommitted paths: $(git -C "$path" status --porcelain | wc -l | tr -d ' ') (the diff is committed work only)"
   [ -z "$security" ] || echo "- security review: required ($security)"
@@ -212,10 +223,21 @@ security="$(node -e '
     else echo "| $st | $(wc -l <"$path/$f" | tr -d ' ') | \`$path/$f\` |"; fi
   done
   echo
+  memory="$(git -C "$path" -c core.quotePath=false log --format='%h %s' --name-status "$base"..HEAD -- .claude/agent-memory)"
+  if [ -n "$memory" ]; then
+    echo "## Agent memory — left out of the diff, paths only"
+    echo
+    echo "Only the \`chore(memory): commit agent memory written during $id\` commit should touch these; any other commit that does is a finding."
+    echo
+    echo '```'
+    echo "$memory"
+    echo '```'
+    echo
+  fi
   echo "## Stat (generated files and lockfiles included here, excluded from the diff)"
   echo
   echo '```'
-  git -C "$path" diff --stat "$base" HEAD
+  git -C "$path" diff --stat "$base" HEAD -- . "$MEMORY_EXCLUDE"
   echo '```'
   echo
   echo "## Commits"
@@ -225,9 +247,9 @@ security="$(node -e '
   echo '```'
   if [ -n "$fixes" ]; then
     echo
-    echo "## Round 1 findings — what these commits respond to"
+    echo "## Round $round findings — what these commits respond to"
     echo
-    awk '/^## (Fixes applied|Re-review)/ { exit } { print }' "$dir/review.md"
+    awk -v from="$round_line" 'NR <= from { next } /^### Fixes applied/ { skip = 1; next } skip && /^###? / { skip = 0 } !skip' "$dir/review.md"
   fi
   if [ -f "$dir/verify/summary.txt" ]; then
     echo
