@@ -178,7 +178,7 @@ Build the packet. It runs the project's `preReviewGates` first: exit 1 means one
 cutter-review-packet <id>
 ```
 
-- `cutter:code-reviewer`, always. Give it **only** the path of `.cutter/<id>/review-packet.md` and the instruction: *"Read the packet first and whole, then everything it lists in one message. Judge the diff against plan.md's acceptance criteria: does it satisfy them, is anything missing, is anything there the plan did not ask for, does it break the repo's conventions. Findings only."*
+- `cutter:code-reviewer`, always. Give it **only** the path of `.cutter/<id>/review-packet.md` and the instruction: *"Read the packet first and whole, then everything it lists in one message. Judge the diff against plan.md's acceptance criteria: does it satisfy them, is anything missing, is anything there the plan did not ask for, does it break the repo's conventions. Every item under the packet's `## Plan checks` is a finding. Findings only."*
 - `cutter:security-reviewer` too, when the change touches auth or permissions, payments, a new endpoint, or handling of user input, and always when the packet says `security review: required` — same packet, asked only about injection, authorization, secrets and unsafe input in the changed surface.
 
 The packet's `## Plan checks` lists each `## Tests` case not found in the test file's added lines, and each `(gone)` Readers term still in the tree. Every item listed there is a finding, as if a reviewer had reported it as `major`.
@@ -187,7 +187,7 @@ The packet's `## Plan checks` lists each `## Tests` case not found in the test f
 
 **The tree is frozen** until every reviewer and the verify run have returned: no edits in the worktree while they read or test it.
 
-Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, verbatim in substance, headed with the verdict and the criteria they were judged against. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line.
+Write the findings, and the packet's plan checks, to `.cutter/<id>/review.md`, verbatim in substance, headed with the verdict and the criteria they were judged against. Mark each criterion the verify run proves `met` in `evidence.md`, with the gate and its decisive output line. A criterion whose `## Tests` row has `—` as test file is `met` once the round 1 review returns with no finding against it: cite the review verdict and the row's method.
 
 ## Step 7 — Act on the findings
 
@@ -214,7 +214,7 @@ cutter-review-packet <id> --fixes
 
 Exit 1 means a pre-review gate failed: fix, commit and rebuild, as in Step 6. Exit 3 means there are no commits since the review: no round 2, run `cutter-verify <id>` once on the final tree, go to Step 8. Exit 2 is an error (no `review-head`, or the reviewed commits were rewritten): write it as an `asked` line, report it and stop, never skip round 2 silently.
 
-Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion — the change they touch, or the fixes packet's `security review: required`. Every item in the fixes packet's `## Plan checks` is a finding, as in Step 6. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
+Otherwise, as in Step 6, in **one message**: start `cutter-verify <id>` in the background and spawn the reviewers that ran in round 1, plus `cutter:security-reviewer` when the fix commits themselves meet Step 6's criterion — the change they touch, or the fixes packet's `security review: required`. Every item in the fixes packet's `## Plan checks` is a finding, as in Step 6. Give each **only** the path of `.cutter/<id>/fixes-packet.md` and: *"Read the packet first and whole, then everything it lists in one message. The diff is only the commits made after the round 1 review, which the packet quotes. Judge: does each fix resolve its finding, do the fixes introduce a new problem, is anything there the plan did not ask for. Every item under the packet's `## Plan checks` is a finding. Findings only."* The packet carries the plan and round 1's findings, never `## Fixes applied` — do not add it. The tree is frozen until all have returned.
 
 Append the findings to `review.md` as `## Re-review`, headed with the verdict. Act on them with the same table. This round is the last: fixes it calls for are recorded under `## Re-review` → `### Fixes applied`, followed by `cutter-red-proof <id>` if tests changed and `cutter-verify <id>` on the final tree — no third review.
 

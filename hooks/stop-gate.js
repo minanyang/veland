@@ -118,19 +118,22 @@ function resolveArg(r, arg) {
 }
 
 function bind(input, sid, event) {
-  const r = mainRoot(input.cwd)
   let flow = false
   let ticket = null
+  let r
   if (event === 'UserPromptSubmit') {
     const cmd = /^\s*\/cutter:(open|work|close)\b(.*)$/s.exec(typeof input.prompt === 'string' ? input.prompt : '')
     if (!cmd) return
+    r = mainRoot(input.cwd)
     flow = true
     if (cmd[1] === 'work') ticket = resolveArg(r, cmd[2].trim().split(/\s+/)[0])
   } else {
     if (input.tool_name !== 'Bash') return
     const command = input.tool_input && typeof input.tool_input.command === 'string' ? input.tool_input.command : ''
     const m = /^\s*cutter-worktree add (\S+)(\s|$)/.exec(command)
-    if (!m || !ID.test(m[1]) || !fs.existsSync(path.join(worktreeOf(r, m[1]), '.git'))) return
+    if (!m || !ID.test(m[1])) return
+    r = mainRoot(input.cwd)
+    if (!fs.existsSync(path.join(worktreeOf(r, m[1]), '.git'))) return
     ticket = m[1]
   }
   const prev = readSession(r, sid) || {}
