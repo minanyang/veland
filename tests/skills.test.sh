@@ -4,6 +4,7 @@
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
 # open and work must load the shared references/grill.md (beside the skills directory).
 # The skills and review agents that report on work must carry the verify-first rule.
+# open, work and close must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
 SKILLS_DIR="${SKILLS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/skills}"
@@ -92,5 +93,9 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
   fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(rule)
     ? ok(`${f}: carries the verify-first rule`) : bad(`${f}: lost the verify-first rule`)
 }
+
+for (const skill of ["open", "work", "close"])
+  /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
+    ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)
 process.exit(fail)
 JS
