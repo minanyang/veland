@@ -40,7 +40,8 @@
 # besides config.yml) the draft's `Form: <file>` must name one, and every required field's `### <label>` section must
 # have content; without forms the body needs a `## Acceptance criteria` section. Either way each checkbox criterion
 # there needs `AC<n>` + a dash or colon, one per line, and no phrase of references/banned-phrases.txt may appear
-# outside code. Any refusal exits 2 before `gh issue create`.
+# outside code. Any refusal exits 2 before `gh issue create`. Once `gh issue create` succeeds the draft is deleted;
+# when it fails, the draft stays and the script exits with gh's code.
 # `comment` (github.com only) posts .cutter/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
 # repo, only when the url in .cutter/<id>/ticket.md's header is that issue's, then renames it to comment.posted.md;
 # it needs no worktree, since /cutter:work posts it while planning.
@@ -473,6 +474,8 @@ case "$cmd" in
     for l in ${labels[@]+"${labels[@]}"}; do args+=(--label "$l"); done
     [ -z "$itype" ] || args+=(--type "$itype")
     gh "${args[@]}"
+    need_file "$draft"
+    rm -f "$draft"
     ;;
 
   comment)
