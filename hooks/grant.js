@@ -12,8 +12,10 @@
 // entry is confirmed only when the transcript line of that prompt_id is the user's typed skill.
 //
 // PreToolUse: allows a single command (no shell metacharacters) matching a confirmed grant, or a
-// pending one that the transcript confirms, outside a subagent. Anything else, and any error of its
-// own, prints nothing: Claude Code decides as usual.
+// pending one that the transcript confirms, outside a subagent. A cutter script run on a ticket is
+// allowed only for the entry's ticket id: the one typed with the skill, or for a task in words the
+// first one the hook allows. Anything else, and any error of its own, prints nothing: Claude Code
+// decides as usual.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -21,6 +23,16 @@ const path = require('node:path')
 const SID = /^[A-Za-z0-9-]+$/
 const TYPED = /^\s*\/cutter:(open|work|close)(?=\s|$)/
 const META = /[;&|<>$`\n\r]/
+const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+// The word that carries the ticket id: `cutter-land <sub> <id>`, `cutter-verify <id>`, ….
+const ID_WORD = {
+  'cutter-land': 2,
+  'cutter-worktree': 2,
+  'cutter-verify': 1,
+  'cutter-red-proof': 1,
+  'cutter-review-packet': 1,
+  'cutter-plan-check': 1,
+}
 const CHUNK = 1 << 20
 const MAX_SCAN = 16 << 20
 
@@ -42,7 +54,9 @@ function main() {
 
   if (input.hook_event_name === 'UserPromptSubmit') {
     const typed = TYPED.exec(typeof input.prompt === 'string' ? input.prompt : '')
-    if (typed && typeof input.prompt_id === 'string' && input.prompt_id) record(file, typed[1], input.prompt_id)
+    if (typed && typeof input.prompt_id === 'string' && input.prompt_id) {
+      record(file, typed[1], input.prompt_id, typedId(input.prompt.slice(typed[0].length)))
+    }
     pass()
   }
   if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') pass()
@@ -50,18 +64,43 @@ function main() {
   const raw = input.tool_input && typeof input.tool_input.command === 'string' ? input.tool_input.command : ''
   const command = raw.trim()
   if (!command || META.test(command)) pass()
+  const ticket = ticketOf(command)
   const skills = readSkills(file)
   for (const [skill, entry] of Object.entries(skills)) {
-    if (granting(entry && entry.confirmed, command)) allow(skill)
+    const confirmed = entry && entry.confirmed
+    if (!granting(confirmed, command, ticket)) continue
+    if (ticket && !confirmed.id) {
+      confirmed.id = ticket
+      write(file, skills)
+    }
+    allow(skill)
   }
   for (const [skill, entry] of Object.entries(skills)) {
     const pending = entry && entry.pending
-    if (!granting(pending, command) || !typedBy(input.transcript_path, pending.prompt_id, skill)) continue
-    skills[skill] = { confirmed: pending }
+    if (!granting(pending, command, ticket) || !typedBy(input.transcript_path, pending.prompt_id, skill)) continue
+    skills[skill] = { confirmed: ticket && !pending.id ? { ...pending, id: ticket } : pending }
     write(file, skills)
     allow(skill)
   }
   pass()
+}
+
+// The ticket id typed with the skill: `gh-<n>` for `<n>`, `#<n>` or an issues URL, as work's Step 0
+// maps them; a lone valid id as it is; nothing for a task in words.
+function typedId(args) {
+  const words = args.trim().split(/\s+/).filter(Boolean)
+  if (words.length !== 1) return undefined
+  const n = /^#?(\d+)$/.exec(words[0]) || /^https?:\/\/\S*\/issues\/(\d+)\/?$/.exec(words[0])
+  if (n) return `gh-${n[1]}`
+  return ID.test(words[0]) ? words[0] : undefined
+}
+
+// The ticket id a command runs on: undefined for a command that takes none, '' for an invalid one.
+function ticketOf(command) {
+  const words = command.split(/\s+/)
+  const at = Object.hasOwn(ID_WORD, words[0]) ? ID_WORD[words[0]] : -1
+  if (at < 0 || words[at] === undefined) return undefined
+  return ID.test(words[at]) ? words[at] : ''
 }
 
 function allow(skill) {
@@ -77,8 +116,10 @@ function allow(skill) {
   pass()
 }
 
-function granting(part, command) {
-  return !!part && Array.isArray(part.grants) && part.grants.some((g) => typeof g === 'string' && matches(g, command))
+function granting(part, command, ticket) {
+  if (!part || !Array.isArray(part.grants) || !part.grants.some((g) => typeof g === 'string' && matches(g, command))) return false
+  if (ticket === undefined) return true
+  return !!ticket && (part.id === undefined || part.id === ticket)
 }
 
 // Reads the transcript backwards, at most MAX_SCAN bytes, for the line of prompt `id`: the user's
@@ -160,15 +201,15 @@ function skillGrants(skill) {
     .map((l) => /^Bash\((.*)\)$/.exec(l.replace(/^  - /, '').trim()))
     .filter(Boolean)
     .map((b) => b[1].trim())
-    .filter(Boolean)
+    .filter((g) => g && !g.startsWith('*'))
 }
 
 // Typing a skill again replaces only its pending entry: its confirmed grants stay until a new
 // prompt is confirmed, so a prompt the user did not type neither adds grants nor takes them away.
-function record(file, skill, promptId) {
+function record(file, skill, promptId, id) {
   const skills = readSkills(file)
   const entry = skills[skill] && typeof skills[skill] === 'object' ? skills[skill] : {}
-  skills[skill] = { ...entry, pending: { prompt_id: promptId, grants: skillGrants(skill) } }
+  skills[skill] = { ...entry, pending: { prompt_id: promptId, grants: skillGrants(skill), id } }
   write(file, skills)
 }
 

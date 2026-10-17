@@ -233,6 +233,54 @@ check "$T" allow "$(bash_ s27 "cutter-land merge gh-5")" "granted by /cutter:clo
 check "$T: the scheduled prompt adds nothing" nothing "$(bash_ s27 "touch x")"
 cp "$ROOT/skills/close/SKILL.md" "$plugin/skills/close/SKILL.md"
 
+T="allows ticket commands only for the typed ticket"
+prompt s30 "/cutter:close gh-5" >/dev/null
+check "$T" allow "$(bash_ s30 "cutter-land merge gh-5")"
+check "$T: another ticket" nothing "$(bash_ s30 "cutter-land merge gh-9")"
+check "$T: cutter-verify on another ticket" nothing "$(bash_ s30 "cutter-verify gh-9")"
+check "$T: cutter-worktree rm on another ticket" nothing "$(bash_ s30 "cutter-worktree rm gh-9")"
+check "$T: an invalid id" nothing "$(bash_ s30 "cutter-land merge ../gh-5")"
+check "$T: a command without an id" allow "$(bash_ s30 "cutter-worktree sync-base")"
+check "$T: a gh grant" allow "$(bash_ s30 "gh pr view 7")"
+prompt s30 "/cutter:work gh-5" >/dev/null
+check "$T: work's packet for the ticket" allow "$(bash_ s30 "cutter-review-packet gh-5 --fixes")" "granted by /cutter:work"
+check "$T: work's plan check on another ticket" nothing "$(bash_ s30 "cutter-plan-check gh-9")"
+prompt s30 "/cutter:close gh-9" >/dev/null
+check "$T: typing the skill again binds the new ticket" allow "$(bash_ s30 "cutter-land merge gh-9")"
+check "$T: and not the old one" nothing "$(bash_ s30 "cutter-land merge gh-5")"
+
+T="binds a ticket typed as an issue number or URL"
+prompt s31 "/cutter:work 53" >/dev/null
+check "$T: a number" allow "$(bash_ s31 "cutter-worktree init gh-53")"
+check "$T: a number, not the bare number" nothing "$(bash_ s31 "cutter-verify 53")"
+prompt s32 "/cutter:work #53" >/dev/null
+check "$T: #n" allow "$(bash_ s32 "cutter-verify gh-53")"
+check "$T: #n, not another" nothing "$(bash_ s32 "cutter-verify gh-54")"
+prompt s33 "/cutter:work https://github.com/o/r/issues/53" >/dev/null
+check "$T: a URL" allow "$(bash_ s33 "cutter-verify gh-53")"
+check "$T: a URL, not another" nothing "$(bash_ s33 "cutter-verify gh-54")"
+
+T="binds the first ticket used when the skill was typed in words"
+prompt s34 "/cutter:work add a --verbose flag to greet" >/dev/null
+check "$T" allow "$(bash_ s34 "cutter-worktree init add-verbose-flag")"
+check "$T: then only that ticket" allow "$(bash_ s34 "cutter-verify add-verbose-flag")"
+check "$T: not another" nothing "$(bash_ s34 "cutter-verify gh-9")"
+prompt s35 "/cutter:work add a flag" >/dev/null
+check "$T: a command without an id binds nothing" allow "$(bash_ s35 "git fetch")"
+check "$T: the first id after it" allow "$(bash_ s35 "cutter-plan-check add-flag")"
+check "$T: then only that one" nothing "$(bash_ s35 "cutter-plan-check other")"
+
+T="does not record a grant that starts with a wildcard"
+node -e '
+  const fs = require("fs"), f = process.argv[1]
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("allowed-tools:\n", "allowed-tools:\n  - Bash(*)\n  - Bash(* --help)\n"))
+' "$plugin/skills/close/SKILL.md"
+prompt s36 "/cutter:close gh-5" >/dev/null
+check "$T: *" nothing "$(bash_ s36 "touch x")"
+check "$T: * --help" nothing "$(bash_ s36 "touch --help")"
+check "$T: the other grants hold" allow "$(bash_ s36 "cutter-land merge gh-5")"
+cp "$ROOT/skills/close/SKILL.md" "$plugin/skills/close/SKILL.md"
+
 check "passes on a malformed payload" nothing "$(printf 'garbage' | (cd "$repo" && node "$HOOK"))"
 check "passes on an empty payload" nothing "$(printf '{}' | (cd "$repo" && node "$HOOK"))"
 check "ignores another tool" nothing "$(send PreToolUse s1 tool_name Write tool_input '{"command":"cutter-land merge gh-5"}')"
