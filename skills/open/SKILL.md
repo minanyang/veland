@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(gh auth status)
   - Bash(gh issue list *)
   - Bash(gh issue view *)
+  - Bash(cutter-grill)
   - Bash(gh label list *)
   - Bash(cutter-ticket issue-types)
   - Bash(cutter-worktree init)
@@ -39,7 +40,7 @@ gh issue list --state open --search "<key words>" --limit 10
 
 If one already covers it, show it (`gh issue view <number>`) and ask whether to add to it instead.
 
-Then grill: read `references/grill.md` at the plugin root (two levels above this skill's base directory) and follow it. The questions here are product questions — what changes for the user, the edge cases, what counts as done.
+Then grill: run `cutter-grill`, which prints the plugin's shared `references/grill.md`, and follow it. The questions here are product questions — what changes for the user, the edge cases, what counts as done.
 
 ## Step 2 — Classify
 

@@ -2,7 +2,7 @@
 # The skills' `allowed-tools` must cover every command their fenced bash blocks run and every command their prose names in inline code (unless Claude Code allows it as read-only, it is left to the user, or it is named but never run), and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
-# open and work must load the shared references/grill.md (beside the skills directory).
+# open and work must load the shared references/grill.md (beside the skills directory) through a granted `cutter-grill`.
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
 # open, work and close must each have a `## Replies` section.
@@ -125,12 +125,15 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
     : ok(`${skill}: grants no public write`)
 }
 
-// open and work load the one shared grill rather than each carrying a copy.
+// open and work load the one shared grill rather than each carrying a copy. A Read of it would prompt (the plugin
+// root is outside the workspace and a Read rule takes only an absolute path), so they run the granted cutter-grill.
 const grill = `${dir}/../references/grill.md`
 fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.md is missing")
-for (const skill of ["open", "work"])
-  fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8").includes("`references/grill.md`")
-    ? ok(`${skill}: loads references/grill.md`) : bad(`${skill}: does not load references/grill.md`)
+for (const skill of ["open", "work"]) {
+  const text = fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")
+  text.includes("run `cutter-grill`") && /^  - Bash\(cutter-grill\)$/m.test(text)
+    ? ok(`${skill}: loads the grill through a granted cutter-grill`) : bad(`${skill}: does not load the grill through a granted cutter-grill`)
+}
 
 // open reads the issue types through its granted script: Claude Code refuses the raw GraphQL query for its braces.
 {

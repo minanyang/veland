@@ -963,6 +963,11 @@ expect "issue ignores banned phrases in code and accepts every dash" 0 cutter-la
 printf '# T\n\nappropriately, inappropriate, /etc/hosts and TBDs\n\n## Acceptance criteria\n- [ ] AC1: ok\n' >"$dr/word.md"
 expect "issue matches banned phrases on word boundaries" 0 cutter-land issue word
 
+# grill: prints the shared grill verbatim, takes no argument
+cutter-grill >"$tmp/grill.out" 2>&1 && cmp -s "$tmp/grill.out" "$BIN/../references/grill.md" \
+  && ok "grill prints references/grill.md" || bad "grill prints references/grill.md"
+expect "grill refuses an argument" 2 cutter-grill open
+
 # plan-check: a plan in the template's format passes; every line at fault is named
 mkdir -p "$tmp/land/.cutter/P1"
 pc_part() { # <part> — one piece of the fixture plan
