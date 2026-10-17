@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(gh auth status)
   - Bash(gh issue list *)
   - Bash(gh label list *)
+  - Bash(cutter-ticket issue-types)
   - Bash(cutter-worktree init)
 ---
 
@@ -45,10 +46,12 @@ Decide the kind: `feature`, `bug`, `improvement`, `docs` or `chore`. Then map it
 
 ```bash
 gh label list --limit 100 --json name,description
-gh api graphql -f query='query($o:String!,$r:String!){repository(owner:$o,name:$r){issueTypes(first:25){nodes{name}}}}' -f o=<owner> -f r=<repo>
+cutter-ticket issue-types
 ```
 
-- Issue types (organisation repos only; `null` elsewhere): pick the one that matches — typically `Bug`, `Feature`, `Task`.
+A non-zero exit from `cutter-ticket issue-types` stops the skill: relay its message, as for the checks above.
+
+- Issue types (one per line; nothing outside organisation repos): pick the one that matches — typically `Bug`, `Feature`, `Task`.
 - Labels: the matching existing label — `bug` for a bug, `enhancement` for a feature or improvement, `documentation` for docs — if the repo has it. No match, no label.
 
 If the repo has issue forms (`.github/ISSUE_TEMPLATE/*.yml` or `*.yaml`, except `config.yml`), pick the form by the kind: a bug takes the form whose `labels` include the repo's bug label; a feature, improvement, docs or chore takes the one labelled `enhancement`, else the closest by `name`. Read it whole and draft in its shape instead of the layout below: `Form: <file name>` in the header, the form's `labels` as `Labels:`, its `title` as the title's prefix, and one `### <field label>` section per field that is not `type: markdown`, in the form's order — every `required: true` field filled. Markdown (`.md`) templates: follow the matching template's sections.
