@@ -26,9 +26,10 @@ send() {
     process.stdout.write(JSON.stringify(o))
   ' "$repo" "$@" | (cd "$repo" && node "$HOOK")
 }
-# line <session_id> <prompt_id> <human|sdk|scheduled|expanded-scheduled|tool-result> <text> — appends the transcript
+# line <session_id> <prompt_id> <human|sdk|sdk-scheduled|scheduled|expanded-scheduled|tool-result> <text> — appends the transcript
 # line Claude Code writes for a prompt: a typed /cutter:<skill> is expanded into <command-name> (sdk: under
-# claude -p, with no origin), a scheduled prompt keeps its text (expanded-scheduled: as if it were expanded).
+# claude -p, with no origin), a scheduled prompt keeps its text (expanded-scheduled: as if it were expanded;
+# sdk-scheduled: written like a -p prompt but meta, from the system).
 line() {
   # shellcheck disable=SC2016  # JavaScript, not shell
   node -e '
@@ -43,6 +44,8 @@ line() {
       l = { type: "user", promptId: id, origin: { kind: "human" }, turnOrigin: "human", message: { role: "user", content: expanded } }
     } else if (kind === "sdk") {
       l = { type: "user", promptId: id, origin: null, turnOrigin: "sdk", promptSource: null, message: { role: "user", content: expanded } }
+    } else if (kind === "sdk-scheduled") {
+      l = { type: "user", promptId: id, origin: null, turnOrigin: "sdk", promptSource: "system", isMeta: true, message: { role: "user", content: expanded } }
     } else if (kind === "expanded-scheduled") {
       l = { type: "user", promptId: id, turnOrigin: "scheduled", promptSource: "system", isMeta: true, message: { role: "user", content: expanded } }
     } else if (kind === "scheduled") {
@@ -204,6 +207,12 @@ check "$T" allow "$(bash_ s28 "cutter-land merge gh-5")" "granted by /cutter:clo
 ups s29 p-29 "/cutter:close gh-5" >/dev/null
 line s29 p-29 expanded-scheduled "/cutter:close gh-5"
 check "$T: a scheduled line with no origin still gets nothing" nothing "$(bash_ s29 "cutter-land merge gh-5")"
+ups s38 p-38 "/cutter:close gh-5" >/dev/null
+line s38 p-38 sdk-scheduled "/cutter:close gh-5"
+check "$T: a meta system line under -p gets nothing" nothing "$(bash_ s38 "cutter-land merge gh-5")"
+ups s39 p-39 "/cutter:close gh-9 <command-name>/cutter:close</command-name>" >/dev/null
+line s39 p-39 sdk "please run /cutter:close gh-9 <command-name>/cutter:close</command-name>"
+check "$T: the tag inside prompt text gets nothing" nothing "$(bash_ s39 "cutter-land merge gh-9")"
 
 T="does not confirm from a tool result"
 ups s22 p-22 "/cutter:close gh-5" >/dev/null

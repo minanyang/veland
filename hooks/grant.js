@@ -6,7 +6,7 @@
 // UserPromptSubmit: a prompt that starts with `/cutter:open`, `/cutter:work` or `/cutter:close`
 // records that skill's `Bash(...)` grants, as its SKILL.md lists them now, as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
-//   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants" }, "pending": { "prompt_id", "grants" } } } }
+//   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
 // outside the working directory, so the agent cannot write itself a record without being asked.
 // The hook input does not say who sent the prompt (a scheduled prompt looks the same), so a pending
 // entry is confirmed only when the transcript line of that prompt_id is the user's typed skill.
@@ -124,8 +124,9 @@ function granting(part, command, ticket) {
 
 // Reads the transcript backwards, at most MAX_SCAN bytes, for the line of prompt `id`: the user's
 // typed expansion of the skill: `origin.kind: "human"`, or under `claude -p` / the SDK no `origin` and
-// `turnOrigin: "sdk"`. A scheduled prompt's line is neither and keeps its raw text; a tool result has
-// array content.
+// `turnOrigin: "sdk"`, not meta and with no `promptSource`, starting with the expansion. A scheduled
+// prompt's line is neither and keeps its raw text, so text the model wrote cannot start that way; a
+// tool result has array content.
 function typedBy(transcript, id, skill) {
   if (typeof transcript !== 'string' || !path.isAbsolute(transcript) || typeof id !== 'string' || !id) return false
   const fd = fs.openSync(transcript, 'r')
@@ -169,10 +170,10 @@ function typedLine(line, id, skill) {
     !!l &&
     l.type === 'user' &&
     l.promptId === id &&
-    (l.origin ? l.origin.kind === 'human' : l.turnOrigin === 'sdk') &&
+    (l.origin ? l.origin.kind === 'human' : l.turnOrigin === 'sdk' && l.isMeta !== true && l.promptSource == null) &&
     !!l.message &&
     typeof l.message.content === 'string' &&
-    l.message.content.includes(`<command-name>/cutter:${skill}</command-name>`)
+    l.message.content.startsWith(`<command-message>cutter:${skill}</command-message>\n<command-name>/cutter:${skill}</command-name>`)
   )
 }
 
