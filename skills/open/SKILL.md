@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(git remote get-url origin)
   - Bash(gh auth status)
   - Bash(gh issue list *)
+  - Bash(gh issue view *)
   - Bash(gh label list *)
   - Bash(cutter-ticket issue-types)
   - Bash(cutter-worktree init)
@@ -36,7 +37,7 @@ Look for an existing issue first:
 gh issue list --state open --search "<key words>" --limit 10
 ```
 
-If one already covers it, show it and ask whether to add to it instead.
+If one already covers it, show it (`gh issue view <number>`) and ask whether to add to it instead.
 
 Then grill: read `references/grill.md` at the plugin root (two levels above this skill's base directory) and follow it. The questions here are product questions — what changes for the user, the edge cases, what counts as done.
 
