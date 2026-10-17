@@ -512,6 +512,9 @@ case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
   "label list") printf '%s\n' "${STUB_LABELS-}" ;;
   "issue create") exit "${STUB_CREATE_RC:-0}" ;;
+  "api --hostname") case "$*" in *" graphql "*)
+    none='{"data":{"repository":{"issueTypes":null}}}'; echo "${STUB_GRAPHQL-$none}"
+    [ "${STUB_GRAPHQL_RC:-0}" = 0 ] || echo "gh: Could not resolve to a Repository" >&2; exit "${STUB_GRAPHQL_RC:-0}" ;; esac ;;
   "issue view") echo '{"number":7,"title":"T","body":"b","url":"https://github.com/acme/land/issues/7","state":"OPEN","labels":[],"issueType":null,"comments":[]}' ;;
 esac
 exit 0
@@ -1060,6 +1063,26 @@ git remote set-url origin https://notgithub.com/acme/land.git
 expect "ticket refuses a non-github.com origin" 2 cutter-ticket github 7
 git remote set-url origin git@github.com:acme/land.git
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused ticket" || bad "no gh call for a refused ticket"
+
+# cutter-ticket issue-types lists the issue types of origin's repo
+STUB_GRAPHQL='{"data":{"repository":{"issueTypes":{"nodes":[{"name":"Bug"},{"name":"Feature"}]}}}}' expect "issue-types prints one type per line" 0 cutter-ticket issue-types
+[ "$(cat "$tmp/out")" = $'Bug\nFeature' ] && ok "issue-types prints the names alone" || { bad "issue-types prints the names alone"; cat "$tmp/out"; }
+land_log 'api --hostname github.com graphql -f query=query($o:String!,$r:String!){repository(owner:$o,name:$r){issueTypes(first:25){nodes{name}}}} -f o=acme -f r=land' "issue-types queries origin's repo on github.com"
+expect "issue-types prints nothing for a repo without issue types" 0 cutter-ticket issue-types
+[ ! -s "$tmp/out" ] && ok "issue-types prints nothing for null issue types" || bad "issue-types prints nothing for null issue types"
+STUB_GRAPHQL='{"data":{"repository":{"issueTypes":{"nodes":[]}}}}' expect "issue-types prints nothing for no issue types" 0 cutter-ticket issue-types
+[ ! -s "$tmp/out" ] && ok "issue-types prints nothing for an empty list" || bad "issue-types prints nothing for an empty list"
+STUB_GRAPHQL_RC=1 expect "issue-types fails naming gh's error" 2 cutter-ticket issue-types
+grep -qx 'cutter-ticket: gh: Could not resolve to a Repository' "$tmp/out" && ok "issue-types relays gh's stderr" || { bad "issue-types relays gh's stderr"; cat "$tmp/out"; }
+STUB_GRAPHQL='{"data":{"repository":null}}' expect "issue-types fails on an answer with no repository" 2 cutter-ticket issue-types
+STUB_GRAPHQL='not json' expect "issue-types fails on an answer that is not JSON" 2 cutter-ticket issue-types
+: >"$tmp/stub.log"
+expect "issue-types refuses an argument" 2 cutter-ticket issue-types --repo other/land
+git remote set-url origin https://notgithub.com/acme/land.git
+expect "issue-types refuses a non-github.com origin" 2 cutter-ticket issue-types
+grep -q "^cutter-ticket: issue-types needs a github.com origin" "$tmp/out" && ok "issue-types names itself in the refusal" || { bad "issue-types names itself in the refusal"; cat "$tmp/out"; }
+git remote set-url origin git@github.com:acme/land.git
+[ ! -s "$tmp/stub.log" ] && ok "no gh call for a refused issue-types" || bad "no gh call for a refused issue-types"
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 expect "pr refuses a host that only contains github.com" 2 cutter-land pr L1

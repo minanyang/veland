@@ -19,7 +19,7 @@ const bad = (m) => { console.log(`FAIL  ${m}`); fail = 1 }
 const userOwn = {
   close: [],
   work: ["git -C X add ", "git -C X commit ", "cutter-land comment "],
-  open: ["gh api graphql ", "cutter-land issue "],
+  open: ["cutter-land issue "],
 }
 const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
 // Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
@@ -130,6 +130,17 @@ fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.
 for (const skill of ["open", "work"])
   fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8").includes("`references/grill.md`")
     ? ok(`${skill}: loads references/grill.md`) : bad(`${skill}: does not load references/grill.md`)
+
+// open reads the issue types through its granted script: Claude Code refuses the raw GraphQL query for its braces.
+{
+  const text = fs.readFileSync(`${dir}/open/SKILL.md`, "utf8")
+  const fm = /^---\n([\s\S]*?)\n---/.exec(text)[1]
+  const step2 = (/^## Step 2\b[\s\S]*?(?=^## )/m.exec(text) || [""])[0]
+  const runs = [...step2.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "cutter-ticket issue-types"))
+  fm.split("\n").some((l) => l.trim() === "- Bash(cutter-ticket issue-types)") && runs
+    ? ok("open: looks up issue types through a granted cutter-ticket issue-types")
+    : bad("open: does not look up issue types through a granted cutter-ticket issue-types")
+}
 
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
   "Only when a check is impossible, say so, naming what was tried and why it cannot be checked."
