@@ -151,8 +151,13 @@ turn() {
     --settings "$E2E_SETTINGS" "${sess[@]}") >"$log" 2>"$log.err" </dev/null || true
 }
 
-# run_aborted — this run has a denial or failed its preflight: more turns would only spend tokens.
-run_aborted() { [ -f "$RUN/preflight-err" ] || [ -n "$(run_denials)" ]; }
+# run_aborted — this run has a denial in the skills' scope or failed its preflight: more turns would only spend tokens.
+run_aborted() {
+  local tool cmd
+  [ ! -f "$RUN/preflight-err" ] || return 0
+  while IFS=$'\t' read -r tool cmd; do in_skill_scope "$tool" "$cmd" && return 0; done < <(run_denials)
+  return 1
+}
 
 # drive <first prompt> <reply> <max turns> <predicate...> — one turn, then replies until the predicate holds.
 drive() {
@@ -211,14 +216,38 @@ origin_head() { git --git-dir "$ORIGIN" rev-parse --verify --quiet "refs/heads/$
 
 # ---------------------------------------------------------------- flow-level failures
 
-# flow_failure — why every scenario of the flow fails, or nothing: a preflight failure, a denied command, or an
-# executed `gh <sub> <sub2>` the fake never saw (runs with the fake only).
+# skill_grants — the Bash grants of the plugin's skills and of E2E_SETTINGS, one pattern per line.
+skill_grants() {
+  { grep -h '^  - Bash(' "$PLUGIN"/skills/*/SKILL.md; jq -r '.permissions.allow[]' <<<"$E2E_SETTINGS"; } |
+    sed -n 's/^ *- //; s/^Bash(\(.*\))$/\1/p'
+}
+# in_skill_scope <tool> <command> — a denial the skills own: any tool but Bash, a cutter-, gh or glab command, or a
+# command a grant covers (it should have run). Anything else is the model's own look around, which a user may allow.
+in_skill_scope() {
+  local g
+  [ "$1" = Bash ] || return 0
+  case "$2" in cutter-* | gh | "gh "* | glab | "glab "*) return 0 ;; esac
+  while IFS= read -r g; do
+    # shellcheck disable=SC2053  # the grant is a glob on purpose
+    [[ "$2" == $g ]] && return 0
+  done < <(skill_grants)
+  return 1
+}
+
+# flow_failure — why every scenario of the flow fails, or nothing: a preflight failure, a denied command in the
+# skills' scope, or an executed `gh <sub> <sub2>` the fake never saw (runs with the fake only). Other denials go to
+# $FLOW_ROOT/notes, which run.sh prints on stderr.
 flow_failure() {
-  local why="" dir den n a b have cur="$RUN"
+  local why="" dir den n a b have cur="$RUN" tool cmd
   while IFS= read -r dir; do
     use_run "$dir"
     [ ! -f "$RUN/preflight-err" ] || why="${why:+$why; }$(cat "$RUN/preflight-err")"
-    den="$(run_denials | paste -sd';' - | sed 's/;/; /g')"
+    den=""
+    while IFS=$'\t' read -r tool cmd; do
+      [ -n "${tool:-}" ] || continue
+      if in_skill_scope "$tool" "$cmd"; then den="${den:+$den; }$cmd"
+      else printf 'note: %s denied (not the skill'"'"'s): %s\n' "$FLOW" "$cmd" >>"$FLOW_ROOT/notes"; fi
+    done < <(run_denials)
     [ -z "$den" ] || why="${why:+$why; }permission denied: $den"
     [ "$(cat "$RUN/fake")" = 1 ] || continue
     while read -r n a b; do

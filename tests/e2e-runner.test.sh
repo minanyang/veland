@@ -2,7 +2,8 @@
 # Self-test for tests/e2e/run.sh with a stub `claude` (CUTTER_E2E_CLAUDE): no model is called.
 # The stub writes $STUB_STREAM (canned stream-json) to stdout and, when $STUB_RUN is set, runs that script first
 # (to call the fake gh or not). Real scenario ids drive the runner: 3 is the one-turn duplicate-issue flow.
-# Cases: unknown ids exit 2 before any claude run; a permission denial is reported with its command; a gh call in the
+# Cases: unknown ids exit 2 before any claude run; a permission denial in the skills' scope is reported with its
+# command, and one outside it is a note on stderr that fails nothing; a gh call in the
 # tool log that the fake never saw fails the flow; a plugin without bin/cutter-land fails before claude runs; a
 # failing scenario makes the exit code non-zero.
 # shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; $HOME is literal command text
@@ -23,13 +24,18 @@ cat "$STUB_STREAM"
 STUB
 chmod +x "$tmp/claude"
 
-# A stream whose one Bash call is `gh issue list`, with an optional denial of another command.
+# A stream whose one Bash call is `gh issue list`, with an optional denial of another command: `cutter-land merge`
+# is in the skills' scope, `echo $HOME` is not.
 printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"result","subtype":"success","permission_denials":[],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-ok"
 printf '%s\n' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cutter-land merge gh-5"}}]}}' \
+  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"cutter-land merge gh-5"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-denied"
+printf '%s\n' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"echo $HOME"}}]}}' \
-  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"echo $HOME"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-denied"
+  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"echo $HOME"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-adhoc"
 printf '%s\n' '#!/bin/bash' 'gh issue list --state open --search greet' >"$tmp/calls-gh"
 mkdir -p "$tmp/plugin/bin"
 
@@ -65,7 +71,13 @@ fi
 
 # denial
 if runner 1 "a permission denial fails the flow" "STUB_STREAM=$tmp/stream-denied" "STUB_RUN=$tmp/calls-gh" -- 3; then
-  line_matches '^FAIL  3  [0-9]+s  .*permission denied: echo \$HOME' && ok "a permission denial fails the flow and names the command; a failing scenario makes the exit code non-zero" || { bad "a permission denial fails the flow and names the command"; sed 's/^/      /' "$tmp/out"; }
+  line_matches '^FAIL  3  [0-9]+s  .*permission denied: cutter-land merge gh-5' && ok "a permission denial fails the flow and names the command; a failing scenario makes the exit code non-zero" || { bad "a permission denial fails the flow and names the command"; sed 's/^/      /' "$tmp/out"; }
+fi
+
+# a denial outside the skills' scope
+if runner 0 "an ad-hoc denial passes" "STUB_STREAM=$tmp/stream-adhoc" "STUB_RUN=$tmp/calls-gh" -- 3; then
+  line_matches '^pass  3  [0-9]+s$' && grep -Fq "note: open-dup denied (not the skill's): echo \$HOME" "$tmp/err" \
+    && ok "a denial outside the skills' scope is a note, not a failure" || { bad "a denial outside the skills' scope is a note, not a failure"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
 fi
 
 # a gh call the fake never saw

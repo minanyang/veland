@@ -2,7 +2,7 @@
 // Reads stream-json logs of `claude -p` runs: tool calls, permission denials, cost and duration. Never reads text.
 //
 //   toollog.js calls   <log>...   one JSON object per tool call: {turn, seq, name, command, subagent_type, run_in_background, file_path, denied}
-//   toollog.js denials <log>...   the command (or tool name) of every denied call, one per line
+//   toollog.js denials <log>...   every denied call, one per line: <tool name> TAB <command, or the tool name>
 //   toollog.js stats   <log>...   {"cost": <usd>, "ms": <duration>}
 //
 // A call is denied when a `result` line lists its tool_use_id under permission_denials.
@@ -57,7 +57,10 @@ const { calls, denied, results } = parse(files)
 if (cmd === 'calls') {
   for (const c of calls) console.log(JSON.stringify({ ...c, id: undefined }))
 } else if (cmd === 'denials') {
-  for (const d of denied.values()) console.log((d.tool_input && d.tool_input.command) || d.tool_name || 'unknown')
+  for (const d of denied.values()) {
+    const tool = d.tool_name || 'unknown'
+    console.log(`${tool}\t${(d.tool_input && d.tool_input.command) || tool}`)
+  }
 } else if (cmd === 'stats') {
   let cost = 0
   let ms = 0

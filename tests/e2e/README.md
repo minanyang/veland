@@ -53,7 +53,10 @@ sum of the stream-json `result` lines' `total_cost_usd`) for the cost, and write
   `GH_ENTERPRISE_TOKEN`. A flow with the fake also fails when its tool log has more executed `gh <sub> <sub2>`
   commands than the fake's call log has entries.
 - **Permissions.** `claude -p` runs with `--permission-mode acceptEdits`, never `--dangerously-skip-permissions`. A
-  `permission_denials` entry in the stream-json `result` fails every scenario of the flow and names the command. What
+  `permission_denials` entry in the stream-json `result` in the skills' scope — any tool but Bash, a `cutter-`, `gh`
+  or `glab` command, or one a skill's `allowed-tools` or the runner's grants cover — fails every scenario of the flow
+  and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script): it
+  is printed on stderr as `note: <flow> denied (not the skill's): <command>` and fails nothing. What
   a user must allow, passed with `--settings` (an untrusted workspace ignores `.claude/settings.json`): `git -C * add *`,
   `git -C * commit *`, `gh api graphql *`, `cutter-land issue *`, `cutter-land comment *`.
 - **The plugin under test** is `CUTTER_E2E_PLUGIN` (default: this repo). It is passed as `--plugin-dir`, its `bin/` comes
@@ -76,6 +79,7 @@ CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh C3
 
 ## The runner's own test
 
-`bash tests/e2e-runner.test.sh` checks the runner offline with a stub `claude` (`CUTTER_E2E_CLAUDE`): a denial is
-reported with its command, a tool-log `gh` call missing from the fake's log fails the flow, an unknown id exits 2, and a
-failing scenario makes the exit code non-zero. It is in the gates.
+`bash tests/e2e-runner.test.sh` checks the runner offline with a stub `claude` (`CUTTER_E2E_CLAUDE`): a denial in the
+skills' scope is reported with its command and one outside it is only a note, a tool-log `gh` call missing from the
+fake's log fails the flow, an unknown id exits 2, and a failing scenario makes the exit code non-zero. It is in the
+gates.

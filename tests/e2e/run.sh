@@ -48,6 +48,7 @@ run_flow() {
     cost="$(awk -v a="$cost" -v b="$c" 'BEGIN { print a + b }')"
   done <"$FLOW_ROOT/runs"
   echo "$cost" >"$RESULTS/_cost.$flow"
+  if [ -f "$FLOW_ROOT/notes" ]; then sort -u "$FLOW_ROOT/notes" | sed 's/^/   /' >&2; fi
   if grep -q '^FAIL' "$RESULTS"/*."$flow" 2>/dev/null; then
     echo "   $flow failed; its runs are kept in $FLOW_ROOT" >&2
   else
