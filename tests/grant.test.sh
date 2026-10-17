@@ -26,8 +26,9 @@ send() {
     process.stdout.write(JSON.stringify(o))
   ' "$repo" "$@" | (cd "$repo" && node "$HOOK")
 }
-# line <session_id> <prompt_id> <human|scheduled|tool-result> <text> — appends the transcript line Claude Code
-# writes for a prompt: a typed /cutter:<skill> is expanded into <command-name>, a scheduled prompt keeps its text.
+# line <session_id> <prompt_id> <human|sdk|scheduled|expanded-scheduled|tool-result> <text> — appends the transcript
+# line Claude Code writes for a prompt: a typed /cutter:<skill> is expanded into <command-name> (sdk: under
+# claude -p, with no origin), a scheduled prompt keeps its text (expanded-scheduled: as if it were expanded).
 line() {
   # shellcheck disable=SC2016  # JavaScript, not shell
   node -e '
@@ -35,11 +36,15 @@ line() {
     const [file, id, kind, text] = process.argv.slice(1)
     const typed = /^\s*\/cutter:(open|work|close)(?=\s|$)\s*([\s\S]*)$/.exec(text)
     let l
+    const expanded = typed
+      ? `<command-message>cutter:${typed[1]}</command-message>\n<command-name>/cutter:${typed[1]}</command-name>\n<command-args>${typed[2]}</command-args>`
+      : text
     if (kind === "human") {
-      const content = typed
-        ? `<command-message>cutter:${typed[1]}</command-message>\n<command-name>/cutter:${typed[1]}</command-name>\n<command-args>${typed[2]}</command-args>`
-        : text
-      l = { type: "user", promptId: id, origin: { kind: "human" }, turnOrigin: "human", message: { role: "user", content } }
+      l = { type: "user", promptId: id, origin: { kind: "human" }, turnOrigin: "human", message: { role: "user", content: expanded } }
+    } else if (kind === "sdk") {
+      l = { type: "user", promptId: id, origin: null, turnOrigin: "sdk", promptSource: null, message: { role: "user", content: expanded } }
+    } else if (kind === "expanded-scheduled") {
+      l = { type: "user", promptId: id, turnOrigin: "scheduled", promptSource: "system", isMeta: true, message: { role: "user", content: expanded } }
     } else if (kind === "scheduled") {
       l = { type: "user", promptId: id, turnOrigin: "scheduled", promptSource: "system", isMeta: true, message: { role: "user", content: text } }
     } else {
@@ -191,6 +196,14 @@ prompt s21 "/cutter:work gh-5" >/dev/null
 scheduled s21 "/cutter:close gh-5"
 check "$T: in a session that typed another skill" nothing "$(bash_ s21 "cutter-land merge gh-5")"
 check "$T: the typed skill still holds" allow "$(bash_ s21 "git fetch")" "granted by /cutter:work"
+
+T="confirms a skill typed through claude -p"
+ups s28 p-28 "/cutter:close gh-5" >/dev/null
+line s28 p-28 sdk "/cutter:close gh-5"
+check "$T" allow "$(bash_ s28 "cutter-land merge gh-5")" "granted by /cutter:close"
+ups s29 p-29 "/cutter:close gh-5" >/dev/null
+line s29 p-29 expanded-scheduled "/cutter:close gh-5"
+check "$T: a scheduled line with no origin still gets nothing" nothing "$(bash_ s29 "cutter-land merge gh-5")"
 
 T="does not confirm from a tool result"
 ups s22 p-22 "/cutter:close gh-5" >/dev/null

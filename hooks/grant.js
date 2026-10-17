@@ -123,8 +123,9 @@ function granting(part, command, ticket) {
 }
 
 // Reads the transcript backwards, at most MAX_SCAN bytes, for the line of prompt `id`: the user's
-// typed expansion of the skill. A scheduled prompt's line is not `origin.kind: "human"` and keeps its
-// raw text; a tool result has array content.
+// typed expansion of the skill: `origin.kind: "human"`, or under `claude -p` / the SDK no `origin` and
+// `turnOrigin: "sdk"`. A scheduled prompt's line is neither and keeps its raw text; a tool result has
+// array content.
 function typedBy(transcript, id, skill) {
   if (typeof transcript !== 'string' || !path.isAbsolute(transcript) || typeof id !== 'string' || !id) return false
   const fd = fs.openSync(transcript, 'r')
@@ -168,8 +169,7 @@ function typedLine(line, id, skill) {
     !!l &&
     l.type === 'user' &&
     l.promptId === id &&
-    !!l.origin &&
-    l.origin.kind === 'human' &&
+    (l.origin ? l.origin.kind === 'human' : l.turnOrigin === 'sdk') &&
     !!l.message &&
     typeof l.message.content === 'string' &&
     l.message.content.includes(`<command-name>/cutter:${skill}</command-name>`)
