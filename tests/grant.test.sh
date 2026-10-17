@@ -46,7 +46,7 @@ assert() { # <description> <status of the check run just before>
 }
 empty() { [ -z "$1" ]; }
 absent() { [ ! -e "$1" ]; }
-mode() { [ "$(stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1" 2>/dev/null)" = "$2" ]; }
+mode() { [ "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null)" = "$2" ]; }
 
 T="allows a granted command in a later call after its skill was typed"
 check "$T: nothing before" nothing "$(bash_ s1 "cutter-land merge gh-5")"
