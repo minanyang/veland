@@ -154,6 +154,12 @@ if (key === 'auth status') {
     save()
   }
   emit(view)
+} else if (key === 'pr list') {
+  // The open PRs /cutter:work's overlap check reads; the fake's PRs carry no files.
+  const fields = (flag('--json') || 'number,title,headRefName').split(',')
+  const rows = state.prs.filter((p) => p.state === 'OPEN')
+    .map((p) => Object.fromEntries(fields.map((f) => [f, f === 'files' ? [] : p[f] === undefined ? null : p[f]])))
+  console.log(JSON.stringify(rows))
 } else if (key === 'pr create') {
   const number = state.prs.length + 1
   state.prs.push({

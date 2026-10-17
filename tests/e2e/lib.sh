@@ -287,13 +287,13 @@ flow_ids() { # <flow> [checkpoint]
 }
 is_selected() { case " $SELECTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-# check_scenarios <checkpoint> — a flow-level failure fails every selected scenario of the flow and returns 1; else
-# each scenario bound to the checkpoint is judged by its scenario_<id> function.
+# check_scenarios <checkpoint> — a flow-level failure fails every selected scenario of the flow not judged at an
+# earlier checkpoint and returns 1; else each scenario bound to the checkpoint is judged by its scenario_<id> function.
 check_scenarios() {
   local why id
   why="$(flow_failure)"
   if [ -n "$why" ]; then
-    for id in $(flow_ids "$FLOW"); do record "$id" FAIL "$why"; done
+    for id in $(flow_ids "$FLOW"); do [ -f "$RESULTS/$id.$FLOW" ] || record "$id" FAIL "$why"; done
     return 1
   fi
   for id in $(flow_ids "$FLOW" "$1"); do
@@ -439,7 +439,7 @@ EVIDENCE
 
 # squash_merge_on_origin — the harness merges the ticket's PR, as a human would; not in the fake's call log.
 squash_merge_on_origin() {
-  E2E_GH_QUIET=1 inrepo gh pr merge "$TICKET_BRANCH" --repo github.com/test/fixture --squash >/dev/null
+  inrepo E2E_GH_QUIET=1 gh pr merge "$TICKET_BRANCH" --repo github.com/test/fixture --squash >/dev/null
 }
 
 # ---------------------------------------------------------------- checkpoint predicates and snapshots
