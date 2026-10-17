@@ -1,0 +1,448 @@
+#!/bin/bash
+# Sourced by run.sh and scenarios.sh: fixtures, the environment, the `claude` driver and the assertion helpers.
+#
+# A flow is one or more runs. A run is a fresh directory holding origin.git (bare), repo/ (the fixture), gh/ (the
+# fake gh's canned.json, state.json and calls.log), log/ (stream-json per turn), gitconfig and ghconfig/.
+# Assertions read files, git state, origin's heads, gh/calls.log and the tool calls of log/ — never the model's text.
+# Compatible with bash 3.2 (macOS): no associative arrays, no mapfile.
+
+E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PLUGIN="${CUTTER_E2E_PLUGIN:-$(cd "$E2E_DIR/../.." && pwd -P)}"
+TICKET_BRANCH="fix/gh-5-greet-twice"
+ORIGIN_URL="git@github.com:test/fixture.git"
+# What a user must allow: the commands the skills leave to the user. --settings works in an untrusted workspace,
+# where .claude/settings.json is ignored.
+E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(gh api graphql *)","Bash(cutter-land issue *)","Bash(cutter-land comment *)"]}}'
+
+# `claude` is resolved before PATH is rewritten.
+CLAUDE_BIN="${CUTTER_E2E_CLAUDE:-claude}"
+case "$CLAUDE_BIN" in */*) ;; *) CLAUDE_BIN="$(type -P "$CLAUDE_BIN" || true)" ;; esac
+ORIG_PATH="$PATH"
+
+e2e_prereqs() {
+  local v
+  command -v jq >/dev/null 2>&1 || { echo "run.sh: jq is required" >&2; return 1; }
+  command -v node >/dev/null 2>&1 || { echo "run.sh: node is required" >&2; return 1; }
+  v="$(git --version 2>/dev/null | sed -E 's/^git version ([0-9]+)\.([0-9]+).*/\1 \2/')"
+  # shellcheck disable=SC2086  # two numbers
+  set -- $v
+  # shellcheck disable=SC2015  # the else branch is the failure either way
+  [ -n "${1:-}" ] && { [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && [ "${2:-0}" -ge 38 ]; }; } || { echo "run.sh: git >= 2.38 is required (merge-tree --write-tree), found '$(git --version 2>&1)'" >&2; return 1; }
+  [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ] || { echo "run.sh: claude is not installed (set CUTTER_E2E_CLAUDE)" >&2; return 1; }
+}
+
+# ---------------------------------------------------------------- environment
+
+# build_path <with-fake 1|0> <shadow-dir> <fake-dir> — the PATH of a run: the fake gh (if any), the plugin's bin/, then
+# the caller's PATH without plugin-cache entries, each directory holding a gh replaced by a shadow of all its other
+# executables.
+build_path() {
+  local fake="$1" shadow="$2" fakedir="$3" out="" d n=0 f
+  if [ "$fake" = 1 ]; then out="$fakedir"; fi
+  out="${out:+$out:}$PLUGIN/bin"
+  local IFS=:
+  for d in $ORIG_PATH; do
+    [ -n "$d" ] || continue
+    case "$d" in */.claude/plugins/*) continue ;; esac
+    if [ -e "$d/gh" ]; then
+      n=$((n + 1)); mkdir -p "$shadow/$n"
+      for f in "$d"/*; do
+        [ -f "$f" ] && [ -x "$f" ] || continue
+        [ "$(basename "$f")" = gh ] && continue
+        ln -sf "$f" "$shadow/$n/$(basename "$f")"
+      done
+      d="$shadow/$n"
+    fi
+    out="$out:$d"
+  done
+  printf '%s\n' "$out"
+}
+
+# renv <cmd...> — run in the run's environment: the PATH above, an empty gh config, no gh tokens, the fake ssh.
+renv() {
+  env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GH_HOST -u GH_REPO -u E2E_GH_QUIET \
+    "PATH=$E2E_PATH" "GH_CONFIG_DIR=$RUN/ghconfig" "GIT_CONFIG_GLOBAL=$RUN/gitconfig" \
+    "GIT_SSH_COMMAND=$(printf '%q' "$E2E_DIR/bin/ssh")" "E2E_ORIGIN=$ORIGIN" "E2E_GH_DIR=$GHD" \
+    "CUTTER_WAIT_INTERVAL=1" "GIT_TERMINAL_PROMPT=0" "$@"
+}
+inrepo() { (cd "$REPO" && renv "$@"); }
+rgit() { renv git -C "$REPO" "$@"; }
+
+# use_run <dir> — make an earlier run of the flow the current one.
+use_run() {
+  RUN="$1"; REPO="$RUN/repo"; ORIGIN="$RUN/origin.git"; GHD="$RUN/gh"; LOGD="$RUN/log"
+  E2E_PATH="$(cat "$RUN/path")"
+}
+
+# new_run <with-fake 1|0> <close mode> [pr-template] [issue-forms] — a fresh run: bare origin, fixture repo pushed to it.
+new_run() {
+  local fake="$1" mode="$2" tpl=0 forms=0 a
+  shift 2
+  for a in "$@"; do case "$a" in pr-template) tpl=1 ;; issue-forms) forms=1 ;; esac; done
+  local dir
+  dir="$(mktemp -d "$FLOW_ROOT/run.XXXXXX")"
+  dir="$(cd "$dir" && pwd -P)"
+  mkdir -p "$dir/gh" "$dir/log" "$dir/ghconfig" "$dir/fakebin" "$dir/shadow"
+  ln -s "$E2E_DIR/bin/gh" "$dir/fakebin/gh"
+  : >"$dir/gh/calls.log"
+  echo '{}' >"$dir/gh/canned.json"
+  echo "$fake" >"$dir/fake"
+  build_path "$fake" "$dir/shadow" "$dir/fakebin" >"$dir/path"
+  printf '[user]\n\tname = E2E\n\temail = e2e@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n' >"$dir/gitconfig"
+  echo "$dir" >>"$FLOW_ROOT/runs"
+  use_run "$dir"
+  SESSION=""
+  renv git init -q --bare --initial-branch=main "$ORIGIN"
+  mkdir "$REPO"
+  cp -R "$E2E_DIR/fixture/." "$REPO/"
+  [ "$tpl" = 1 ] || rm -f "$REPO/.github/pull_request_template.md"
+  [ "$forms" = 1 ] || { [ ! -d "$REPO/.github/ISSUE_TEMPLATE" ] || rm -r "$REPO/.github/ISSUE_TEMPLATE"; }
+  rmdir "$REPO/.github" 2>/dev/null || true
+  mkdir -p "$REPO/.claude"
+  jq -n --arg close "$mode" '{base: "main", gates: ["node --test"], close: $close}' >"$REPO/.claude/cutter.json"
+  renv git -C "$REPO" init -q --initial-branch=main
+  rgit add -A
+  rgit commit -q -m "chore: fixture"
+  rgit remote add origin "$ORIGIN_URL"
+  rgit push -q -u origin main
+  rgit rev-parse main >"$RUN/initial-main"
+  origin_heads >"$RUN/initial-heads"
+}
+
+canned() { printf '%s\n' "$1" >"$GHD/canned.json"; }
+seed_state() { printf '%s\n' "$1" >"$GHD/state.json"; }
+
+# ---------------------------------------------------------------- the claude driver
+
+new_session() { SESSION=""; }
+
+# preflight — what must hold before claude runs: no real gh on PATH, cutter-land from the plugin under test.
+preflight() {
+  local gh cl dir want
+  [ ! -f "$RUN/preflight-err" ] || return 1
+  gh="$(PATH="$E2E_PATH" type -P gh || true)"
+  if [ "$(cat "$RUN/fake")" = 1 ]; then
+    [ "$gh" = "$RUN/fakebin/gh" ] || { echo "gh resolves to '$gh', not the fake" >"$RUN/preflight-err"; return 1; }
+  elif [ -n "$gh" ]; then
+    echo "a gh is reachable on PATH ($gh) in a run without the fake" >"$RUN/preflight-err"; return 1
+  fi
+  cl="$(PATH="$E2E_PATH" type -P cutter-land || true)"
+  want="$(cd "$PLUGIN/bin" 2>/dev/null && pwd -P || true)"
+  dir=""
+  [ -z "$cl" ] || dir="$(cd "$(dirname "$cl")" && pwd -P)"
+  if [ -z "$want" ] || [ "$dir" != "$want" ]; then
+    echo "cutter-land resolves to '${cl:-nothing}', not into $PLUGIN/bin" >"$RUN/preflight-err"; return 1
+  fi
+}
+
+# turn <prompt> — one `claude -p` turn: the first of a session creates it, later ones resume it.
+turn() {
+  local prompt="$1" n log
+  preflight || return 0
+  n="$(find "$LOGD" -name 'turn-*.jsonl' | wc -l | tr -d ' ')"
+  log="$LOGD/turn-$(printf '%02d' $((n + 1))).jsonl"
+  local sess=(--resume "$SESSION")
+  if [ -z "$SESSION" ]; then
+    SESSION="$(node -e 'console.log(crypto.randomUUID())')"
+    sess=(--session-id "$SESSION")
+  fi
+  (cd "$REPO" && renv "$CLAUDE_BIN" -p "$prompt" --output-format stream-json --verbose --model sonnet \
+    --plugin-dir "$PLUGIN" --setting-sources project --permission-mode acceptEdits \
+    --settings "$E2E_SETTINGS" "${sess[@]}") >"$log" 2>"$log.err" </dev/null || true
+}
+
+# run_aborted — this run has a denial or failed its preflight: more turns would only spend tokens.
+run_aborted() { [ -f "$RUN/preflight-err" ] || [ -n "$(run_denials)" ]; }
+
+# drive <first prompt> <reply> <max turns> <predicate...> — one turn, then replies until the predicate holds.
+drive() {
+  local prompt="$1" reply="$2" max="$3" n=1
+  shift 3
+  turn "$prompt"
+  while [ "$n" -lt "$max" ] && ! "$@" && ! run_aborted; do
+    turn "$reply"; n=$((n + 1))
+  done
+}
+
+never() { return 1; }
+
+# ---------------------------------------------------------------- logs
+
+run_logs() { # prints the run's turn logs, one per line
+  local f
+  for f in "$LOGD"/turn-*.jsonl; do if [ -e "$f" ]; then printf '%s\n' "$f"; fi; done
+}
+tool_calls() { # JSON lines: {turn, seq, name, command, subagent_type, run_in_background, file_path, denied}
+  local files=() f
+  while IFS= read -r f; do files+=("$f"); done < <(run_logs)
+  [ ${#files[@]} -gt 0 ] || return 0
+  node "$E2E_DIR/toollog.js" calls "${files[@]}"
+}
+run_denials() {
+  local files=() f
+  while IFS= read -r f; do files+=("$f"); done < <(run_logs)
+  [ ${#files[@]} -gt 0 ] || return 0
+  node "$E2E_DIR/toollog.js" denials "${files[@]}"
+}
+run_stats() { # JSON {cost, ms}
+  local files=() f
+  while IFS= read -r f; do files+=("$f"); done < <(run_logs)
+  [ ${#files[@]} -gt 0 ] || { echo '{"cost":0,"ms":0}'; return 0; }
+  node "$E2E_DIR/toollog.js" stats "${files[@]}"
+}
+# tool_count <ERE> — executed (not denied) Bash commands matching the pattern.
+tool_count() { tool_calls | jq -s --arg re "$1" '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test($re)))] | length'; }
+# agent_count <subagent_type> — Agent (formerly Task) calls of that type.
+agent_count() { tool_calls | jq -s --arg t "$1" '[.[] | select((.name == "Agent" or .name == "Task") and .subagent_type == $t)] | length'; }
+
+ghlog() { if [ -s "$GHD/calls.log" ]; then cat "$GHD/calls.log"; fi; }
+ghlog_count() { ghlog | jq -s --arg a "$1" --arg b "$2" '[.[] | select(.[0] == $a and .[1] == $b)] | length'; }
+# ghlog_values <sub> <sub2> <flag> — every value of the flag in calls of that kind, one per line.
+ghlog_values() {
+  ghlog | jq -r --arg a "$1" --arg b "$2" --arg f "$3" 'select(.[0] == $a and .[1] == $b) | . as $v | range(0; length) | select($v[.] == $f) | $v[. + 1]'
+}
+ghlog_flag_present() { # <sub> <sub2> <flag>
+  [ "$(ghlog | jq -s --arg a "$1" --arg b "$2" --arg f "$3" '[.[] | select(.[0] == $a and .[1] == $b and any(.[]; . == $f))] | length')" -gt 0 ]
+}
+state_json() { if [ -s "$GHD/state.json" ]; then cat "$GHD/state.json"; else echo '{"issues":[],"comments":[],"prs":[]}'; fi; }
+
+origin_heads() { git --git-dir "$ORIGIN" for-each-ref --format='%(refname) %(objectname)' refs/heads; }
+origin_head() { git --git-dir "$ORIGIN" rev-parse --verify --quiet "refs/heads/$1"; }
+
+# ---------------------------------------------------------------- flow-level failures
+
+# flow_failure — why every scenario of the flow fails, or nothing: a preflight failure, a denied command, or an
+# executed `gh <sub> <sub2>` the fake never saw (runs with the fake only).
+flow_failure() {
+  local why="" dir den n a b have cur="$RUN"
+  while IFS= read -r dir; do
+    use_run "$dir"
+    [ ! -f "$RUN/preflight-err" ] || why="${why:+$why; }$(cat "$RUN/preflight-err")"
+    den="$(run_denials | paste -sd';' - | sed 's/;/; /g')"
+    [ -z "$den" ] || why="${why:+$why; }permission denied: $den"
+    [ "$(cat "$RUN/fake")" = 1 ] || continue
+    while read -r n a b; do
+      [ -n "${n:-}" ] || continue
+      have="$(ghlog_count "$a" "$b")"
+      [ "$n" -le "$have" ] || why="${why:+$why; }tool log has $n 'gh $a $b' calls, the fake gh saw $have"
+    done < <(tool_calls | jq -r 'select(.name == "Bash" and .denied == false) | (.command // "") | select(test("^gh +[^ ]+ +[^ ]+")) | split(" ") | map(select(length > 0)) | "\(.[1]) \(.[2])"' | sort | uniq -c)
+  done <"$FLOW_ROOT/runs"
+  use_run "$cur"
+  [ -z "$why" ] || printf '%s\n' "$why"
+}
+
+# ---------------------------------------------------------------- assertions
+
+# ensure <what> <command...> — a failing command adds <what> to WHY.
+ensure() {
+  local what="$1"
+  shift
+  "$@" >/dev/null 2>&1 || WHY="${WHY:+$WHY; }$what"
+}
+
+record() { # <id> <status> <reason>
+  printf '%s\t%s\n' "$2" "$3" >"$RESULTS/$1.$FLOW"
+}
+
+# Scenario ids bound to a flow and checkpoint (scenarios.sh's bindings) that are selected.
+flow_ids() { # <flow> [checkpoint]
+  local id b
+  for id in $ALL_IDS; do
+    is_selected "$id" || continue
+    for b in $(bindings "$id"); do
+      [ "${b%%:*}" = "$1" ] || continue
+      [ -z "${2:-}" ] || [ "${b#*:}" = "$2" ] || continue
+      printf '%s\n' "$id"
+    done
+  done
+}
+is_selected() { case " $SELECTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# check_scenarios <checkpoint> — a flow-level failure fails every selected scenario of the flow and returns 1; else
+# each scenario bound to the checkpoint is judged by its scenario_<id> function.
+check_scenarios() {
+  local why id
+  why="$(flow_failure)"
+  if [ -n "$why" ]; then
+    for id in $(flow_ids "$FLOW"); do record "$id" FAIL "$why"; done
+    return 1
+  fi
+  for id in $(flow_ids "$FLOW" "$1"); do
+    WHY=""
+    "scenario_$id" 2>>"$FLOW_ROOT/scenario.err" || true
+    if [ -z "$WHY" ]; then record "$id" pass ""; else record "$id" FAIL "$WHY"; fi
+  done
+}
+# flow_wants <flow> <checkpoint> — is a selected scenario bound there?
+flow_wants() { [ -n "$(flow_ids "$1" "$2")" ]; }
+
+# ---------------------------------------------------------------- prepared state and harness steps
+
+# Writes a file under the ticket's .cutter/ directory in the main checkout.
+ticket_file() { # <id> <name>, content on stdin
+  mkdir -p "$REPO/.cutter/$1"
+  cat >"$REPO/.cutter/$1/$2"
+}
+
+# The two issues the work flows plan from; GH6's are used by scenarios.sh.
+# shellcheck disable=SC2016,SC2034  # backticks are markdown; used by scenarios.sh
+GH5_TITLE="greet prints the greeting twice"
+# shellcheck disable=SC2016  # backticks are markdown
+GH5_BODY='`bin/greet Ann` prints `Hello, Ann!` twice instead of once.
+
+Open question for the author: when no name is given, should `greet` print `Hello, world!` or exit with a usage message?'
+# shellcheck disable=SC2034  # used by scenarios.sh
+GH6_TITLE="Rename greet_line to format_greeting"
+# shellcheck disable=SC2016,SC2034  # backticks are markdown; used by scenarios.sh
+GH6_BODY='Rename `greet_line` to `format_greeting` everywhere it is named: the code, the tests and the docs.'
+
+# prep_ticket [blocker] — the state /cutter:work leaves for /cutter:close: worktree and branch with the fix committed,
+# ticket.md, an approved plan.md, review.md, evidence.md.
+prep_ticket() {
+  local wt="$REPO/.worktrees/gh-5"
+  inrepo cutter-worktree add gh-5 --type fix --slug greet-twice --no-setup >/dev/null || { echo "prep: worktree add failed" >&2; return 1; }
+  cat >"$wt/scripts/lib.sh" <<'LIB'
+#!/bin/bash
+# Shared helpers for bin/greet. Sourced, never run.
+
+# greet_line <name> — the line greet prints for <name>.
+greet_line() {
+  local name="$1"
+  printf 'Hello, %s!\n' "$name"
+}
+LIB
+  cat >>"$wt/test/greet.test.mjs" <<'TEST'
+
+test('prints the greeting once', () => {
+  assert.equal(greet('Ann'), 'Hello, Ann!\n')
+})
+TEST
+  renv git -C "$wt" add -- scripts/lib.sh test/greet.test.mjs
+  renv git -C "$wt" commit -q -m "fix(greet): print the greeting once"
+  ticket_file gh-5 ticket.md <<TICKET
+# $GH5_TITLE
+
+- source: GitHub issue #5 (open)
+- url: https://github.com/test/fixture/issues/5
+- labels: bug
+
+$GH5_BODY
+TICKET
+  ticket_file gh-5 plan.md <<'PLAN'
+# gh-5 — greet prints the greeting twice
+
+Status: approved
+
+## Goal
+`bin/greet` prints the greeting once.
+
+## Acceptance criteria
+- AC1 — `bin/greet Ann` prints exactly one line, `Hello, Ann!`.
+- AC2 — A test covers it and fails without the fix.
+
+## Approach
+Drop the duplicated `printf` in `greet_line`.
+
+## Files
+- `scripts/lib.sh` — remove the second `printf`.
+- `test/greet.test.mjs` — add a case.
+
+## Readers
+- `greet_line` — `grep -rn greet_line .`
+  - `bin/greet:5` — calls it, unchanged.
+
+## Tool behaviour relied on
+none
+
+## Overlap
+- `origin/main` since the merge base: none — `git log --name-only HEAD..origin/main`.
+- Other worktrees: none — `git worktree list`.
+- Open PRs: none — `gh pr list`.
+
+## Tests
+| AC | Test file | Case |
+|---|---|---|
+| AC1 | `test/greet.test.mjs` | `prints the greeting once` |
+| AC2 | `test/greet.test.mjs` | `prints the greeting once` |
+
+## Assumptions
+none
+
+## Out of scope
+Other greetings.
+PLAN
+  if [ "${1:-}" = blocker ]; then
+    ticket_file gh-5 review.md <<'REVIEW'
+## Round 1 — full
+
+Verdict: changes requested
+Criteria: AC1, AC2
+
+#### Finding 1 — blocker: `greet` still prints `Hello, !` for an empty name
+
+`bin/greet ""` prints a greeting with no name; the fix must handle it.
+
+### Plan checks
+
+none
+REVIEW
+  else
+    ticket_file gh-5 review.md <<'REVIEW'
+## Round 1 — full
+
+Verdict: approved
+Criteria: AC1, AC2
+
+No findings.
+
+### Plan checks
+
+none
+REVIEW
+  fi
+  ticket_file gh-5 evidence.md <<'EVIDENCE'
+- AC1 — met: `node --test` passes, `prints the greeting once`.
+- AC2 — met: red-proof RED for `test/greet.test.mjs`.
+EVIDENCE
+  rgit rev-parse "$TICKET_BRANCH" >"$RUN/branch-sha"
+  rgit rev-parse "$TICKET_BRANCH^{tree}" >"$RUN/branch-tree"
+}
+
+# squash_merge_on_origin — the harness merges the ticket's PR, as a human would; not in the fake's call log.
+squash_merge_on_origin() {
+  E2E_GH_QUIET=1 inrepo gh pr merge "$TICKET_BRANCH" --repo github.com/test/fixture --squash >/dev/null
+}
+
+# ---------------------------------------------------------------- checkpoint predicates and snapshots
+
+has_draft() { compgen -G "$REPO/.cutter/drafts/*.md" >/dev/null; }
+snapshot_draft() {
+  local f
+  f="$(compgen -G "$REPO/.cutter/drafts/*.md" | head -n 1)"
+  [ -z "$f" ] || cp "$f" "$RUN/draft-snapshot.md"
+  ghlog_count issue create >"$RUN/creates-at-draft"
+}
+no_drafts() { ! compgen -G "$REPO/.cutter/drafts/*.md" >/dev/null; }
+issue_created() { [ "$(ghlog_count issue create)" -ge 1 ]; }
+has_plan() { [ -f "$REPO/.cutter/$TICKET/plan.md" ]; }
+pr_exists() { [ "$(state_json | jq '.prs | length')" -ge 1 ]; }
+pr_merged() { [ "$(state_json | jq '[.prs[] | select(.state == "MERGED")] | length')" -ge 1 ]; }
+pr_edited() { [ "$(ghlog_count pr edit)" -ge 1 ]; }
+worktree_gone() { [ ! -e "$REPO/.worktrees/gh-5" ]; }
+base_advanced() { [ "$(rgit rev-parse main)" != "$(cat "$RUN/initial-main")" ]; }
+# Some branch of the ticket has a commit touching agent memory: the report's memory commit.
+memory_committed() {
+  local ref
+  for ref in $(rgit for-each-ref --format='%(refname)' 'refs/heads/*/gh-5*'); do
+    [ -n "$(rgit log --format=%H "main..$ref" -- .claude/agent-memory)" ] && return 0
+  done
+  return 1
+}
+place_memory() {
+  mkdir -p "$REPO/.claude/agent-memory/e2e-note"
+  printf -- '---\nname: e2e-note\n---\nA note an agent left in the main checkout.\n' >"$REPO/.claude/agent-memory/e2e-note/MEMORY.md"
+}
+
+# not <command...> — negation for ensure.
+not() { ! "$@"; }
+not_match() { ! [[ "$1" =~ $2 ]]; } # <string> <ERE>
