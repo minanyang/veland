@@ -93,7 +93,7 @@ cutter-land issue <short-slug>
 
 It reads only that draft, refuses a label the repo does not have or a draft that fails the checks above (naming the line or field — fix the draft and run it again), and creates the issue in origin's repo. It is not in this skill's `allowed-tools` on purpose: creating a public issue always asks for permission, so the approval does not rest on the model stopping.
 
-Report the issue URL and the next step, `/cutter:work gh-<n>`. Delete the draft only after the issue exists.
+Report the issue URL and the next step, `/cutter:work gh-<n>`. `cutter-land issue` deletes the draft once the issue exists; when creation fails the draft stays for the next run.
 
 ## Several at once
 
