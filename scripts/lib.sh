@@ -9,6 +9,9 @@
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'cutter: %s\n' "$*" >&2; exit 2; }
+# Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
+# that read as a script's own (a forged `pr:` or `ticket dir:`).
+shown() { local s="${1//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; printf '%s' "${s//[[:cntrl:]]/?}"; }
 
 # The main checkout's root, also when called from inside a worktree.
 main_root() {
@@ -88,6 +91,12 @@ base_ref() {
   elif [ "$(cfg close pr)" = local ] && git -C "$ROOT" merge-base --is-ancestor "refs/remotes/origin/$b" "refs/heads/$b" 2>/dev/null; then printf '%s\n' "$b"
   else printf 'origin/%s\n' "$b"
   fi
+}
+
+# The lines the skills resolve `.cutter/<id>/` paths and the base from: `ticket dir: <abs>` and `base: <branch> (<ref>)`.
+ticket_lines() { # <id>
+  say "ticket dir: $(shown "$(task_dir "$1")")"
+  say "base: $(shown "$(base_branch)") ($(shown "$(base_ref)"))"
 }
 
 # In `close: local` mode, true when the local base and origin/<base> each have commits the other lacks.

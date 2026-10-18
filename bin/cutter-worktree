@@ -10,12 +10,14 @@
 #   cutter-worktree memory <id>
 #
 # `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
-# .cutter/ (or .cutter/<id>/, created) — run it before writing anything under .cutter/.
+# .cutter/, or for an id `ticket dir: <.cutter/<id>/, created>` and `base: <branch> (<ref>)` — run it
+# before writing anything under .cutter/.
 # Without an id it also creates .cutter/drafts/, where /cutter:open writes issue drafts.
 # `add` cuts <type>/<id>[-<slug>] from the up-to-date base branch (config `base`, else
 # develop if origin has it, else origin's default branch), at <worktreeDir>/<id>, then runs
 # the config's `setup` command inside it (default: install dependencies when a lockfile is
-# present). Re-running `add` for an existing ticket reports the worktree and leaves it alone.
+# present). Re-running `add` for an existing ticket reports the worktree and leaves it alone. Either way it
+# prints `ticket dir:` and `base:` as `init` does, before its `created:` or `exists:` line.
 # `rm` removes the worktree and deletes its branch only if the branch is merged
 # (`git branch -d`); an unmerged branch is kept and reported.
 # `sync-base` fetches the base and fast-forwards it in the main checkout when the main checkout
@@ -54,7 +56,7 @@ case "$cmd" in
   init)
     ensure_excluded
     if [ -n "${1:-}" ]; then
-      check_id "$1"; mkdir -p "$(task_dir "$1")"; task_dir "$1"
+      check_id "$1"; mkdir -p "$(task_dir "$1")"; ticket_lines "$1"
     else
       mkdir -p "$ROOT/.cutter/drafts"; printf '%s\n' "$ROOT/.cutter"
     fi
@@ -76,6 +78,7 @@ case "$cmd" in
     [ -z "$slug" ] || [[ "$slug" =~ ^[A-Za-z0-9._-]+$ ]] || die "--slug must match ^[A-Za-z0-9._-]+$"
     path="$(worktree_dir)/$id"
     if [ -e "$path/.git" ]; then
+      ticket_lines "$id"
       say "exists: $path on $(git -C "$path" rev-parse --abbrev-ref HEAD)"
       exit 0
     fi
@@ -89,6 +92,7 @@ case "$cmd" in
     fi
     ! base_diverged || die "$(base_branch) and origin/$(base_branch) have diverged — reconcile the local base first"
     start="$(base_ref)"
+    ticket_lines "$id"
     if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
       git -C "$ROOT" worktree add --quiet "$path" "$branch"
     else
