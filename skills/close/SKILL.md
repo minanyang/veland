@@ -43,12 +43,16 @@ cutter-worktree path <id>
 cutter-land check <id>
 ```
 
+In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`.
+
 Stop and say why if any of these holds:
 
 - `pr` or `pr-merge`, and the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
 - `.cutter/<id>/review.md` is missing, or lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/cutter:work`'s job.
+
+`pr: MERGED <url>` means the PR was merged since the last run: once the `gh auth status` and uncommitted-changes checks pass, go straight to Step 4 (`sync-base`, then `rm`) — no `review.md` check, rebase, verify, push or `cutter-land pr`. Any other `pr:` line (`OPEN`, `CLOSED`, `none`) goes on as below.
 
 ## Step 1 — Rebase onto the current base
 
@@ -71,7 +75,7 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 **`pr` and `pr-merge`:**
 
 1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
-2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base. Body:
+2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
    - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout.
 3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
    - **3** — checks still running or not registered yet. Wait for them in the background, never in a foreground polling loop:
@@ -108,7 +112,7 @@ It removes the worktree and deletes the branch once its changes are on the base 
 
 ## Step 5 — Report
 
-What landed and where (PR URL or base commit), the final verify table, what `sync-base` did to the local base (fast-forwarded to which commit, or left behind and why), and what was cleaned up or left.
+What landed and where (PR URL or base commit), the final verify table — on a cleanup run, which runs no verify, the merged PR's URL instead — what `sync-base` did to the local base (fast-forwarded to which commit, or left behind and why), and what was cleaned up or left.
 
 ## Replies
 

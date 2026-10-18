@@ -507,6 +507,7 @@ case "$*" in *headRefOid*)
     cat "$STUB_CHECKS_SEQ/$n"
   else echo "${STUB_CHECKS-}"; fi
   exit 0 ;;
+*state,url,isCrossRepository*) echo "${STUB_STATE-}"; exit "${STUB_STATE_RC:-0}" ;;
 esac
 case "$1 $2" in
   "pr view"|"mr view") echo "${STUB_VIEW-}"; exit "${STUB_VIEW_RC:-0}" ;;
@@ -589,6 +590,22 @@ expect "add refuses a slug with a slash" 2 cutter-worktree add L9 --slug 'a/b' -
 # merge: only `pr merge <branch> --squash`, only into the configured base, pinned to origin's repo, never a fork's PR
 : >"$tmp/stub.log"
 export PATH="$tmp/stub:$PATH"
+git remote set-url origin git@github.com:acme/land.git
+# check: in pr mode on github.com it prints the branch's PR; in local mode it never calls gh
+STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check prints a merged PR in pr mode" 0 cutter-land check L1
+grep -qxF 'pr: MERGED https://github.com/acme/land/pull/1' "$tmp/out" && ok "check prints the pr: line" || { bad "check prints the pr: line"; cat "$tmp/out"; }
+grep -qxF 'pr view feat/L1 --repo github.com/acme/land --json state,url,isCrossRepository --jq select(.isCrossRepository | not) | .state + " " + .url' "$tmp/stub.log" && ok "check: gh pr view pinned to origin's repo" || bad "check: gh pr view pinned to origin's repo"
+STUB_STATE_RC=1 expect "check prints no PR when gh finds none" 0 cutter-land check L1
+grep -qxF 'pr: none' "$tmp/out" && ok "check prints pr: none" || { bad "check prints pr: none"; cat "$tmp/out"; }
+mkdir -p .claude && echo '{"close":"local"}' >.claude/cutter.json
+: >"$tmp/stub.log"
+STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check makes no gh call in local mode" 0 cutter-land check L1
+! grep -q '^pr:' "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "local mode: no pr: line, no gh call" || bad "local mode: no pr: line, no gh call"
+rm -r .claude
+git remote set-url origin 'git@github.com:ac+me/land.git'
+STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check prints no PR when origin's repo cannot be derived" 0 cutter-land check L1
+grep -qxF 'pr: none' "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "underivable repo: pr: none, no gh call" || { bad "underivable repo: pr: none, no gh call"; cat "$tmp/out" "$tmp/stub.log"; }
+: >"$tmp/stub.log"
 git remote set-url origin git@github.com:acme/land.git
 STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 cutter-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
@@ -734,6 +751,9 @@ STUB_VIEW="develop OPEN false" expect "pr refuses an open PR into another base" 
 ! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a wrong base" || bad "no edit or create for a wrong base"
 STUB_VIEW="main OPEN true" expect "pr refuses a fork's open PR" 2 cutter-land pr L1
 ! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a fork's PR" || bad "no edit or create for a fork's PR"
+STUB_VIEW="main MERGED false" STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "pr refuses a branch whose PR is merged" 2 cutter-land pr L1
+grep -qF 'https://github.com/acme/land/pull/1' "$tmp/out" && ok "merged-PR refusal names the URL" || { bad "merged-PR refusal names the URL"; cat "$tmp/out"; }
+! grep -qE 'pr (edit|create)' "$tmp/stub.log" && ok "no edit or create for a merged PR" || bad "no edit or create for a merged PR"
 # pr and merge refuse a push URL naming another repo; the same repo over https is allowed
 git config remote.origin.pushurl https://github.com/evil/land.git
 : >"$tmp/stub.log"
