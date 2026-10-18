@@ -34,8 +34,9 @@ that fails keeps its directories, and the runner says where: `origin.git/`, `rep
 
 ## Time and cost of one full run
 
-Not measured yet: the first full run fills this in. Read the `total` line for the time and the stderr `cost` line (the
-sum of the stream-json `result` lines' `total_cost_usd`) for the cost, and write them here.
+About 13 minutes and $6.63: `total 804s` and `cost $6.63` (the sum of the stream-json `result` lines'
+`total_cost_usd`) for all 27 scenarios on 2026-10-18 with `--model sonnet`. Three of them failed in that run (W2, W3,
+C3), and they passed in a rerun once fixed (`total 321s`, `cost $3.60` for the three alone).
 
 ## How it is set up
 
