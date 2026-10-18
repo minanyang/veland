@@ -177,6 +177,15 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     : bad("work: does not post the answers to the ticket's own questions through comment.md")
 }
 
+// close takes its mode from check's mode: line, never from reading the config itself.
+{
+  const text = fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")
+  const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  step0.includes("`mode: <close>`") && step0.includes("never read `.claude/cutter.json`") &&
+    !text.includes("comes from `.claude/cutter.json`")
+    ? ok("close: takes the mode from check's mode: line") : bad("close: does not take the mode from check's mode: line")
+}
+
 for (const skill of ["open", "work", "close"])
   /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
     ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)

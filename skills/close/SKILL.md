@@ -24,7 +24,7 @@ allowed-tools:
 
 # Close a ticket
 
-`/cutter:close <id>` lands the branch `/cutter:work` produced. How it lands comes from `.claude/cutter.json`:
+`/cutter:close <id>` lands the branch `/cutter:work` produced. How it lands is the `close` setting in `.claude/cutter.json`, which `cutter-land check` prints in Step 0:
 
 | `close` | What happens |
 |---|---|
@@ -43,7 +43,7 @@ cutter-worktree path <id>
 cutter-land check <id>
 ```
 
-In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`.
+`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`.
 
 Stop and say why if any of these holds:
 
