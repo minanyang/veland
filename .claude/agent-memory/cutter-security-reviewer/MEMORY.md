@@ -1,1 +1,1 @@
-- [Threat model](threat_model.md) — allowed-tools grants on wrapper scripts are the trust boundary; check argv, repo pinning, file paths, content; gh-53 grant hook record + transcript origin; gh-65 `$(...)` newline-strip symlink bypass
+- [Threat model](threat_model.md) — allowed-tools grants on wrapper scripts are the trust boundary; check argv, repo pinning, file paths, content; gh-53 grant hook record + transcript origin; gh-65 `$(...)` newline-strip symlink bypass; gh-27 cutter-grill / gh issue view grants

@@ -47,7 +47,7 @@ cutter-land check <id>
 
 Stop and say why if any of these holds:
 
-- `pr` or `pr-merge`, and the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
+- only in `pr` or `pr-merge` mode (`local` never calls `gh` or `glab`, not even to check): the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
 - `.cutter/<id>/review.md` is missing, or lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/cutter:work`'s job.
@@ -75,7 +75,7 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 **`pr` and `pr-merge`:**
 
 1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
-2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
+2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style, read with `git log -n 5 --oneline` in the main checkout) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
    - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source.
    - When `check` printed `pr template: <path>`, read `<worktree>/<path>` (the worktree from `cutter-worktree path <id>`) with the Read tool and fill its sections with this content instead of using this layout, copying its `##` heading lines verbatim. When `cutter-land pr` refuses because `pr-body.md` lacks sections of the template, add them to `pr-body.md` and run `cutter-land pr <id>` again.
 3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
@@ -94,7 +94,7 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 **`local`:**
 
-1. Write `.cutter/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style, then a blank line and a short body when it helps.
+1. Write `.cutter/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style (`git log -n 5 --oneline` in the main checkout), then a blank line and a short body when it helps.
 2. `cutter-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout with `git merge --ff-only` if it is on the base branch (uncommitted changes to files the ticket does not touch are kept), otherwise by updating the base ref. A refusal that says the base moved means go back to Step 1; one that names uncommitted changes in the main checkout is the user's to commit or stash — stop and show it, never stash, reset or discard them yourself.
 3. Go to Step 4.
 
