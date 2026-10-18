@@ -63,4 +63,4 @@ function criteria(text) {
   return out
 }
 
-module.exports = { blank, bannedHits, sections, criteria }
+module.exports = { blank, bannedHits, phrases, sections, criteria }

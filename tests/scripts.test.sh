@@ -39,7 +39,52 @@ echo plan >.cutter/T0/plan.md
 [ ! -e .cutter/drafts ] && ok "init <id> does not create drafts/" || bad "init <id> does not create drafts/"
 expect "init without an id" 0 cutter-worktree init
 [ -d .cutter/drafts ] && ok "init creates drafts/" || bad "init creates drafts/"
-out_is "$tmp/repo/.cutter" "$rp/.cutter" && ok "init without an id prints only .cutter" || bad "init without an id prints only .cutter"
+! grep -q '^ticket dir: \|^base: ' "$tmp/out" && ok "init without an id prints no ticket dir or base" || bad "init without an id prints no ticket dir or base"
+grep -qxF 'forms: none' "$tmp/out" && ! grep -q '^form: ' "$tmp/out" && ok "init prints forms: none without issue forms" || bad "init prints forms: none without issue forms"
+{ grep -qxF "drafts: $tmp/repo/.cutter/drafts" "$tmp/out" || grep -qxF "drafts: $(cd "$tmp/repo" && pwd -P)/.cutter/drafts" "$tmp/out"; } &&
+  [ "$(head -1 "$tmp/out")" = "$(grep '^drafts: ' "$tmp/out")" ] && ok "init prints the absolute drafts path" || bad "init prints the absolute drafts path"
+want_banned="banned: $(node -e 'const p = require("fs").readFileSync(process.argv[1], "utf8").split("\n").map((s) => s.trim()).filter((s) => s && s[0] !== "#"); console.log(JSON.stringify(p))' "$BIN/../references/banned-phrases.txt")"
+[ "$(tail -1 "$tmp/out")" = "$want_banned" ] && grep -qF '"handle edge cases"' "$tmp/out" && ok "init prints the banned phrases" || { bad "init prints the banned phrases"; cat "$tmp/out"; }
+expect "issue-form listing exits 2 without the banned file" 2 node "$BIN/../scripts/issue-form.js" "$tmp/repo" "$tmp/no-banned.txt"
+grep -qF "$tmp/no-banned.txt is missing" "$tmp/out" && ok "issue-form listing names the missing banned file" || bad "issue-form listing names the missing banned file"
+# init with forms: a temporary .github/ISSUE_TEMPLATE/, removed before anything else runs
+it="$tmp/repo/.github/ISSUE_TEMPLATE"
+mkdir -p "$it"
+printf 'name: Bug report\ndescription: d\ntitle: "[Bug]: "\nlabels: [bug, "triage"]\nbody:\n  - type: markdown\n    attributes:\n      value: hi\n  - type: textarea\n    attributes:\n      label: What happens\n    validations:\n      required: true\n  - type: input\n    attributes:\n      label: Version, "commit"\n' >"$it/bug.yml"
+printf 'labels: enhancement, docs\nbody:\n  - type: textarea\n    attributes:\n      label: Problem\n' >"$it/feat.yaml"
+printf 'name: x\nbody:\n\t- type: textarea\n' >"$it/broken.yml"
+printf 'name: x\nbody:\n  - type: textarea\n    attributes:\n      description: no label\n' >"$it/nolabel.yml"
+printf 'title: |\n  multi\nbody:\n  - type: textarea\n    attributes:\n      label: X\n' >"$it/blocktitle.yml"
+printf 'name: SECRET\nbody:\n  - type: textarea\n    attributes:\n      label: SECRET\n' >"$tmp/outside.yml"
+ln -s "$tmp/outside.yml" "$it/link.yml"
+printf 'blank_issues_enabled: false\n' >"$it/config.yml"
+printf -- '---\nname: t\n---\n## Steps\n' >"$it/tpl.md"
+ln -s "$tmp/outside.yml" "$it/linked.md"
+expect "init with issue forms" 0 cutter-worktree init
+grep '^form' "$tmp/out" >"$tmp/forms"
+printf '%s\n' \
+  'form: blocktitle.yml error: "title is a block scalar"' \
+  'form: broken.yml error: "line 3: tab indentation"' \
+  'form: bug.yml name: "Bug report" labels: ["bug","triage"] title: "[Bug]: " required: ["What happens"] fields: ["What happens","Version, \"commit\""]' \
+  'form: feat.yaml name: none labels: ["enhancement","docs"] title: none required: [] fields: ["Problem"]' \
+  'form: link.yml error: "symlink or not a regular file"' \
+  'form: nolabel.yml error: "a textarea field has no attributes.label"' >"$tmp/forms-want"
+grep -E '^form: (bug\.yml|feat\.yaml) ' "$tmp/forms" | cmp -s - <(grep -E '^form: (bug\.yml|feat\.yaml) ' "$tmp/forms-want") &&
+  ! grep -q 'config\.yml\|^forms: none' "$tmp/out" && ok "init lists each issue form with labels, title, required and fields" ||
+  { bad "init lists each issue form with labels, title, required and fields"; diff "$tmp/forms-want" "$tmp/forms"; }
+cmp -s "$tmp/forms" "$tmp/forms-want" && grep -qxF 'template: tpl.md' "$tmp/out" &&
+  grep -qxF 'template: linked.md error: "symlink or not a regular file"' "$tmp/out" &&
+  ok "init reports a form it cannot read and exits 0" || { bad "init reports a form it cannot read and exits 0"; diff "$tmp/forms-want" "$tmp/forms"; }
+grep -qxF 'form: link.yml error: "symlink or not a regular file"' "$tmp/out" && ! grep -q SECRET "$tmp/out" &&
+  ok "init never follows a symlinked form" || bad "init never follows a symlinked form"
+rm -r "$tmp/repo/.github" "$tmp/outside.yml"
+mkdir -p "$tmp/elsewhere/ISSUE_TEMPLATE"
+printf 'name: SECRET\nbody:\n  - type: input\n    attributes:\n      label: X\n' >"$tmp/elsewhere/ISSUE_TEMPLATE/x.yml"
+ln -s "$tmp/elsewhere" "$tmp/repo/.github"
+expect "init with a symlinked .github" 0 cutter-worktree init
+grep -qxF 'forms: none' "$tmp/out" && ! grep -q SECRET "$tmp/out" &&
+  ok "init never follows a symlinked .github" || bad "init never follows a symlinked .github"
+rm "$tmp/repo/.github"; rm -r "$tmp/elsewhere"
 
 # worktree
 expect "worktree add" 0 cutter-worktree add T1 --slug mul

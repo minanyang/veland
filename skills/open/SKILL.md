@@ -44,6 +44,12 @@ Then grill: run `cutter-grill`, which prints the plugin's shared `references/gri
 
 ## Step 2 — Classify
 
+```bash
+cutter-worktree init
+```
+
+It prints what the draft is built from: `drafts: <path>`, one `form: <file> name: … labels: … title: … required: … fields: …` line per issue form in `.github/ISSUE_TEMPLATE/` (or `forms: none`), one `template: <file>` line per Markdown template, and `banned: […]`. Values are JSON. A non-zero exit stops the skill: relay its message.
+
 Decide the kind: `feature`, `bug`, `improvement`, `docs` or `chore`. Then map it to what the repo already has — never create labels or types:
 
 ```bash
@@ -56,11 +62,11 @@ A non-zero exit from `cutter-ticket issue-types` stops the skill: relay its mess
 - Issue types (one per line; nothing outside organisation repos): pick the one that matches — typically `Bug`, `Feature`, `Task`.
 - Labels: the matching existing label — `bug` for a bug, `enhancement` for a feature or improvement, `documentation` for docs — if the repo has it. No match, no label.
 
-If the repo has issue forms (`.github/ISSUE_TEMPLATE/*.yml` or `*.yaml`, except `config.yml`), pick the form by the kind: a bug takes the form whose `labels` include the repo's bug label; a feature, improvement, docs or chore takes the one labelled `enhancement`, else the closest by `name`. Read it whole and draft in its shape instead of the layout below: `Form: <file name>` in the header, the form's `labels` as `Labels:`, its `title` as the title's prefix, and one `### <field label>` section per field that is not `type: markdown`, in the form's order — every `required: true` field filled. Markdown (`.md`) templates: follow the matching template's sections.
+If `init` printed `form:` lines, pick the form by the kind: a bug takes the form whose `labels` include the repo's bug label; a feature, improvement, docs or chore takes the one labelled `enhancement`, else the closest by `name`. Draft in its shape instead of the layout below: the line's file as `Form: <file>` in the header, its `labels` as `Labels:`, its `title` (unless `none`) as the title's prefix, and one `### <label>` section per `fields:` entry, in that order — every `required:` one filled. A `form: <file> error: …` line is relayed to the user, and that form is not used. When no form fits and a `template:` line names a matching Markdown template, read that one file, `.github/ISSUE_TEMPLATE/<file>`, and follow its sections.
 
 ## Step 3 — Draft and stop
 
-Run `cutter-worktree init` and write the draft to `.cutter/drafts/<short-slug>.md` (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only), `Type: <name>` and `Form: <file name>` lines follow directly; then a blank line and the body:
+Write the draft to `<drafts>/<short-slug>.md`, `<drafts>` being the path on Step 2's `drafts:` line (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only), `Type: <name>` and `Form: <file name>` lines follow directly; then a blank line and the body:
 
 ```markdown
 # <title>
@@ -86,9 +92,9 @@ Decisions the grill did not settle with the user, each with the answer taken. Om
 
 Title: a bug by the problem observed (`Close reports a merged PR as open`), a feature by the need (`A way to file issues that follow the repo's forms`), in the repo's language — never a `scope:` prefix unless the form's `title` sets one, even when existing issues have one.
 
-Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases in `references/banned-phrases.txt` at the plugin root — `cutter-land issue` refuses them outside code, as it refuses an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
+Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases on Step 2's `banned:` line — `cutter-land issue` refuses them outside code, as it refuses an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
 
-Show the draft once: one line `Kind: <kind> → <label, type or form>` (the kind is not in the file), the draft's path on one line, then the file verbatim as rendered markdown — never summarised again in the same reply. **Stop** until the user approves or edits it.
+Show the draft once: one line `Kind: <kind> → <label, type or form file name>` (the kind is not in the file), the draft's path on one line, then the file verbatim as rendered markdown — never summarised again in the same reply. **Stop** until the user approves or edits it.
 
 ## Step 4 — Create
 
