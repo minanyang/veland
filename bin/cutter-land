@@ -14,7 +14,8 @@
 #   cutter-land comment <id>
 #
 # `check` first prints the configured close mode, `mode: <close>` (exit 2 on a value other than pr, pr-merge or local,
-# before looking for the worktree). In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
+# before looking for the worktree), then, still before the worktree lookup, `ticket dir: <abs .cutter/<id>>`,
+# `base: <branch> (<ref>)`, and `review: <abs path>` or `review: missing`. In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
 # `pr: <STATE> <url>`, or `pr: none` when gh finds none, and in pr or pr-merge mode the PR/MR template the body must
 # follow, `pr template: <path>` relative to the worktree, or `pr template: none`. It exits 1 and lists the files when the
 # ticket's worktree has uncommitted changes.
@@ -61,10 +62,6 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-# Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
-# that read as check's own (a forged `pr:`).
-shown() { local s="${1//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; printf '%s' "${s//[[:cntrl:]]/?}"; }
-
 usage="usage: cutter-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
@@ -81,6 +78,9 @@ else
     shown="$(shown "$mode")"
     say "mode: $shown"
     case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
+    ticket_lines "$id"
+    review="$(task_dir "$id")/review.md"
+    if [ -f "$review" ] && [ ! -L "$review" ]; then say "review: $(shown "$review")"; else say "review: missing"; fi
   fi
   path="$(wt_path "$id")"
   branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"

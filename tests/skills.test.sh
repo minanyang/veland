@@ -5,6 +5,7 @@
 # open and work must load the shared references/grill.md (beside the skills directory) through a granted `cutter-grill`.
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
+# work and close must resolve .cutter/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
 # open, work and close must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
@@ -198,6 +199,27 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     step3.includes("with the Read tool") && step3.includes("add them to `pr-body.md`")
     ? ok("close: fills the template check names and adds the sections pr names")
     : bad("close: does not fill the template check names or add the sections pr names")
+}
+
+// .cutter/<id>/ paths resolve against the printed ticket dir, never the worktree, and the base comes from base:.
+{
+  const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
+  const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  text.includes("`ticket dir: <path>`") && text.includes("`base: <branch> (<ref>)`") && text.includes("never under the worktree") &&
+    step0.includes("run `cutter-worktree init <id>` on every invocation, before anything reads or writes under `.cutter/`") &&
+    !text.includes(".worktrees/<id>")
+    ? ok("work: resolves .cutter paths against ticket dir: and takes the base from base:")
+    : bad("work: resolves .cutter paths against ticket dir: and takes the base from base:")
+}
+{
+  const text = fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")
+  const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  const first = (/```bash\n([\s\S]*?)```/.exec(step0) || ["", ""])[1].split("\n").filter(Boolean)
+  first[0] === "cutter-land check <id>" && first[1] === "cutter-worktree path <id>" &&
+    step0.includes("`ticket dir: <path>`") && step0.includes("`review: missing`") && step0.includes("never under the worktree") &&
+    !text.includes("`.cutter/<id>/review.md` is missing")
+    ? ok("close: runs check first and resolves .cutter paths against ticket dir:")
+    : bad("close: runs check first and resolves .cutter paths against ticket dir:")
 }
 
 for (const skill of ["open", "work", "close"])

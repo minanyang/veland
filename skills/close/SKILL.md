@@ -39,18 +39,18 @@ Run one command per Bash call — no `&&`, `;` or `|` — so each call matches t
 ## Step 0 — Take stock, stop on anything unfinished
 
 ```bash
-cutter-worktree path <id>
 cutter-land check <id>
+cutter-worktree path <id>
 ```
 
-`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`; and the repo's PR/MR template the body must follow, `pr template: <path>` (relative to the worktree), or `pr template: none`.
+`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. Then, before it looks for the worktree, it prints `ticket dir: <path>`, `base: <branch> (<ref>)`, and `review: <path>` or `review: missing`. Every `.cutter/<id>/` path in this skill (`review.md`, `pr-title`, `pr-body.md`, `commit-msg`) is under that ticket dir — in the main checkout, never under the worktree — and `<base>` is the branch on the `base:` line. An exit 2 after the `review:` line saying the ticket has no worktree is the no-worktree case below. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`; and the repo's PR/MR template the body must follow, `pr template: <path>` (relative to the worktree), or `pr template: none`.
 
 Stop and say why if any of these holds:
 
 - only in `pr` or `pr-merge` mode (`local` never calls `gh` or `glab`, not even to check): the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
-- `.cutter/<id>/review.md` is missing, or lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/cutter:work`'s job.
+- `review: missing`, or the review it names lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/cutter:work`'s job.
 
 `pr: MERGED <url>` means the PR was merged since the last run: once the `gh auth status` and uncommitted-changes checks pass, go straight to Step 4 (`sync-base`, then `rm`) — no `review.md` check, rebase, verify, push or `cutter-land pr`. Any other `pr:` line (`OPEN`, `CLOSED`, `none`) goes on as below.
 
@@ -60,7 +60,7 @@ Stop and say why if any of these holds:
 cutter-land rebase <id>
 ```
 
-The base is `base` from the config, else `develop` when origin has it, else origin's default branch. In `local` mode the rebase goes onto the local base when it contains `origin/<base>`, so tickets closed earlier and not pushed yet are kept; when the two have diverged it refuses — stop and leave reconciling the base to the user. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
+The base is the branch on `check`'s `base:` line (`base` from the config, else `develop` when origin has it, else origin's default branch). In `local` mode the rebase goes onto the local base when it contains `origin/<base>`, so tickets closed earlier and not pushed yet are kept; when the two have diverged it refuses — stop and leave reconciling the base to the user. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
 
 ## Step 2 — Verify the rebased tree
 
