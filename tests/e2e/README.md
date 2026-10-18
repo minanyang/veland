@@ -34,9 +34,14 @@ that fails keeps its directories, and the runner says where: `origin.git/`, `rep
 
 ## Time and cost of one full run
 
-About 13 minutes and $6.63: `total 804s` and `cost $6.63` (the sum of the stream-json `result` lines'
-`total_cost_usd`) for all 27 scenarios on 2026-10-18 with `--model sonnet`. Three of them failed in that run (W2, W3,
-C3), and they passed in a rerun once fixed (`total 321s`, `cost $3.60` for the three alone).
+About 15 minutes and $9: `total 872s` and `cost $9.00` (the sum of the stream-json `result` lines'
+`total_cost_usd`) for all 27 scenarios on 2026-10-18 with `--model sonnet`. Six failed in that run, from two causes the
+model has to find out by itself because no command prints the answer:
+
+- 8, 10, 12, C1, C3 — close looked for `.cutter/gh-5/review.md` in the worktree instead of the main checkout, found
+  nothing and stopped, so the branch was not landed in time.
+- O1 — open drafted the issue before looking at `.github/ISSUE_TEMPLATE/`, so the first draft had no `Form:` line
+  (`cutter-land issue` refused it, and the next turn fixed it).
 
 ## How it is set up
 
