@@ -37,7 +37,7 @@ Work out the id from the argument:
 | an id that has `.cutter/<id>/` | that id | already there |
 | words describing a task | a short kebab-case slug of it, ≤ 30 characters | the user's words |
 
-If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, show it once — its path on one line, then the file verbatim as rendered markdown, never summarised again in the same reply — and `.cutter/<id>/comment.md` the same way when there is one, and ask for approval or changes; on approval, continue as at the end of Step 1. Otherwise Step 1.
+If `.cutter/<id>/plan.md` has `Status: approved`, go to Step 2. If it exists as a draft, run `cutter-plan-check <id>` first; on exit 1, handle it as in Step 1's check and come back here once it exits 0. Then show the draft once — its path on one line, then the file verbatim as rendered markdown, never summarised again in the same reply — and `.cutter/<id>/comment.md` the same way when there is one, and ask for approval or changes; on approval, continue as at the end of Step 1. Otherwise Step 1.
 
 ## Step 1 — Plan, then stop
 
@@ -113,7 +113,7 @@ cutter-plan-check <id>
 
 Exit 1 names every line at fault: fix them and run it again until it exits 0.
 
-When `## Files` has more than 3 top-level bullets, have the plan read cold: spawn the `Explore` agent with only the paths of `.cutter/<id>/ticket.md` and `.cutter/<id>/plan.md` and: *"Read both files whole, then the repository files the plan names. List every point where implementing this plan would need a guess — a name, a format, an order, a case it does not settle. Mark those the code answers, with the file and line."* Answer from the code what it can; ask the user the rest in one grill round, a recommended answer each (product answers also go into `comment.md` for a GitHub issue); update the plan. Run `cutter-plan-check <id>` again after this and after any later change to the plan, before it is shown.
+A plan whose `## Files` has more than 3 top-level bullets is read cold before it is shown: the check's last line is then `cold read required: <n> files — spawn Explore before showing the plan` until `.cutter/<id>/cold-read.md` holds the cold read. Once that is the only line at fault, spawn the `Explore` agent with only the paths of `.cutter/<id>/ticket.md` and `.cutter/<id>/plan.md` and: *"Read both files whole, then the repository files the plan names. List every point where implementing this plan would need a guess — a name, a format, an order, a case it does not settle. Mark those the code answers, with the file and line."* Write its reply verbatim to `.cutter/<id>/cold-read.md` — that file is never written any other way, and never just to make the check pass. Answer from the code what it can; ask the user the rest in one grill round, a recommended answer each (product answers also go into `comment.md` for a GitHub issue); update the plan. Run `cutter-plan-check <id>` again after this and after any later change to the plan, before it is shown.
 
 Show the plan once — its path on one line, then the file verbatim as rendered markdown, never summarised again in the same reply — and `comment.md` the same way when there is one, and **stop**. On approval, when `comment.md` exists, post it first — it is public, and the user has now seen it:
 

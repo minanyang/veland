@@ -151,6 +151,17 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     ? ok(`${f}: carries the verify-first rule`) : bad(`${f}: lost the verify-first rule`)
 }
 
+// work's cold read is driven by plan-check's line and saved, and a draft is checked before it is shown.
+{
+  const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
+  const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
+  step(1).includes("cold read required") && step(1).includes("`.cutter/<id>/cold-read.md`")
+    ? ok("work: acts on plan-check's cold read line") : bad("work: does not act on plan-check's cold read line")
+  const draft = step(0).slice(step(0).indexOf("exists as a draft"))
+  draft.indexOf("`cutter-plan-check <id>`") !== -1 && draft.indexOf("`cutter-plan-check <id>`") < draft.indexOf("show the draft once")
+    ? ok("work: checks a draft plan before showing it") : bad("work: does not check a draft plan before showing it")
+}
+
 for (const skill of ["open", "work", "close"])
   /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
     ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)
