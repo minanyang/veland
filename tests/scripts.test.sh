@@ -78,6 +78,13 @@ cmp -s "$tmp/forms" "$tmp/forms-want" && grep -qxF 'template: tpl.md' "$tmp/out"
 grep -qxF 'form: link.yml error: "symlink or not a regular file"' "$tmp/out" && ! grep -q SECRET "$tmp/out" &&
   ok "init never follows a symlinked form" || bad "init never follows a symlinked form"
 rm -r "$tmp/repo/.github" "$tmp/outside.yml"
+mkdir -p "$tmp/elsewhere/ISSUE_TEMPLATE"
+printf 'name: SECRET\nbody:\n  - type: input\n    attributes:\n      label: X\n' >"$tmp/elsewhere/ISSUE_TEMPLATE/x.yml"
+ln -s "$tmp/elsewhere" "$tmp/repo/.github"
+expect "init with a symlinked .github" 0 cutter-worktree init
+grep -qxF 'forms: none' "$tmp/out" && ! grep -q SECRET "$tmp/out" &&
+  ok "init never follows a symlinked .github" || bad "init never follows a symlinked .github"
+rm "$tmp/repo/.github"; rm -r "$tmp/elsewhere"
 
 # worktree
 expect "worktree add" 0 cutter-worktree add T1 --slug mul

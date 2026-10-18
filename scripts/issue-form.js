@@ -97,7 +97,10 @@ function list(root, bannedPath) {
   const out = ['drafts: ' + path.join(root, '.cutter', 'drafts')]
   const dir = path.join(root, '.github', 'ISSUE_TEMPLATE')
   let names = []
-  try { if (fs.lstatSync(dir).isDirectory()) names = fs.readdirSync(dir).sort() } catch (e) { if (e.code !== 'ENOENT') throw e }
+  // Neither .github nor ISSUE_TEMPLATE may be a symlink: the listing never reads outside the repo.
+  try {
+    if (fs.lstatSync(path.dirname(dir)).isDirectory() && fs.lstatSync(dir).isDirectory()) names = fs.readdirSync(dir).sort()
+  } catch (e) { if (e.code !== 'ENOENT') throw e }
   const regular = (f) => { const s = fs.lstatSync(path.join(dir, f)); return !s.isSymbolicLink() && s.isFile() }
   // A name cutter-land would refuse as Form: is never usable, and could carry a newline into the output.
   const entry = (kind, f, ok, rest) =>
