@@ -328,8 +328,9 @@ scenario_W3() {
   if [ "$files" -gt 3 ]; then
     ensure "$TICKET: plan.md was never written with the Write tool" [ "$first" -ge 0 ]
     ensure "$TICKET: the plan binds $files files but no Explore agent ran after plan.md was written" [ "$explores" -ge 1 ]
+    ensure "$TICKET: the plan binds $files files but cold-read.md is missing or empty" [ -s "$REPO/.cutter/$TICKET/cold-read.md" ]
   else
-    ensure "$TICKET: the plan binds $files files but an Explore agent ran" [ "$(agent_count Explore)" = 0 ]
+    ensure "$TICKET: the plan binds $files files but an Explore agent ran after plan.md was written" [ "$explores" = 0 ]
   fi
 }
 
@@ -339,7 +340,10 @@ scenario_6() {
   ensure "there is no fix/gh-5-* branch" [ -n "$branch" ]
   ensure "the branch has no commit beyond main" [ "$(rgit rev-list --count "main..${branch:-main}")" -ge 1 ]
   ensure "cutter-red-proof was not run" [ "$(tool_count '^cutter-red-proof gh-5')" -ge 1 ]
-  ensure "cutter-red-proof gh-5 does not report every changed test file RED" inrepo cutter-red-proof gh-5
+  # Red-proof's report of the reverted run: every changed test file it ran failed.
+  ensure "red-proof/report.json is missing" [ -s "$REPO/.cutter/gh-5/red-proof/report.json" ]
+  ensure "red-proof's report has a test file that passed without the change" \
+    jq -e '(.testResults | length) > 0 and all(.testResults[]; .status != "passed")' "$REPO/.cutter/gh-5/red-proof/report.json"
   ensure "verify/summary.txt is missing" [ -s "$REPO/.cutter/gh-5/verify/summary.txt" ]
   ensure "verify/summary.txt shows a FAIL" not grep -q FAIL "$REPO/.cutter/gh-5/verify/summary.txt"
   ensure "review.md is missing" [ -s "$REPO/.cutter/gh-5/review.md" ]

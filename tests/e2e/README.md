@@ -58,7 +58,7 @@ sum of the stream-json `result` lines' `total_cost_usd`) for the cost, and write
   and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script): it
   is printed on stderr as `note: <flow> denied (not the skill's): <command>` and fails nothing. What
   a user must allow, passed with `--settings` (an untrusted workspace ignores `.claude/settings.json`): `git -C * add *`,
-  `git -C * commit *`, `gh api graphql *`, `cutter-land issue *`, `cutter-land comment *`.
+  `git -C * commit *`, `cutter-land issue *`, `cutter-land comment *`.
 - **The plugin under test** is `CUTTER_E2E_PLUGIN` (default: this repo). It is passed as `--plugin-dir`, its `bin/` comes
   right after the fake `gh` on PATH, every PATH entry containing `/.claude/plugins/` is dropped, and a flow fails before
   calling `claude` when `command -v cutter-land` does not resolve into that `bin/`.

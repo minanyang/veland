@@ -12,7 +12,7 @@ TICKET_BRANCH="fix/gh-5-greet-twice"
 ORIGIN_URL="git@github.com:test/fixture.git"
 # What a user must allow: the commands the skills leave to the user. --settings works in an untrusted workspace,
 # where .claude/settings.json is ignored.
-E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(gh api graphql *)","Bash(cutter-land issue *)","Bash(cutter-land comment *)"]}}'
+E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(cutter-land issue *)","Bash(cutter-land comment *)"]}}'
 
 # `claude` is resolved before PATH is rewritten.
 CLAUDE_BIN="${CUTTER_E2E_CLAUDE:-claude}"
@@ -453,7 +453,12 @@ snapshot_draft() {
 }
 no_drafts() { ! compgen -G "$REPO/.cutter/drafts/*.md" >/dev/null; }
 issue_created() { [ "$(ghlog_count issue create)" -ge 1 ]; }
-has_plan() { [ -f "$REPO/.cutter/$TICKET/plan.md" ]; }
+# has_plan — plan.md exists and, when it binds more than 3 files, so does its cold read.
+has_plan() {
+  local plan="$REPO/.cutter/$TICKET/plan.md"
+  [ -f "$plan" ] || return 1
+  [ "$(md_section "$plan" Files | grep -c '^[-*] ')" -le 3 ] || [ -s "$REPO/.cutter/$TICKET/cold-read.md" ]
+}
 pr_exists() { [ "$(state_json | jq '.prs | length')" -ge 1 ]; }
 pr_merged() { [ "$(state_json | jq '[.prs[] | select(.state == "MERGED")] | length')" -ge 1 ]; }
 pr_edited() { [ "$(ghlog_count pr edit)" -ge 1 ]; }
