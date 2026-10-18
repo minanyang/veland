@@ -13,8 +13,10 @@
 #   cutter-land issue  <slug>
 #   cutter-land comment <id>
 #
-# `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes. In pr or pr-merge mode with a
-# github.com origin it first prints the branch's PR, `pr: <STATE> <url>`, or `pr: none` when gh finds none.
+# `check` first prints the configured close mode, `mode: <close>` (exit 2 on a value other than pr, pr-merge or local,
+# before looking for the worktree). In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
+# `pr: <STATE> <url>`, or `pr: none` when gh finds none. It exits 1 and lists the files when the ticket's worktree has
+# uncommitted changes.
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base> (in local mode, onto the local
 # base when it contains origin/<base>; refused when the two have diverged); on a conflict it lists
 # the files and leaves the rebase for the user (never --skip).
@@ -62,6 +64,12 @@ elif [ "$cmd" = comment ]; then
   number="${BASH_REMATCH[1]}"
 else
   check_id "$id"
+  if [ "$cmd" = check ]; then
+    # Printed before the worktree lookup, so /cutter:close has the mode even when the ticket has no worktree.
+    mode="$(cfg close pr)"
+    say "mode: $mode"
+    case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$mode' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
+  fi
   path="$(wt_path "$id")"
   branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
   base="$(base_branch)"
@@ -177,7 +185,6 @@ need_file() {
 
 case "$cmd" in
   check)
-    mode="$(cfg close pr)"
     if [ "$mode" = pr ] || [ "$mode" = pr-merge ]; then
       if has_origin && origin_parts && [ "$o_host" = github.com ]; then
         state="$( (repo="$(gh_repo)" && gh_pr_state) 2>/dev/null)" || state=""

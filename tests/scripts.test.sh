@@ -607,6 +607,30 @@ STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check prints no 
 grep -qxF 'pr: none' "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "underivable repo: pr: none, no gh call" || { bad "underivable repo: pr: none, no gh call"; cat "$tmp/out" "$tmp/stub.log"; }
 : >"$tmp/stub.log"
 git remote set-url origin git@github.com:acme/land.git
+# check: its first line is the configured close mode, in every mode, also on a dirty worktree and with no worktree
+first_is() { [ "$(head -n 1 "$tmp/out")" = "$1" ] && ok "$2" || { bad "$2"; cat "$tmp/out"; }; }
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: pr by default" 0 cutter-land check L1
+first_is "mode: pr" "default: first line is mode: pr"
+for m in pr pr-merge local; do
+  mkdir -p .claude && echo "{\"close\":\"$m\"}" >.claude/cutter.json
+  STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: $m" 0 cutter-land check L1
+  first_is "mode: $m" "$m: first line is mode: $m"
+  rm -r .claude
+done
+mkdir -p .claude && echo '{"close":"pr-merge"}' >.claude/cutter.json
+echo dirty >"$lw/new.txt"
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints the mode on a dirty worktree" 1 cutter-land check L1
+first_is "mode: pr-merge" "dirty worktree: first line is mode: pr-merge"
+rm "$lw/new.txt"; rm -r .claude
+expect "check prints the mode without a worktree" 2 cutter-land check NOWT
+first_is "mode: pr" "no worktree: first line is mode: pr"
+mkdir -p .claude && echo '{"close":"pr_merge"}' >.claude/cutter.json
+: >"$tmp/stub.log"
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check refuses an unknown close mode" 2 cutter-land check L1
+first_is "mode: pr_merge" "unknown mode: first line is mode: pr_merge"
+grep -q "pr, pr-merge or local" "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "unknown mode: valid values named, no gh call" || { bad "unknown mode: valid values named, no gh call"; cat "$tmp/out" "$tmp/stub.log"; }
+rm -r .claude
+: >"$tmp/stub.log"
 STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 cutter-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
 STUB_VIEW="main OPEN true" expect "merge refuses a fork's PR" 2 cutter-land merge L1
