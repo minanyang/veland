@@ -186,6 +186,17 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     ? ok("close: takes the mode from check's mode: line") : bad("close: does not take the mode from check's mode: line")
 }
 
+// close fills the template check names, and answers pr's refusal by adding the missing sections.
+{
+  const text = fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")
+  const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  const step3 = (/^## Step 3\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  step0.includes("`pr template: <path>`") && step3.includes("`pr template: <path>`") &&
+    step3.includes("with the Read tool") && step3.includes("add them to `pr-body.md`")
+    ? ok("close: fills the template check names and adds the sections pr names")
+    : bad("close: does not fill the template check names or add the sections pr names")
+}
+
 for (const skill of ["open", "work", "close"])
   /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
     ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)

@@ -15,8 +15,13 @@
 #
 # `check` first prints the configured close mode, `mode: <close>` (exit 2 on a value other than pr, pr-merge or local,
 # before looking for the worktree). In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
-# `pr: <STATE> <url>`, or `pr: none` when gh finds none. It exits 1 and lists the files when the ticket's worktree has
-# uncommitted changes.
+# `pr: <STATE> <url>`, or `pr: none` when gh finds none, and in pr or pr-merge mode the PR/MR template the body must
+# follow, `pr template: <path>` relative to the worktree, or `pr template: none`. It exits 1 and lists the files when the
+# ticket's worktree has uncommitted changes.
+# The template is looked up in the worktree: on a GitLab origin in .gitlab/merge_request_templates/, otherwise
+# .github/pull_request_template.md, pull_request_template.md, docs/pull_request_template.md, then
+# .github/PULL_REQUEST_TEMPLATE/; first found wins. Names match in any case; a symlink anywhere on the way does not
+# count. A directory counts when it holds exactly one .md file, or (GitLab) a Default.md.
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base> (in local mode, onto the local
 # base when it contains origin/<base>; refused when the two have diverged); on a conflict it lists
 # the files and leaves the rebase for the user (never --skip).
@@ -36,7 +41,9 @@
 # message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
 # fast-forwards it, keeping uncommitted changes to files the squash does not touch.
 # `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
-# has an open one, replaces only its body; on GitHub it refuses a branch whose PR is already merged. The repo is
+# has an open one, replaces only its body; on GitHub it refuses a branch whose PR is already merged. It refuses,
+# before any gh or glab call, a pr-body.md lacking any `##` heading of the worktree's template (as `check` finds it),
+# naming the missing ones; headings match trimmed, in any case, without closing #s, fenced ones ignored. The repo is
 # pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
 # `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
@@ -54,6 +61,10 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
+# Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
+# that read as check's own (a forged `pr:`).
+shown() { local s="${1//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; printf '%s' "${s//[[:cntrl:]]/?}"; }
+
 usage="usage: cutter-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
@@ -67,9 +78,7 @@ else
   if [ "$cmd" = check ]; then
     # Printed before the worktree lookup, so /cutter:close has the mode even when the ticket has no worktree.
     mode="$(cfg close pr)"
-    # Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
-    # that read as check's own (a forged `pr:`).
-    shown="${mode//$'\n'/\\n}"; shown="${shown//$'\r'/\\r}"; shown="${shown//[[:cntrl:]]/?}"
+    shown="$(shown "$mode")"
     say "mode: $shown"
     case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
   fi
@@ -179,6 +188,48 @@ glab_view() {
   glab mr view "$branch" -R "$repo" --output json \
     | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (Number.isInteger(m.source_project_id) && m.source_project_id === m.target_project_id))'
 }
+lower() { printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
+# The name of the entry of <dir> called <name> in any case, the first in byte order, never a symlink; 1 when none.
+ci_entry() {
+  local LC_ALL=C want e
+  want="$(lower "$2")"
+  for e in "$1"/* "$1"/.[!.]*; do
+    [ ! -L "$e" ] && [ -e "$e" ] && [ "$(lower "${e##*/}")" = "$want" ] || continue
+    printf '%s\n' "${e##*/}"; return 0
+  done
+  return 1
+}
+# The worktree's PR/MR template relative to it, or nothing (the rules are in the header). Always returns 0.
+pr_template() {
+  local cands c segs seg dir rel e f files
+  if has_origin && origin_parts && [[ "$o_host" == *gitlab* ]]; then
+    cands=(.gitlab/merge_request_templates/)
+  else
+    cands=(.github/pull_request_template.md pull_request_template.md docs/pull_request_template.md .github/PULL_REQUEST_TEMPLATE/)
+  fi
+  for c in "${cands[@]}"; do
+    dir="$path"; rel=""
+    IFS=/ read -ra segs <<<"${c%/}"
+    for seg in "${segs[@]}"; do
+      e="$(ci_entry "$dir" "$seg")" || continue 2
+      dir="$dir/$e"; rel="${rel:+$rel/}$e"
+    done
+    if [ "$c" = "${c%/}" ]; then
+      [ -f "$dir" ] && { printf '%s\n' "$rel"; return 0; }
+      continue
+    fi
+    [ -d "$dir" ] || continue
+    if [[ "$c" == .gitlab/* ]] && e="$(ci_entry "$dir" Default.md)" && [ -f "$dir/$e" ]; then
+      printf '%s\n' "$rel/$e"; return 0
+    fi
+    files=()
+    for f in "$dir"/*; do
+      [ ! -L "$f" ] && [ -f "$f" ] && [[ "$(lower "${f##*/}")" == *.md ]] && files+=("${f##*/}")
+    done
+    [ ${#files[@]} -eq 1 ] && { printf '%s\n' "$rel/${files[0]}"; return 0; }
+  done
+  return 0
+}
 # A regular, non-empty file with one link, really inside .cutter/ (no symlink anywhere on the way), or die.
 need_file() {
   [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"
@@ -193,6 +244,8 @@ case "$cmd" in
         state="$( (repo="$(gh_repo)" && gh_pr_state) 2>/dev/null)" || state=""
         say "pr: ${state:-none}"
       fi
+      tpl="$(pr_template)"
+      say "pr template: $(shown "${tpl:-none}")"
     fi
     dirty="$(git -C "$path" status --porcelain)"
     if [ -n "$dirty" ]; then
@@ -303,6 +356,25 @@ case "$cmd" in
     need_file "$td/pr-title"; need_file "$td/pr-body.md"
     title="$(head -n 1 "$td/pr-title")"
     [ -n "${title//[[:space:]]/}" ] || die "$td/pr-title has an empty first line"
+    tpl="$(pr_template)"
+    if [ -n "$tpl" ]; then
+      # shellcheck disable=SC2016
+      missing="$(node -e '
+        const fs = require("fs")
+        const [tplPath, bodyPath, mdCheck] = process.argv.slice(1)
+        const { sections } = require(mdCheck)
+        const name = (s) => s.name.replace(/\s+#+\s*$/, "").trim()
+        const have = new Set(sections(fs.readFileSync(bodyPath, "utf8")).map((s) => name(s).toLowerCase()))
+        const seen = new Set(), out = []
+        for (const s of sections(fs.readFileSync(tplPath, "utf8"))) {
+          const n = name(s), k = n.toLowerCase()
+          if (!have.has(k) && !seen.has(k)) { seen.add(k); out.push("## " + n) }
+        }
+        console.log(out.join(", "))
+      ' "$path/$tpl" "$td/pr-body.md" "$(dirname "$(readlink -f "$0")")/../scripts/md-check.js" 2>&1)" ||
+        die "could not compare $td/pr-body.md with $(shown "$tpl"): $missing"
+      [ -z "$missing" ] || die "$td/pr-body.md lacks the sections of $(shown "$tpl"): $missing"
+    fi
     origin_parts
     case "$o_host" in
       github.com)
