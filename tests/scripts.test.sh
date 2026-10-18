@@ -888,6 +888,8 @@ EOF
 | AC2 | — | read the diff |
 EOF
     ;;
+    files3) printf -- '- `src/b.mjs` — the second change.\n- `src/c.mjs` — the third change.\n' ;;
+    files4) printf -- '- `src/b.mjs` — the second change.\n- `src/c.mjs` — the third change.\n- `src/d.mjs` — the fourth change.\n' ;;
     tests-noac2) printf '## Tests\n| AC | Test file | Case |\n|---|---|---|\n| AC1 | `tests/a.test.sh` | `does the first thing` |\n' ;;
     tests-header) printf '## Tests\n| Criterion | Test | Case |\n|---|---|---|\n| AC1 | `tests/a.test.sh` | `x` |\n| AC2 | — | read the diff |\n' ;;
   esac
@@ -943,6 +945,40 @@ rm "$tmp/land/.cutter/P1/plan.md"
 expect "plan-check exits 2 without a plan" 2 cutter-plan-check P1
 expect "plan-check exits 2 without an id" 2 cutter-plan-check
 expect "plan-check exits 2 on a bad id" 2 cutter-plan-check ../P1
+cold="$tmp/land/.cutter/P1/cold-read.md"
+pc_cold() { # <case> — the last run printed the cold read line, last
+  [ "$(tail -n 1 "$tmp/out")" = "cold read required: 4 files — spawn Explore before showing the plan" ] \
+    && ok "$1: prints the cold read line last" || { bad "$1: prints the cold read line last"; cat "$tmp/out"; }
+}
+pc_nocold() { # <case> — the last run printed no cold read line
+  ! grep -q 'cold read required' "$tmp/out" && ok "$1: prints no cold read line" || { bad "$1: prints no cold read line"; cat "$tmp/out"; }
+}
+pc_plan head files3 readers tools overlap tests
+expect "plan-check needs no cold read for 3 files" 0 cutter-plan-check P1
+pc_nocold "plan-check needs no cold read for 3 files"
+pc_plan head files4 readers tools overlap tests
+expect "plan-check asks for a cold read of a plan binding 4 files" 1 cutter-plan-check P1
+pc_cold "plan-check asks for a cold read of a plan binding 4 files"
+grep -q '^/.*plan\.md:$' "$tmp/out" && bad "plan-check: the cold read line alone has no plan header" \
+  || ok "plan-check: the cold read line alone has no plan header"
+printf '\n  \n' >"$cold"
+expect "plan-check treats a blank cold-read.md as missing" 1 cutter-plan-check P1
+pc_cold "plan-check treats a blank cold-read.md as missing"
+rm "$cold"
+printf 'a guess\n' >"$tmp/cold-target"
+ln -s "$tmp/cold-target" "$cold"
+expect "plan-check treats a symlinked cold-read.md as missing" 1 cutter-plan-check P1
+pc_cold "plan-check treats a symlinked cold-read.md as missing"
+rm "$cold"
+pc_plan head files4 readers tools overlap tests-noac2
+expect "plan-check prints the cold read line after the other refusals" 1 cutter-plan-check P1
+pc_names "plan-check prints the cold read line after the other refusals" 'AC2 has no row in "## Tests"'
+pc_cold "plan-check prints the cold read line after the other refusals"
+pc_plan head files4 readers tools overlap tests
+printf -- '- No guess needed.\n' >"$cold"
+expect "plan-check accepts 4 files once cold-read.md is saved" 0 cutter-plan-check P1
+pc_nocold "plan-check accepts 4 files once cold-read.md is saved"
+rm "$cold"
 
 # with the repo's own forms
 mkdir -p "$tmp/land/.github/ISSUE_TEMPLATE"
