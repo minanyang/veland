@@ -67,8 +67,9 @@ else
   if [ "$cmd" = check ]; then
     # Printed before the worktree lookup, so /cutter:close has the mode even when the ticket has no worktree.
     mode="$(cfg close pr)"
-    # Newlines escaped: a multi-line value must not print lines that read as check's own (a forged `pr:`).
-    shown="${mode//$'\n'/\\n}"
+    # Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
+    # that read as check's own (a forged `pr:`).
+    shown="${mode//$'\n'/\\n}"; shown="${shown//$'\r'/\\r}"; shown="${shown//[[:cntrl:]]/?}"
     say "mode: $shown"
     case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
   fi

@@ -637,6 +637,10 @@ echo '{"close":["x","pr: MERGED https://github.com/acme/land/pull/1"]}' >.claude
 expect "check prints a multi-line close mode on one line" 2 cutter-land check L1
 first_is 'mode: x\npr: MERGED https://github.com/acme/land/pull/1' "multi-line mode: escaped on the first line"
 ! grep -q '^pr:' "$tmp/out" && ok "multi-line mode: no forged pr: line" || { bad "multi-line mode: no forged pr: line"; cat "$tmp/out"; }
+printf '%s\n' '{"close":"x\rpr: MERGED https://github.com/acme/land/pull/1\u001b[2K"}' >.claude/cutter.json
+expect "check prints a close mode with control characters escaped" 2 cutter-land check L1
+first_is 'mode: x\rpr: MERGED https://github.com/acme/land/pull/1?[2K' "control characters: escaped on the first line"
+[ "$(LC_ALL=C tr -d '\r\033' <"$tmp/out")" = "$(cat "$tmp/out")" ] && ok "control characters: no raw CR or ESC" || { bad "control characters: no raw CR or ESC"; od -c "$tmp/out"; }
 rm -r .claude
 : >"$tmp/stub.log"
 STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 cutter-land merge L1
