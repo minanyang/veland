@@ -147,6 +147,20 @@ for (const skill of ["open", "work"]) {
     : bad("open: does not look up issue types through a granted cutter-ticket issue-types")
 }
 
+// open drafts from cutter-worktree init's listing, not from reading the forms or the banned file itself.
+{
+  const text = fs.readFileSync(`${dir}/open/SKILL.md`, "utf8")
+  // Up to the next step: Step 3's draft layout has `## ` headings of its own.
+  const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
+  const runsInit = (s) => [...s.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "cutter-worktree init"))
+  const s2 = step(2), s3 = step(3)
+  runsInit(s2) && !runsInit(s3) && !s3.includes("Run `cutter-worktree init`") &&
+    ["`form:`", "`drafts:`", "`banned:`"].every((l) => (s2 + s3).includes(l)) &&
+    s3.includes("`<drafts>/<short-slug>.md`") && !text.includes("Read it whole") && !text.includes("`references/banned-phrases.txt`")
+    ? ok("open: drafts from cutter-worktree init's form, drafts and banned lines")
+    : bad("open: drafts from cutter-worktree init's form, drafts and banned lines")
+}
+
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
   "Only when a check is impossible, say so, naming what was tried and why it cannot be checked."
 for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/code-review/SKILL.md",
