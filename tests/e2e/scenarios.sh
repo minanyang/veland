@@ -319,14 +319,16 @@ scenario_W1() {
 scenario_W3() {
   local plan="$REPO/.cutter/$TICKET/plan.md" files first explores
   files="$(md_section "$plan" Files | grep -c '^[-*] ')"
-  first="$(tool_calls | jq -s --arg p "/.cutter/$TICKET/plan.md" '[.[] | select(.name == "Write" and ((.file_path // "") | endswith($p))) | .seq] | min // -1')"
+  # The first write of plan.md: the Write or Edit tool, or a Bash command redirecting into it (a heredoc).
+  first="$(tool_calls | jq -s --arg p "/.cutter/$TICKET/plan.md" --arg re ">[[:space:]]*['\"]?[^[:space:]]*\\.cutter/$TICKET/plan\\.md" \
+    '[.[] | select(((.name == "Write" or .name == "Edit") and ((.file_path // "") | endswith($p))) or (.name == "Bash" and ((.command // "") | test($re)))) | .seq] | min // -1')"
   explores="$(tool_calls | jq -s --argjson first "$first" '[.[] | select((.name == "Agent" or .name == "Task") and .subagent_type == "Explore" and .seq > $first)] | length')"
   # shellcheck disable=SC2153  # FLOW is set by run_flow
   if [ "$FLOW" = work-wide ]; then
     ensure "the plan binds $files files, a rename needs more than 3" [ "$files" -gt 3 ]
   fi
   if [ "$files" -gt 3 ]; then
-    ensure "$TICKET: plan.md was never written with the Write tool" [ "$first" -ge 0 ]
+    ensure "$TICKET: plan.md was never written (Write, Edit or a Bash redirect)" [ "$first" -ge 0 ]
     ensure "$TICKET: the plan binds $files files but no Explore agent ran after plan.md was written" [ "$explores" -ge 1 ]
     ensure "$TICKET: the plan binds $files files but cold-read.md is missing or empty" [ -s "$REPO/.cutter/$TICKET/cold-read.md" ]
   else

@@ -5,8 +5,8 @@
 # Cases: unknown ids exit 2 before any claude run; a permission denial in the skills' scope is reported with its
 # command, and one outside it is a note on stderr that fails nothing; a gh call in the
 # tool log that the fake never saw fails the flow; a plugin without bin/cutter-land fails before claude runs; a
-# failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it; the
-# fake gh answers a call with gh's global --hostname.
+# failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it; W3
+# counts a plan.md written by a Bash redirect; the fake gh answers a call with gh's global --hostname.
 # shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; $HOME is literal command text
 set -uo pipefail
 RUN_SH="$(cd "$(dirname "$0")" && pwd)/e2e/run.sh"
@@ -100,6 +100,18 @@ fi
 # the plugin under test has no bin/cutter-land
 if runner 1 "a plugin without cutter-land fails" "STUB_STREAM=$tmp/stream-ok" "STUB_RUN=$tmp/calls-gh" "CUTTER_E2E_PLUGIN=$tmp/plugin" -- 3; then
   line_matches '^FAIL  3  [0-9]+s  .*cutter-land resolves to' && [ ! -s "$tmp/mark" ] && ok "cutter-land outside the plugin under test fails the flow before claude runs" || { bad "cutter-land outside the plugin under test fails the flow before claude runs"; sed 's/^/      /' "$tmp/out"; }
+fi
+
+# W3: a plan.md written by a Bash heredoc, then an Explore, counts as the cold read of a wide plan
+printf '%s\n' '#!/bin/bash' 'for t in gh-5 gh-6; do' '  [ -e .cutter/$t/plan.md ] && continue' '  cutter-worktree init $t' \
+  '  printf "## Files\n- a\n- b\n- c\n- d\n" >.cutter/$t/plan.md' '  echo cold >.cutter/$t/cold-read.md' 'done' >"$tmp/writes-wide-plan"
+printf '%s\n' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat > .cutter/gh-5/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cat > .cutter/gh-6/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Agent","input":{"subagent_type":"Explore","prompt":"cold read"}}]}}' \
+  '{"type":"result","subtype":"success","permission_denials":[],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-wide-plan"
+if runner 0 "a plan written by Bash counts as written" "STUB_STREAM=$tmp/stream-wide-plan" "STUB_RUN=$tmp/writes-wide-plan" -- W3; then
+  line_matches '^pass  W3  [0-9]+s$' && ok "W3 counts a plan.md written by a Bash redirect" || { bad "W3 counts a plan.md written by a Bash redirect"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
 fi
 
 # the fake gh takes gh's global --hostname before the subcommand, as cutter-ticket issue-types sends it
