@@ -43,7 +43,7 @@ cutter-worktree path <id>
 cutter-land check <id>
 ```
 
-`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`.
+`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`; and the repo's PR/MR template the body must follow, `pr template: <path>` (relative to the worktree), or `pr template: none`.
 
 Stop and say why if any of these holds:
 
@@ -76,7 +76,8 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
 2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
-   - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source. If the repo has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/` or root; `.gitlab/merge_request_templates/` for GitLab), fill its sections with this content instead of using this layout.
+   - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source.
+   - When `check` printed `pr template: <path>`, read `<worktree>/<path>` (the worktree from `cutter-worktree path <id>`) with the Read tool and fill its sections with this content instead of using this layout, copying its `##` heading lines verbatim. When `cutter-land pr` refuses because `pr-body.md` lacks sections of the template, add them to `pr-body.md` and run `cutter-land pr <id>` again.
 3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
    - **3** — checks still running or not registered yet. Wait for them in the background, never in a foreground polling loop:
 
