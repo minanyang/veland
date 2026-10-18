@@ -1,1 +1,1 @@
-- [Threat model](threat_model.md) — allowed-tools grants on wrapper scripts are the trust boundary; check argv, repo pinning, file paths, content
+- [Threat model](threat_model.md) — allowed-tools grants on wrapper scripts are the trust boundary; check argv, repo pinning, file paths, content; gh-53 grant hook record + transcript origin

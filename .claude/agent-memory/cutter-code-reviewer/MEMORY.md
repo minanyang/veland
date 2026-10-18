@@ -1,1 +1,2 @@
 - [Review packet verify table](review_packet_verify_table.md) — packet's verify table predates HEAD by design (verify runs concurrently); don't flag it
+- [Portable shell in tests](portable_shell_in_tests.md) — CI runs Linux+macOS; BSD-first stat/sed fallbacks fail on GNU — blocker
