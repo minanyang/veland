@@ -860,7 +860,7 @@ clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; commit_pt "
 expect "check skips a symlinked template" 0 cutter-land check PT
 tpl_is none "check: a symlinked template does not count"
 clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; put "pull_request_template.md"$'\n'
-mkdir -p "$pt/tdocs"; ln -s ../real.md "$pt/tdocs/pull_request_template.md"; ln -s tdocs "$pt/.github"; mkdir "$pt/.github"$'\n'
+put tdocs/pull_request_template.md; ln -s tdocs "$pt/.github"; mkdir "$pt/.github"$'\n'
 commit_pt "docs: symlinked templates beside names ending in a newline"
 expect "check skips a symlinked template beside a name ending in a newline" 0 cutter-land check PT
 tpl_is none "check: a trailing-newline decoy does not let a symlink through"
