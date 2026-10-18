@@ -5,7 +5,8 @@
 # Cases: unknown ids exit 2 before any claude run; a permission denial in the skills' scope is reported with its
 # command, and one outside it is a note on stderr that fails nothing; a gh call in the
 # tool log that the fake never saw fails the flow; a plugin without bin/cutter-land fails before claude runs; a
-# failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it.
+# failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it; the
+# fake gh answers a call with gh's global --hostname.
 # shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; $HOME is literal command text
 set -uo pipefail
 RUN_SH="$(cd "$(dirname "$0")" && pwd)/e2e/run.sh"
@@ -99,6 +100,16 @@ fi
 # the plugin under test has no bin/cutter-land
 if runner 1 "a plugin without cutter-land fails" "STUB_STREAM=$tmp/stream-ok" "STUB_RUN=$tmp/calls-gh" "CUTTER_E2E_PLUGIN=$tmp/plugin" -- 3; then
   line_matches '^FAIL  3  [0-9]+s  .*cutter-land resolves to' && [ ! -s "$tmp/mark" ] && ok "cutter-land outside the plugin under test fails the flow before claude runs" || { bad "cutter-land outside the plugin under test fails the flow before claude runs"; sed 's/^/      /' "$tmp/out"; }
+fi
+
+# the fake gh takes gh's global --hostname before the subcommand, as cutter-ticket issue-types sends it
+mkdir -p "$tmp/ghd"
+echo '{"graphql":{"data":{"repository":{"issueTypes":{"nodes":[{"name":"Bug"}]}}}}}' >"$tmp/ghd/canned.json"
+if E2E_GH_DIR="$tmp/ghd" "$(dirname "$RUN_SH")/bin/gh" api --hostname github.com graphql -f 'query=q' >"$tmp/out" 2>"$tmp/err" &&
+  [ "$(jq -r '.data.repository.issueTypes.nodes[0].name' "$tmp/out")" = Bug ]; then
+  ok "the fake gh answers api --hostname <host> graphql"
+else
+  bad "the fake gh answers api --hostname <host> graphql"; sed 's/^/      /' "$tmp/out" "$tmp/err"
 fi
 
 [ "$fail" -eq 0 ] && echo "e2e-runner: all cases pass"

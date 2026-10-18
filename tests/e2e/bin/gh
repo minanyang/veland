@@ -34,12 +34,14 @@ const flag = (name) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const flags = (name) => argv.flatMap((a, i) => (a === name ? [argv[i + 1]] : []))
+// The subcommand words, with gh's global --hostname <host> (cutter-ticket issue-types sends it) left out.
+const cmd = argv[1] === '--hostname' ? [argv[0], ...argv.slice(3)] : argv
 // Positionals: what is left once flags and their values are gone.
 const valued = new Set(['--repo', '--json', '--jq', '--state', '--search', '--limit', '--title', '--body-file', '--label', '--type', '--base', '--head', '--match-head-commit', '-f', '-F', '-R', '-q'])
 const positional = []
-for (let i = 2; i < argv.length; i++) {
-  if (valued.has(argv[i])) i++
-  else if (!argv[i].startsWith('-')) positional.push(argv[i])
+for (let i = 2; i < cmd.length; i++) {
+  if (valued.has(cmd[i])) i++
+  else if (!cmd[i].startsWith('-')) positional.push(cmd[i])
 }
 
 const git = (args, opts = {}) => {
@@ -94,7 +96,7 @@ const pushBaseCommit = (base, file) => {
   fs.rmSync(tmp, { recursive: true, force: true })
 }
 
-const [a, b] = argv
+const [a, b] = cmd
 const key = `${a} ${b}`
 
 if (key === 'auth status') {

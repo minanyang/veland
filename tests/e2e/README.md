@@ -73,7 +73,7 @@ copy="$(mktemp -d)" && cp -R . "$copy/cutter"
 CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh 11
 # 2. close without the blocker check: edit "$copy/cutter/skills/close/SKILL.md", delete the last bullet of Step 0
 CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh 14
-# 3. close waiting in the foreground: edit "$copy/cutter/skills/close/SKILL.md", delete the `run_in_background` paragraph of Step 3.3
+# 3. close's grants lost after the background wait: edit "$copy/cutter/hooks/hooks.json", delete both `hooks/grant.js` entries
 CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh C3
 ```
 
