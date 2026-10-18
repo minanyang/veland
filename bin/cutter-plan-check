@@ -8,7 +8,9 @@
 # `## Acceptance criteria`) with no `## Tests` row; a `## Tests` table missing or whose header is not
 # `| AC | Test file | Case |`; a phrase of references/banned-phrases.txt outside code; `## Readers` missing or
 # empty, or an entry with no nested hit line; a `## Tool behaviour relied on` entry with no fenced block whose
-# first line is `$ <command>` and which holds an output line; `## Overlap` missing or empty.
+# first line is `$ <command>` and which holds an output line; `## Overlap` missing or empty. A plan whose
+# `## Files` has more than 3 top-level bullets also needs the cold read saved as a non-blank regular file
+# .cutter/<id>/cold-read.md: without it, the last line printed is `cold read required: <n> files — …`, exit 1.
 # Exit 0 when none of these holds, 2 on a usage error or a missing plan.md.
 
 set -euo pipefail
@@ -27,7 +29,7 @@ banned="$here/references/banned-phrases.txt"
 # shellcheck disable=SC2016  # JavaScript, not shell
 node -e '
   const fs = require("fs")
-  const [planPath, bannedPath, mdCheck] = process.argv.slice(1)
+  const [planPath, bannedPath, mdCheck, coldPath] = process.argv.slice(1)
   const { blank, bannedHits, sections, criteria } = require(mdCheck)
   const src = fs.readFileSync(planPath, "utf8"), lines = src.split("\n"), text = blank(lines)
   const secs = sections(src)
@@ -89,9 +91,19 @@ node -e '
   if (!overlap) bad(0, "no \"## Overlap\" section")
   else if (!lines.slice(overlap.from, overlap.to).some((s) => s.trim() !== "")) bad(overlap.line, "\"## Overlap\" is empty")
 
-  if (!problems.length) { console.log("plan ok: " + planPath); process.exit(0) }
-  problems.sort((a, b) => a.line - b.line)
-  console.log(planPath + ":")
-  for (const p of problems) console.log(p.line ? "  line " + p.line + ": " + p.m : "  " + p.m)
+  const files = sec("Files")
+  let bound = 0
+  if (files) for (let k = files.from; k < files.to; k++) if (top(k)) bound++
+  let cold = false
+  try { cold = fs.lstatSync(coldPath).isFile() && fs.readFileSync(coldPath, "utf8").trim() !== "" } catch {}
+  const coldMissing = bound > 3 && !cold
+
+  if (!problems.length && !coldMissing) { console.log("plan ok: " + planPath); process.exit(0) }
+  if (problems.length) {
+    problems.sort((a, b) => a.line - b.line)
+    console.log(planPath + ":")
+    for (const p of problems) console.log(p.line ? "  line " + p.line + ": " + p.m : "  " + p.m)
+  }
+  if (coldMissing) console.log("cold read required: " + bound + " files — spawn Explore before showing the plan")
   process.exit(1)
-' "$plan" "$banned" "$here/scripts/md-check.js"
+' "$plan" "$banned" "$here/scripts/md-check.js" "$(task_dir "$id")/cold-read.md"
