@@ -222,10 +222,12 @@ skill_grants() {
     sed -n 's/^ *- //; s/^Bash(\(.*\))$/\1/p'
 }
 # in_skill_scope <tool> <command> — a denial the skills own: any tool but Bash, a cutter-, gh or glab command, or a
-# command a grant covers (it should have run). Anything else is the model's own look around, which a user may allow.
+# command a grant covers (it should have run). Anything else is the model's own look around, which a user may allow;
+# so is a command chained with |, ; or &&, which the skills never run (one command per Bash call).
 in_skill_scope() {
   local g
   [ "$1" = Bash ] || return 0
+  case "$2" in *'|'* | *';'* | *'&&'*) return 1 ;; esac
   case "$2" in cutter-* | gh | "gh "* | glab | "glab "*) return 0 ;; esac
   while IFS= read -r g; do
     # shellcheck disable=SC2053  # the grant is a glob on purpose

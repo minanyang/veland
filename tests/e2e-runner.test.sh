@@ -6,7 +6,8 @@
 # command, and one outside it is a note on stderr that fails nothing; a gh call in the
 # tool log that the fake never saw fails the flow; a plugin without bin/cutter-land fails before claude runs; a
 # failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it; W3
-# counts a plan.md written by a Bash redirect; the fake gh answers a call with gh's global --hostname.
+# counts a plan.md written by a Bash redirect; the fake gh answers a call with gh's global --hostname; a denied command
+# chained with |, ; or && is a note.
 # shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; $HOME is literal command text
 set -uo pipefail
 RUN_SH="$(cd "$(dirname "$0")" && pwd)/e2e/run.sh"
@@ -38,6 +39,11 @@ printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"echo $HOME"}}]}}' \
   '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"echo $HOME"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-adhoc"
+# The model piping a skill's gh command, denied, then running it bare.
+printf '%s\n' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"gh issue list --state open --search greet 2>&1 | head"}}]}}' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
+  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"gh issue list --state open --search greet 2>&1 | head"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-chained"
 printf '%s\n' '#!/bin/bash' 'gh issue list --state open --search greet' >"$tmp/calls-gh"
 # The work-bug plan turn: ticket.md and plan.md under an excluded .cutter/, nothing else. Only the first call writes.
 printf '%s\n' '#!/bin/bash' '[ -e .cutter/gh-5/plan.md ] && exit 0' 'cutter-worktree init gh-5' \
@@ -84,6 +90,12 @@ fi
 if runner 0 "an ad-hoc denial passes" "STUB_STREAM=$tmp/stream-adhoc" "STUB_RUN=$tmp/calls-gh" -- 3; then
   line_matches '^pass  3  [0-9]+s$' && grep -Fq "note: open-dup denied (not the skill's): echo \$HOME" "$tmp/err" \
     && ok "a denial outside the skills' scope is a note, not a failure" || { bad "a denial outside the skills' scope is a note, not a failure"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
+fi
+
+# a denied gh command the model chained with a pipe
+if runner 0 "a chained denial passes" "STUB_STREAM=$tmp/stream-chained" "STUB_RUN=$tmp/calls-gh" -- 3; then
+  line_matches '^pass  3  [0-9]+s$' && grep -Fq "note: open-dup denied (not the skill's): gh issue list --state open --search greet 2>&1 | head" "$tmp/err" \
+    && ok "a denied command chained with a pipe is a note, not a failure" || { bad "a denied command chained with a pipe is a note, not a failure"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
 fi
 
 # a denial after the plan checkpoint fails only the scenarios judged after it

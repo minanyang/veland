@@ -56,8 +56,9 @@ C3), and they passed in a rerun once fixed (`total 321s`, `cost $3.60` for the t
 - **Permissions.** `claude -p` runs with `--permission-mode acceptEdits`, never `--dangerously-skip-permissions`. A
   `permission_denials` entry in the stream-json `result` in the skills' scope — any tool but Bash, a `cutter-`, `gh`
   or `glab` command, or one a skill's `allowed-tools` or the runner's grants cover — fails every scenario of the flow
-  and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script): it
-  is printed on stderr as `note: <flow> denied (not the skill's): <command>` and fails nothing. What
+  and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script, or a
+  command it chained with `|`, `;` or `&&`, which the skills never run): it is printed on stderr as
+  `note: <flow> denied (not the skill's): <command>` and fails nothing. What
   the skills leave to the user is granted to these throwaway runs with `--settings` (an untrusted workspace ignores
   `.claude/settings.json`): `git -C * add *`, `git -C * commit *`, `cutter-land issue *`, `cutter-land comment *`. They
   are the harness's grants, not rules to copy into your own settings: `git -C * commit *` can also match
