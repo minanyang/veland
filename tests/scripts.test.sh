@@ -602,6 +602,9 @@ mkdir -p .claude && echo '{"close":"local"}' >.claude/cutter.json
 STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check makes no gh call in local mode" 0 cutter-land check L1
 ! grep -q '^pr:' "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "local mode: no pr: line, no gh call" || bad "local mode: no pr: line, no gh call"
 rm -r .claude
+git remote set-url origin 'git@github.com:ac+me/land.git'
+STUB_STATE="MERGED https://github.com/acme/land/pull/1" expect "check prints no PR when origin's repo cannot be derived" 0 cutter-land check L1
+grep -qxF 'pr: none' "$tmp/out" && [ ! -s "$tmp/stub.log" ] && ok "underivable repo: pr: none, no gh call" || { bad "underivable repo: pr: none, no gh call"; cat "$tmp/out" "$tmp/stub.log"; }
 : >"$tmp/stub.log"
 git remote set-url origin git@github.com:acme/land.git
 STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 cutter-land merge L1
