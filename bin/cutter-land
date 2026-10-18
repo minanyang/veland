@@ -67,8 +67,10 @@ else
   if [ "$cmd" = check ]; then
     # Printed before the worktree lookup, so /cutter:close has the mode even when the ticket has no worktree.
     mode="$(cfg close pr)"
-    say "mode: $mode"
-    case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$mode' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
+    # Newlines escaped: a multi-line value must not print lines that read as check's own (a forged `pr:`).
+    shown="${mode//$'\n'/\\n}"
+    say "mode: $shown"
+    case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
   fi
   path="$(wt_path "$id")"
   branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
