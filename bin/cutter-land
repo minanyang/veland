@@ -13,7 +13,8 @@
 #   cutter-land issue  <slug>
 #   cutter-land comment <id>
 #
-# `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes.
+# `check` exits 1 and lists the files when the ticket's worktree has uncommitted changes. In pr or pr-merge mode with a
+# github.com origin it first prints the branch's PR, `pr: <STATE> <url>`, or `pr: none` when gh finds none.
 # `rebase` fetches origin and rebases the ticket branch onto origin/<base> (in local mode, onto the local
 # base when it contains origin/<base>; refused when the two have diverged); on a conflict it lists
 # the files and leaves the rebase for the user (never --skip).
@@ -33,7 +34,8 @@
 # message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
 # fast-forwards it, keeping uncommitted changes to files the squash does not touch.
 # `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
-# has an open one, replaces only its body. The repo is pinned to origin; no auto-merge, push or fill flags.
+# has an open one, replaces only its body; on GitHub it refuses a branch whose PR is already merged. The repo is
+# pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
 # `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
 # every label must already exist in the repo. When the main checkout has issue forms (.github/ISSUE_TEMPLATE/*.yml
@@ -113,6 +115,11 @@ gh_view() {
   gh pr view "$branch" --repo "$repo" --json baseRefName,state,isCrossRepository \
     --jq '.baseRefName + " " + .state + " " + (.isCrossRepository | tostring)'
 }
+# "<state> <url>" of the branch's PR in $repo; nothing for a fork's.
+gh_pr_state() {
+  gh pr view "$branch" --repo "$repo" --json state,url,isCrossRepository \
+    --jq 'select(.isCrossRepository | not) | .state + " " + .url'
+}
 # One line per check on the PR that is not green, "pending <name>: <state>" while it runs and "failed <name>: <state>"
 # once it has failed; "head <sha>" if the PR's head is not the worktree's HEAD, and "none" if it has no checks at all.
 # Empty output means all green.
@@ -170,6 +177,13 @@ need_file() {
 
 case "$cmd" in
   check)
+    mode="$(cfg close pr)"
+    if [ "$mode" = pr ] || [ "$mode" = pr-merge ]; then
+      if has_origin && origin_parts && [ "$o_host" = github.com ]; then
+        state="$( (repo="$(gh_repo)"; gh_pr_state) 2>/dev/null)" || state=""
+        say "pr: ${state:-none}"
+      fi
+    fi
     dirty="$(git -C "$path" status --porcelain)"
     if [ -n "$dirty" ]; then
       say "uncommitted changes in $path:"; say "$dirty"; exit 1
@@ -286,6 +300,9 @@ case "$cmd" in
         if got="$(gh_view 2>/dev/null)" && [[ "$got" == *" OPEN "* ]]; then
           [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
           gh pr edit "$branch" --repo "$repo" --body-file "$td/pr-body.md"
+        elif [[ "$got" == *" MERGED false" ]]; then
+          state="$(gh_pr_state 2>/dev/null)" || state=""
+          die "PR of $branch is already merged: ${state#* }"
         else
           gh pr create --repo "$repo" --base "$base" --head "$branch" --title "$title" --body-file "$td/pr-body.md"
         fi
