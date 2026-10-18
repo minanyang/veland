@@ -859,6 +859,12 @@ tpl_is none "check: several templates in a directory"
 clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; commit_pt "docs: symlinked template"
 expect "check skips a symlinked template" 0 cutter-land check PT
 tpl_is none "check: a symlinked template does not count"
+clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; put "pull_request_template.md"$'\n'
+mkdir -p "$pt/tdocs"; ln -s ../real.md "$pt/tdocs/pull_request_template.md"; ln -s tdocs "$pt/.github"; mkdir "$pt/.github"$'\n'
+commit_pt "docs: symlinked templates beside names ending in a newline"
+expect "check skips a symlinked template beside a name ending in a newline" 0 cutter-land check PT
+tpl_is none "check: a trailing-newline decoy does not let a symlink through"
+rm -r "$pt/.github"$'\n' "$pt/pull_request_template.md"$'\n'
 clear_pt; put tdocs/pull_request_template.md; ln -s tdocs "$pt/docs"; commit_pt "docs: symlinked docs"
 expect "check skips a template under a symlinked directory" 0 cutter-land check PT
 tpl_is none "check: a symlinked directory on the way does not count"

@@ -188,20 +188,25 @@ glab_view() {
   glab mr view "$branch" -R "$repo" --output json \
     | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(m.target_branch + " " + m.state + " " + (Number.isInteger(m.source_project_id) && m.source_project_id === m.target_project_id))'
 }
-lower() { printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
-# The name of the entry of <dir> called <name> in any case, the first in byte order, never a symlink; 1 when none.
+# Names travel in variables, never through $(...): it would strip a trailing newline and turn a decoy name back into
+# the symlink beside it.
+# Sets $lc to <s> in lower case.
+lower() { lc="$(printf '%s.' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"; lc="${lc%.}"; }
+# Sets $ci to the name of the entry of <dir> called <name> in any case, the first in byte order, never a symlink;
+# 1 when none.
 ci_entry() {
   local LC_ALL=C want e
-  want="$(lower "$2")"
+  lower "$2"; want="$lc"
   for e in "$1"/* "$1"/.[!.]*; do
-    [ ! -L "$e" ] && [ -e "$e" ] && [ "$(lower "${e##*/}")" = "$want" ] || continue
-    printf '%s\n' "${e##*/}"; return 0
+    [ ! -L "$e" ] && [ -e "$e" ] && lower "${e##*/}" && [ "$lc" = "$want" ] || continue
+    ci="${e##*/}"; return 0
   done
   return 1
 }
-# The worktree's PR/MR template relative to it, or nothing (the rules are in the header). Always returns 0.
+# Sets $tpl to the worktree's PR/MR template relative to it, or empty (the rules are in the header).
 pr_template() {
-  local cands c segs seg dir rel e f files
+  local cands c segs seg dir rel f files
+  tpl=""
   if has_origin && origin_parts && [[ "$o_host" == *gitlab* ]]; then
     cands=(.gitlab/merge_request_templates/)
   else
@@ -211,22 +216,23 @@ pr_template() {
     dir="$path"; rel=""
     IFS=/ read -ra segs <<<"${c%/}"
     for seg in "${segs[@]}"; do
-      e="$(ci_entry "$dir" "$seg")" || continue 2
-      dir="$dir/$e"; rel="${rel:+$rel/}$e"
+      ci_entry "$dir" "$seg" || continue 2
+      dir="$dir/$ci"; rel="${rel:+$rel/}$ci"
+      [ ! -L "$dir" ] || continue 2
     done
     if [ "$c" = "${c%/}" ]; then
-      [ -f "$dir" ] && { printf '%s\n' "$rel"; return 0; }
+      [ -f "$dir" ] && { tpl="$rel"; return 0; }
       continue
     fi
     [ -d "$dir" ] || continue
-    if [[ "$c" == .gitlab/* ]] && e="$(ci_entry "$dir" Default.md)" && [ -f "$dir/$e" ]; then
-      printf '%s\n' "$rel/$e"; return 0
+    if [[ "$c" == .gitlab/* ]] && ci_entry "$dir" Default.md && [ ! -L "$dir/$ci" ] && [ -f "$dir/$ci" ]; then
+      tpl="$rel/$ci"; return 0
     fi
     files=()
     for f in "$dir"/*; do
-      [ ! -L "$f" ] && [ -f "$f" ] && [[ "$(lower "${f##*/}")" == *.md ]] && files+=("${f##*/}")
+      [ ! -L "$f" ] && [ -f "$f" ] && lower "${f##*/}" && [[ "$lc" == *.md ]] && files+=("${f##*/}")
     done
-    [ ${#files[@]} -eq 1 ] && { printf '%s\n' "$rel/${files[0]}"; return 0; }
+    [ ${#files[@]} -eq 1 ] && { tpl="$rel/${files[0]}"; return 0; }
   done
   return 0
 }
@@ -244,7 +250,7 @@ case "$cmd" in
         state="$( (repo="$(gh_repo)" && gh_pr_state) 2>/dev/null)" || state=""
         say "pr: ${state:-none}"
       fi
-      tpl="$(pr_template)"
+      pr_template
       say "pr template: $(shown "${tpl:-none}")"
     fi
     dirty="$(git -C "$path" status --porcelain)"
@@ -356,7 +362,7 @@ case "$cmd" in
     need_file "$td/pr-title"; need_file "$td/pr-body.md"
     title="$(head -n 1 "$td/pr-title")"
     [ -n "${title//[[:space:]]/}" ] || die "$td/pr-title has an empty first line"
-    tpl="$(pr_template)"
+    pr_template
     if [ -n "$tpl" ]; then
       # shellcheck disable=SC2016
       missing="$(node -e '
