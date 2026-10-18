@@ -23,11 +23,13 @@ Give a recommendation for every question, with its reason in a few words. Then w
 
 ## Depth scales with the ticket
 
-- **Small** — the change touches ≤ 3 files and its place is known: one short round, or state the assumptions and offer to skip the grill.
+- **Small** — the change touches ≤ 3 files and its place is known: one short round, or state the assumptions and offer to skip the grill — the ticket's own open questions are still asked.
 - **Larger** — go on in rounds until no decision is left unasked.
+
+An open question the ticket itself states — its own words ask it — is always asked, whatever the ticket's size. Skipping the grill on a small ticket covers only the decisions the ticket does not raise.
 
 ## Stopping and assumptions
 
-The user can end the grill at any point ("enough", "go with your assumptions"). Every decision not asked, and every open question the user skipped, goes into the draft's `## Assumptions` with the answer taken — the recommendation, unless the user said otherwise. A decision the user answered is written into the draft where it belongs, not into `## Assumptions`.
+The user can end the grill at any point ("enough", "go with your assumptions"). Every decision not asked, and every open question the user skipped, goes into the draft's `## Assumptions` with the answer taken — the recommendation, unless the user said otherwise. A decision the user answered is written into the draft where it belongs, not into `## Assumptions`. Accepting the recommendations ("go with your recommendations") answers every question asked in that round: each answer is written where it belongs, not into `## Assumptions`.
 
 The grill comes before the draft and never replaces the draft's approval stop.
