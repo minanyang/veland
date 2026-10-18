@@ -58,8 +58,10 @@ C3), and they passed in a rerun once fixed (`total 321s`, `cost $3.60` for the t
   or `glab` command, or one a skill's `allowed-tools` or the runner's grants cover — fails every scenario of the flow
   and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script): it
   is printed on stderr as `note: <flow> denied (not the skill's): <command>` and fails nothing. What
-  a user must allow, passed with `--settings` (an untrusted workspace ignores `.claude/settings.json`): `git -C * add *`,
-  `git -C * commit *`, `cutter-land issue *`, `cutter-land comment *`.
+  the skills leave to the user is granted to these throwaway runs with `--settings` (an untrusted workspace ignores
+  `.claude/settings.json`): `git -C * add *`, `git -C * commit *`, `cutter-land issue *`, `cutter-land comment *`. They
+  are the harness's grants, not rules to copy into your own settings: `git -C * commit *` can also match
+  `git -C <dir> -c core.hooksPath=<dir> commit`, which runs any code.
 - **The plugin under test** is `CUTTER_E2E_PLUGIN` (default: this repo). It is passed as `--plugin-dir`, its `bin/` comes
   right after the fake `gh` on PATH, every PATH entry containing `/.claude/plugins/` is dropped, and a flow fails before
   calling `claude` when `command -v cutter-land` does not resolve into that `bin/`.

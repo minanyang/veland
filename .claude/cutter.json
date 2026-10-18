@@ -2,7 +2,7 @@
   "base": "main",
   "gates": [
     "shellcheck bin/cutter-grill bin/cutter-land bin/cutter-plan-check bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
-    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js",
+    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js && node --check tests/e2e/fixture/test/greet.test.mjs",
     "bash tests/guard-bash.test.sh",
     "bash tests/context-gate.test.sh",
     "bash tests/stop-gate.test.sh",
@@ -19,7 +19,7 @@
   },
   "preReviewGates": [
     "shellcheck bin/cutter-grill bin/cutter-land bin/cutter-plan-check bin/cutter-red-proof bin/cutter-review-packet bin/cutter-verify bin/cutter-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
-    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js"
+    "node --check bin/cutter-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js && node --check tests/e2e/fixture/test/greet.test.mjs"
   ],
   "close": "pr-merge",
   "contextGate": {
