@@ -611,12 +611,16 @@ git remote set-url origin git@github.com:acme/land.git
 first_is() { [ "$(head -n 1 "$tmp/out")" = "$1" ] && ok "$2" || { bad "$2"; cat "$tmp/out"; }; }
 STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: pr by default" 0 cutter-land check L1
 first_is "mode: pr" "default: first line is mode: pr"
-for m in pr pr-merge local; do
-  mkdir -p .claude && echo "{\"close\":\"$m\"}" >.claude/cutter.json
-  STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: $m" 0 cutter-land check L1
-  first_is "mode: $m" "$m: first line is mode: $m"
-  rm -r .claude
-done
+mkdir -p .claude && echo '{"close":"pr"}' >.claude/cutter.json
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: pr" 0 cutter-land check L1
+first_is "mode: pr" "pr: first line is mode: pr"
+echo '{"close":"pr-merge"}' >.claude/cutter.json
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: pr-merge" 0 cutter-land check L1
+first_is "mode: pr-merge" "pr-merge: first line is mode: pr-merge"
+echo '{"close":"local"}' >.claude/cutter.json
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints mode: local" 0 cutter-land check L1
+first_is "mode: local" "local: first line is mode: local"
+rm -r .claude
 mkdir -p .claude && echo '{"close":"pr-merge"}' >.claude/cutter.json
 echo dirty >"$lw/new.txt"
 STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check prints the mode on a dirty worktree" 1 cutter-land check L1
