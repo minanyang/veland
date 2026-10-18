@@ -29,16 +29,27 @@ git remote add origin "$tmp/origin.git" && git push -q -u origin main
 
 # init: .cutter/ is excluded before anything is written there
 expect "init with an id" 0 cutter-worktree init T0
-[ "$(cat "$tmp/out")" = "$tmp/repo/.cutter/T0" ] || [ "$(cat "$tmp/out")" = "$(cd "$tmp/repo" && pwd -P)/.cutter/T0" ] && ok "init prints the ticket dir" || bad "init prints the ticket dir"
+# out_is <expected> <real-path expected> — the output is one of the two forms of a path under $tmp (macOS: /var vs /private/var).
+out_is() { [ "$(cat "$tmp/out")" = "$1" ] || [ "$(cat "$tmp/out")" = "$2" ]; }
+rp="$(cd "$tmp/repo" && pwd -P)"
+out_is "$(printf 'ticket dir: %s\nbase: main (origin/main)' "$tmp/repo/.cutter/T0")" "$(printf 'ticket dir: %s\nbase: main (origin/main)' "$rp/.cutter/T0")" \
+  && ok "init prints the ticket dir and the base" || { bad "init prints the ticket dir and the base"; cat "$tmp/out"; }
 echo plan >.cutter/T0/plan.md
 [ -z "$(git status --porcelain)" ] && ok "ticket files stay out of git before any worktree" || bad "ticket files stay out of git before any worktree"
 [ ! -e .cutter/drafts ] && ok "init <id> does not create drafts/" || bad "init <id> does not create drafts/"
 expect "init without an id" 0 cutter-worktree init
 [ -d .cutter/drafts ] && ok "init creates drafts/" || bad "init creates drafts/"
-[ "$(cat "$tmp/out")" = "$tmp/repo/.cutter" ] || [ "$(cat "$tmp/out")" = "$(cd "$tmp/repo" && pwd -P)/.cutter" ] && ok "init prints .cutter" || bad "init prints .cutter"
+out_is "$tmp/repo/.cutter" "$rp/.cutter" && ok "init without an id prints only .cutter" || bad "init without an id prints only .cutter"
 
 # worktree
 expect "worktree add" 0 cutter-worktree add T1 --slug mul
+# has_lines <id> <base line> — the output's first two lines are the ticket dir (either path form) and the base.
+has_lines() {
+  { [ "$(sed -n 1p "$tmp/out")" = "ticket dir: $tmp/repo/.cutter/$1" ] || [ "$(sed -n 1p "$tmp/out")" = "ticket dir: $rp/.cutter/$1" ]; } &&
+    [ "$(sed -n 2p "$tmp/out")" = "$2" ]
+}
+has_lines T1 "base: main (origin/main)" && grep -q '^created: ' "$tmp/out" \
+  && ok "add prints the ticket dir and the base when it creates the worktree" || { bad "add prints the ticket dir and the base when it creates the worktree"; cat "$tmp/out"; }
 wt="$tmp/repo/.worktrees/T1"
 [ -e "$wt/.git" ] && ok "worktree exists" || bad "worktree exists"
 [ "$(git -C "$wt" rev-parse --abbrev-ref HEAD)" = feat/T1-mul ] && ok "branch name" || bad "branch name"
@@ -46,6 +57,15 @@ grep -qxF '/.cutter/' .git/info/exclude && grep -qxF '/.worktrees/' .git/info/ex
 [ -z "$(git status --porcelain)" ] && ok "main checkout stays clean" || bad "main checkout stays clean"
 [ -z "$(git -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" ] && ok "new branch has no upstream" || bad "new branch has no upstream"
 expect "worktree add is re-runnable" 0 cutter-worktree add T1
+has_lines T1 "base: main (origin/main)" && grep -q '^exists: ' "$tmp/out" \
+  && ok "add prints the ticket dir and the base when the worktree exists" || { bad "add prints the ticket dir and the base when the worktree exists"; cat "$tmp/out"; }
+git push -q origin main:release
+mkdir -p .claude && echo '{"base":"release"}' >.claude/cutter.json
+expect "worktree add with a configured base" 0 cutter-worktree add TB --no-setup
+has_lines TB "base: release (origin/release)" && ok "add prints a configured base" || { bad "add prints a configured base"; cat "$tmp/out"; }
+cutter-worktree rm TB >/dev/null
+rm -r .claude
+git push -q origin --delete release
 expect "worktree path" 0 cutter-worktree path T1
 expect "bad id rejected" 2 cutter-worktree add "../x"
 
@@ -529,6 +549,28 @@ cutter-worktree add L1 --no-setup >/dev/null
 lw="$tmp/land/.worktrees/L1"
 
 expect "check on a clean worktree" 0 cutter-land check L1
+# check: after mode:, before the worktree lookup, the ticket dir, the base and the review
+lrp="$(cd "$tmp/land" && pwd -P)"
+line_is() { # <n> <expected under $tmp/land> — line <n> of the output, in either path form
+  [ "$(sed -n "$1p" "$tmp/out")" = "${2//@/$tmp/land}" ] || [ "$(sed -n "$1p" "$tmp/out")" = "${2//@/$lrp}" ]
+}
+line_is 2 "ticket dir: @/.cutter/L1" && line_is 3 "base: main (origin/main)" && line_is 4 "review: missing" \
+  && ok "check prints review: missing" || { bad "check prints review: missing"; cat "$tmp/out"; }
+echo "## Round 1 — full" >.cutter/L1/review.md
+expect "check with a review" 0 cutter-land check L1
+line_is 2 "ticket dir: @/.cutter/L1" && line_is 3 "base: main (origin/main)" && line_is 4 "review: @/.cutter/L1/review.md" \
+  && ok "check prints the ticket dir, the base and the review" || { bad "check prints the ticket dir, the base and the review"; cat "$tmp/out"; }
+mkdir -p .claude && echo '{"base":["x","ticket dir: /forged"]}' >.claude/cutter.json
+expect "check with a multi-line base" 0 cutter-land check L1
+line_is 3 'base: x\nticket dir: /forged (x\nticket dir: /forged)' && ! grep -q '^ticket dir: /forged' "$tmp/out" \
+  && ok "check prints a multi-line base on one line" || { bad "check prints a multi-line base on one line"; cat "$tmp/out"; }
+rm -r .claude
+mkdir -p .cutter/NOWT && echo "## Round 1 — full" >.cutter/NOWT/review.md
+expect "check without a worktree" 2 cutter-land check NOWT
+line_is 2 "ticket dir: @/.cutter/NOWT" && line_is 3 "base: main (origin/main)" && line_is 4 "review: @/.cutter/NOWT/review.md" &&
+  grep -q 'has no worktree' "$tmp/out" \
+  && ok "check prints the ticket dir and the review without a worktree" || { bad "check prints the ticket dir and the review without a worktree"; cat "$tmp/out"; }
+rm -r .cutter/NOWT
 echo dirty >"$lw/new.txt"
 expect "check on a dirty worktree" 1 cutter-land check L1
 grep -q 'new.txt' "$tmp/out" && ok "check lists the files" || bad "check lists the files"
