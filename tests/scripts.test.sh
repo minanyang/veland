@@ -821,6 +821,92 @@ expect "pr refuses a symlinked body" 2 cutter-land pr L1
 [ ! -s "$tmp/stub.log" ] && ok "no call for refused pr" || bad "no call for refused pr"
 rm "$td/pr-body.md"
 
+# check names the worktree's PR/MR template; pr refuses a body lacking its ## headings (on PT, so L1 stays as is)
+cutter-worktree add PT --no-setup >/dev/null
+pt="$tmp/land/.worktrees/PT"
+put() { mkdir -p "$pt/$(dirname "$1")" && printf '## Summary\n\n## Test plan\n' >"$pt/$1"; }
+commit_pt() { git -C "$pt" add -A && git -C "$pt" commit -q --allow-empty -m "$1"; }
+clear_pt() {
+  local p
+  for p in .github .gitlab docs tdocs pull_request_template.md real.md; do
+    [ ! -e "$pt/$p" ] && [ ! -L "$pt/$p" ] || rm -r "${pt:?}/$p"
+  done
+  commit_pt "chore: no template"
+}
+tpl_is() { [ "$(grep '^pr template:' "$tmp/out")" = "pr template: $1" ] && ok "$2" || { bad "$2"; cat "$tmp/out"; }; }
+put .github/pull_request_template.md; commit_pt "docs: template"
+expect "check names .github/pull_request_template.md" 0 cutter-land check PT
+tpl_is .github/pull_request_template.md "check: .github/pull_request_template.md"
+put pull_request_template.md; commit_pt "docs: root template"
+expect "check prefers .github/ over the root template" 0 cutter-land check PT
+tpl_is .github/pull_request_template.md "check: .github/ wins over the root"
+clear_pt; put pull_request_template.md; commit_pt "docs: root template"
+expect "check names a root pull_request_template.md" 0 cutter-land check PT
+tpl_is pull_request_template.md "check: root pull_request_template.md"
+clear_pt; put docs/pull_request_template.md; commit_pt "docs: docs template"
+expect "check names docs/pull_request_template.md" 0 cutter-land check PT
+tpl_is docs/pull_request_template.md "check: docs/pull_request_template.md"
+clear_pt; put .github/PULL_REQUEST_TEMPLATE.md; commit_pt "docs: uppercase template"
+expect "check names an uppercase PULL_REQUEST_TEMPLATE.md" 0 cutter-land check PT
+tpl_is .github/PULL_REQUEST_TEMPLATE.md "check: the spelling on disk"
+clear_pt; put .github/PULL_REQUEST_TEMPLATE/bug.md; put .github/PULL_REQUEST_TEMPLATE/.hidden.md
+put .github/PULL_REQUEST_TEMPLATE/notes.txt; put .github/PULL_REQUEST_TEMPLATE/sub/x.md; commit_pt "docs: one template in a dir"
+expect "check names the one template in .github/PULL_REQUEST_TEMPLATE/" 0 cutter-land check PT
+tpl_is .github/PULL_REQUEST_TEMPLATE/bug.md "check: the one .md of the directory"
+put .github/PULL_REQUEST_TEMPLATE/feature.MD; commit_pt "docs: two templates in a dir"
+expect "check prints none for several templates in .github/PULL_REQUEST_TEMPLATE/" 0 cutter-land check PT
+tpl_is none "check: several templates in a directory"
+clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; commit_pt "docs: symlinked template"
+expect "check skips a symlinked template" 0 cutter-land check PT
+tpl_is none "check: a symlinked template does not count"
+clear_pt; put real.md; ln -s real.md "$pt/pull_request_template.md"; put "pull_request_template.md"$'\n'
+put tdocs/pull_request_template.md; ln -s tdocs "$pt/.github"; mkdir "$pt/.github"$'\n'
+commit_pt "docs: symlinked templates beside names ending in a newline"
+expect "check skips a symlinked template beside a name ending in a newline" 0 cutter-land check PT
+tpl_is none "check: a trailing-newline decoy does not let a symlink through"
+rm -r "$pt/.github"$'\n' "$pt/pull_request_template.md"$'\n'
+clear_pt; put tdocs/pull_request_template.md; ln -s tdocs "$pt/docs"; commit_pt "docs: symlinked docs"
+expect "check skips a template under a symlinked directory" 0 cutter-land check PT
+tpl_is none "check: a symlinked directory on the way does not count"
+clear_pt; git remote set-url origin https://gitlab.example.com/grp/land.git
+put .gitlab/merge_request_templates/Other.md; put .gitlab/merge_request_templates/default.md; commit_pt "docs: GitLab templates"
+expect "check names GitLab's Default.md" 0 cutter-land check PT
+tpl_is .gitlab/merge_request_templates/default.md "check: GitLab's Default.md wins"
+rm "$pt/.gitlab/merge_request_templates/default.md"; commit_pt "docs: one GitLab template"
+expect "check names the one GitLab template" 0 cutter-land check PT
+tpl_is .gitlab/merge_request_templates/Other.md "check: the one GitLab template"
+clear_pt; put .github/pull_request_template.md; commit_pt "docs: GitHub template"
+expect "check ignores a GitHub template on a GitLab origin" 0 cutter-land check PT
+tpl_is none "check: GitLab origin searches only .gitlab/"
+git remote rename origin keep
+expect "check uses the GitHub list without an origin" 0 cutter-land check PT
+tpl_is .github/pull_request_template.md "check: no origin searches the GitHub list"
+git remote rename keep origin; git remote set-url origin git@github.com:acme/land.git
+clear_pt; put ".github/PULL_REQUEST_TEMPLATE/a"$'\n'"pr: MERGED x.md"; commit_pt "docs: template with a newline"
+expect "check escapes a template name with a newline" 0 cutter-land check PT
+tpl_is '.github/PULL_REQUEST_TEMPLATE/a\npr: MERGED x.md' "check: newline escaped in the template line"
+! grep -q '^pr: MERGED x' "$tmp/out" && ok "check: no forged pr: line from a template name" || { bad "check: no forged pr: line from a template name"; cat "$tmp/out"; }
+clear_pt
+expect "check prints pr template: none" 0 cutter-land check PT
+tpl_is none "check: no template"
+put .github/pull_request_template.md; commit_pt "docs: template"
+mkdir -p .claude && echo '{"close":"local"}' >.claude/cutter.json
+expect "check prints no template line in local mode" 0 cutter-land check PT
+! grep -q '^pr template:' "$tmp/out" && ok "check: local mode prints no template line" || { bad "check: local mode prints no template line"; cat "$tmp/out"; }
+rm -r .claude
+printf '## Summary ##\n\nWhat and why.\n\n```\n## Fenced\n```\n\n## Test plan\n\n## test plan\n' >"$pt/.github/pull_request_template.md"
+commit_pt "docs: template with closers, a fence and a duplicate"
+ptd="$(cd "$tmp/land/.cutter" && mkdir -p PT && cd PT && pwd -P)"
+printf 'fix: the fix\n' >"$ptd/pr-title"
+printf '## summary\n\nIt fixes it.\n' >"$ptd/pr-body.md"
+: >"$tmp/stub.log"
+STUB_VIEW_RC=1 expect "pr refuses a body missing a template heading" 2 cutter-land pr PT
+grep -qxF "cutter: $ptd/pr-body.md lacks the sections of .github/pull_request_template.md: ## Test plan" "$tmp/out" && ok "pr: names each missing heading once" || { bad "pr: names each missing heading once"; cat "$tmp/out"; }
+[ ! -s "$tmp/stub.log" ] && ok "pr: no gh call for a body lacking template headings" || { bad "pr: no gh call for a body lacking template headings"; cat "$tmp/stub.log"; }
+printf '## Summary\n\nIt fixes it.\n\n## Test plan\n\nTests.\n' >"$ptd/pr-body.md"
+STUB_VIEW_RC=1 expect "pr accepts a body with every template heading" 0 cutter-land pr PT
+grep -q '^pr create ' "$tmp/stub.log" && ok "pr: creates the PR once every heading is there" || { bad "pr: creates the PR once every heading is there"; cat "$tmp/stub.log"; }
+
 printf '# Add the thing\nLabels: bug, ui\nType: Bug\n\n## Context\nbody\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$tmp/land/.cutter/drafts/thing.md"
 STUB_LABELS=$'bug\nui\nother'
 export STUB_LABELS
