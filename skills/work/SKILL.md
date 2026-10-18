@@ -45,7 +45,7 @@ Run `cutter-worktree init <id>` first — it creates `.cutter/<id>/` and keeps `
 
 Then grill: read `references/grill.md` at the plugin root (two levels above this skill's base directory) and follow it. The questions here are technical — where a rule lives, the data's shape, interfaces, migration order. A product question the ticket leaves open (what the user gets, an edge case, what counts as done) is asked in the same grill:
 
-- **GitHub issue** — the issue stays the record. After the grill, write the product answers to `.cutter/<id>/comment.md`: a line `Decisions from planning:`, then one `**Q — <title>**: <answer>` line each, nothing else. No product question, no comment. Technical answers go only into `plan.md`.
+- **GitHub issue** — the issue stays the record. After the grill, write the product answers to `.cutter/<id>/comment.md` — every open question the ticket itself states among them, whether the user answered it or accepted the recommendation: a line `Decisions from planning:`, then one `**Q — <title>**: <answer>` line each, nothing else. No product question, no comment. Technical answers go only into `plan.md`.
 - **Words** — product and technical questions alike; nothing is posted.
 
 Write `.cutter/<id>/plan.md`:

@@ -3,6 +3,7 @@
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
 # open and work must load the shared references/grill.md (beside the skills directory).
+# The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
 # open, work and close must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
@@ -160,6 +161,20 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
   const draft = step(0).slice(step(0).indexOf("exists as a draft"))
   draft.indexOf("`cutter-plan-check <id>`") !== -1 && draft.indexOf("`cutter-plan-check <id>`") < draft.indexOf("show the draft once")
     ? ok("work: checks a draft plan before showing it") : bad("work: does not check a draft plan before showing it")
+}
+
+// A question the ticket itself asks is never settled silently: the grill always asks it, an accepted recommendation
+// counts as its answer, and work posts that answer to the issue through comment.md.
+{
+  const text = fs.readFileSync(grill, "utf8")
+  text.includes("An open question the ticket itself states — its own words ask it — is always asked, whatever the ticket's size.")
+    ? ok("grill: always asks the ticket's own open questions") : bad("grill: does not always ask the ticket's own open questions")
+  text.includes("Accepting the recommendations (\"go with your recommendations\") answers every question asked in that round")
+    ? ok("grill: an accepted recommendation is an answer") : bad("grill: an accepted recommendation is not an answer")
+  const step1 = (/^## Step 1\b[\s\S]*?(?=^## Step )/m.exec(fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")) || [""])[0]
+  step1.includes("`.cutter/<id>/comment.md` — every open question the ticket itself states among them, whether the user answered it or accepted the recommendation")
+    ? ok("work: posts the answers to the ticket's own questions through comment.md")
+    : bad("work: does not post the answers to the ticket's own questions through comment.md")
 }
 
 for (const skill of ["open", "work", "close"])
