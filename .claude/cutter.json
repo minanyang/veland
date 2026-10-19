@@ -11,6 +11,7 @@
     "bash tests/red-proof-runners.test.sh",
     "bash tests/skills.test.sh",
     "bash tests/e2e-runner.test.sh",
+    "bash tests/docs.test.sh",
     "claude plugin validate ."
   ],
   "redProof": {
