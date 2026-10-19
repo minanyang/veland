@@ -111,7 +111,7 @@ skills 用到的 script 見 [docs/scripts.md](docs/scripts.md)（英文）。
 
 - **Guard 只是盡力而為，不是 sandbox。** 它比對的是指令文字，所以 script、alias 或 `eval` 都能繞過。
 - **公開寫入一律會問。** 建立 issue 和貼規劃留言都不在任何 skill 的 `allowed-tools` 裡，所以就算你已經核准草稿，每次還是會跳出權限詢問。在 auto mode 下則由分類器決定，不會跳出詢問。
-- **寫入只吃 ticket id。** push、開 PR、合併 PR 都經過 `cutter-land`，它只用 ticket id 組出每個指令，所以不需要在設定裡允許 `gh pr merge` 或 `git push`。
+- **寫入只吃 ticket id。** push、開 PR、合併 PR 都經過 `cutter-land`，它只用 ticket id 組出每個指令，所以不應該在設定裡允許 `gh pr merge` 或 `git push`。
 - **授權只在你輸入 skill 的那個 session 有效。** [Grant hook](docs/hooks.md#grant) 只放行符合該 skill 授權的單一指令，subagent 裡不適用，而 cutter 的 script 只能用在你輸入 skill 時指定的那張 ticket。
 - **有些 script 會執行專案的程式碼。** `cutter-verify`、`cutter-red-proof` 和 `cutter-worktree add` 會跑專案的 gates、setup 和測試，所以授權它們，等同於讓 agent 可以寫入 repo 裡的檔案。
 
