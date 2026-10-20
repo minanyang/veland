@@ -1,8 +1,8 @@
-// GitHub issue forms, read the same way by cutter-land issue (the check) and cutter-worktree init (the listing).
+// GitHub issue forms, read the same way by veland-land issue (the check) and veland-worktree init (the listing).
 //
 //   node scripts/issue-form.js <root> <banned-phrases path>
 //
-// prints `drafts: <root>/.cutter/drafts`, one `form:` line per form in <root>/.github/ISSUE_TEMPLATE/ (or
+// prints `drafts: <root>/.veland/drafts`, one `form:` line per form in <root>/.github/ISSUE_TEMPLATE/ (or
 // `forms: none`), one `template:` line per .md template and `banned: <json array>`. Every value is JSON-encoded,
 // so none can print a line that reads as another; symlinks are never followed.
 
@@ -91,10 +91,10 @@ function describe(text) {
 function list(root, bannedPath) {
   const { phrases } = require('./md-check.js')
   if (!fs.existsSync(bannedPath) || !fs.statSync(bannedPath).isFile()) {
-    process.stderr.write('cutter: ' + bannedPath + ' is missing\n')
+    process.stderr.write('veland: ' + bannedPath + ' is missing\n')
     process.exit(2)
   }
-  const out = ['drafts: ' + path.join(root, '.cutter', 'drafts')]
+  const out = ['drafts: ' + path.join(root, '.veland', 'drafts')]
   const dir = path.join(root, '.github', 'ISSUE_TEMPLATE')
   let names = []
   // Neither .github nor ISSUE_TEMPLATE may be a symlink: the listing never reads outside the repo.
@@ -102,7 +102,7 @@ function list(root, bannedPath) {
     if (fs.lstatSync(path.dirname(dir)).isDirectory() && fs.lstatSync(dir).isDirectory()) names = fs.readdirSync(dir).sort()
   } catch (e) { if (e.code !== 'ENOENT') throw e }
   const regular = (f) => { const s = fs.lstatSync(path.join(dir, f)); return !s.isSymbolicLink() && s.isFile() }
-  // A name cutter-land would refuse as Form: is never usable, and could carry a newline into the output.
+  // A name veland-land would refuse as Form: is never usable, and could carry a newline into the output.
   const entry = (kind, f, ok, rest) =>
     kind + ': ' + (ok.test(f) ? f + ' ' + rest() : JSON.stringify(f) + ' error: "invalid file name"')
   const forms = names.filter((f) => /\.ya?ml$/.test(f) && f !== 'config.yml' && f !== 'config.yaml')

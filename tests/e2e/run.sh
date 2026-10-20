@@ -1,5 +1,5 @@
 #!/bin/bash
-# End-to-end scenarios for /cutter:open, /cutter:work and /cutter:close: real `claude -p` runs against throwaway repos,
+# End-to-end scenarios for /veland:open, /veland:work and /veland:close: real `claude -p` runs against throwaway repos,
 # a github.com origin backed by a local bare repo, and a fake gh. See README.md.
 #
 #   bash tests/e2e/run.sh [<scenario>...]
@@ -7,7 +7,7 @@
 # Scenario ids (case-sensitive): 1-14, O1-O3, W1-W7, C1-C3. Prints one line per scenario, in that order,
 #   <pass|FAIL>  <id>  <flow seconds>s  <reason>        (the reason only on FAIL)
 # then `total <seconds>s`. Exit 0 when all pass, 1 when any fails, 2 for an unknown id or a missing prerequisite.
-# CUTTER_E2E_PLUGIN names the plugin under test (default: this repo); CUTTER_E2E_CLAUDE the claude binary.
+# VELAND_E2E_PLUGIN names the plugin under test (default: this repo); VELAND_E2E_CLAUDE the claude binary.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

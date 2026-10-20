@@ -1,4 +1,4 @@
-// Markdown matching shared by cutter-land issue, cutter-plan-check, cutter-review-packet and hooks/stop-gate.js,
+// Markdown matching shared by veland-land issue, veland-plan-check, veland-review-packet and hooks/stop-gate.js,
 // so every check reads code, fences and the banned list the same way.
 
 const fs = require('node:fs')

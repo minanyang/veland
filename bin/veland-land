@@ -1,20 +1,20 @@
 #!/bin/bash
-# The writes /cutter:close, /cutter:open and /cutter:work need, each taking only a ticket id or a draft slug — the command
-# line is built here, so a permission rule for `cutter-land <sub> *` cannot be stretched into a force-push,
+# The writes /veland:close, /veland:open and /veland:work need, each taking only a ticket id or a draft slug — the command
+# line is built here, so a permission rule for `veland-land <sub> *` cannot be stretched into a force-push,
 # a bypass or a publish of another file or repo.
 #
-#   cutter-land check  <id>
-#   cutter-land rebase <id>
-#   cutter-land push   <id>
-#   cutter-land merge  <id>
-#   cutter-land wait   <id>
-#   cutter-land squash <id>
-#   cutter-land pr     <id>
-#   cutter-land issue  <slug>
-#   cutter-land comment <id>
+#   veland-land check  <id>
+#   veland-land rebase <id>
+#   veland-land push   <id>
+#   veland-land merge  <id>
+#   veland-land wait   <id>
+#   veland-land squash <id>
+#   veland-land pr     <id>
+#   veland-land issue  <slug>
+#   veland-land comment <id>
 #
 # `check` first prints the configured close mode, `mode: <close>` (exit 2 on a value other than pr, pr-merge or local,
-# before looking for the worktree), then, still before the worktree lookup, `ticket dir: <abs .cutter/<id>>`,
+# before looking for the worktree), then, still before the worktree lookup, `ticket dir: <abs .veland/<id>>`,
 # `base: <branch> (<ref>)`, and `review: <abs path>` or `review: missing`. In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
 # `pr: <STATE> <url>`, or `pr: none` when gh finds none, and in pr or pr-merge mode the PR/MR template the body must
 # follow, `pr template: <path>` relative to the worktree, or `pr template: none`. It exits 1 and lists the files when the
@@ -36,33 +36,33 @@
 # Exit 4: origin/<base> moved since the rebase. Exit 3: the only objection is checks still running or not yet
 # registered (named). Failed checks, and every other refusal, exit 2. Never --admin, never the delete-branch flags.
 # `wait` (github.com only) checks the PR like `merge`, then polls its checks with the same rule every
-# $CUTTER_WAIT_INTERVAL seconds (30) until they are all green (exit 0), any fails (exit 1, failed checks named) or
-# $CUTTER_WAIT_CAP seconds (1800) pass (exit 1, pending checks named). A PR head other than the worktree's HEAD exits 2.
-# `squash` (local mode) lands the ticket branch on the base as one commit with .cutter/<id>/commit-msg as its
+# $VELAND_WAIT_INTERVAL seconds (30) until they are all green (exit 0), any fails (exit 1, failed checks named) or
+# $VELAND_WAIT_CAP seconds (1800) pass (exit 1, pending checks named). A PR head other than the worktree's HEAD exits 2.
+# `squash` (local mode) lands the ticket branch on the base as one commit with .veland/<id>/commit-msg as its
 # message; it refuses unless the branch is rebased onto the base. With the main checkout on the base it
 # fast-forwards it, keeping uncommitted changes to files the squash does not touch.
-# `pr` opens the ticket's PR/MR from .cutter/<id>/pr-title and pr-body.md, or, when the branch already
+# `pr` opens the ticket's PR/MR from .veland/<id>/pr-title and pr-body.md, or, when the branch already
 # has an open one, replaces only its body; on GitHub it refuses a branch whose PR is already merged. It refuses,
 # before any gh or glab call, a pr-body.md lacking any `##` heading of the worktree's template (as `check` finds it),
 # naming the missing ones; headings match trimmed, in any case, without closing #s, fenced ones ignored. The repo is
 # pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
-# `issue` (github.com only) creates an issue from .cutter/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
+# `issue` (github.com only) creates an issue from .veland/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
 # every label must already exist in the repo. When the main checkout has issue forms (.github/ISSUE_TEMPLATE/*.yml
 # besides config.yml) the draft's `Form: <file>` must name one, and every required field's `### <label>` section must
 # have content; without forms the body needs a `## Acceptance criteria` section. Either way each checkbox criterion
 # there needs `AC<n>` + a dash or colon, one per line, and no phrase of references/banned-phrases.txt may appear
 # outside code. Any refusal exits 2 before `gh issue create`. Once `gh issue create` succeeds the draft is deleted;
 # when it fails, the draft stays and the script exits with gh's code.
-# `comment` (github.com only) posts .cutter/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
-# repo, only when the url in .cutter/<id>/ticket.md's header is that issue's, then renames it to comment.posted.md;
-# it needs no worktree, since /cutter:work posts it while planning.
+# `comment` (github.com only) posts .veland/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
+# repo, only when the url in .veland/<id>/ticket.md's header is that issue's, then renames it to comment.posted.md;
+# it needs no worktree, since /veland:work posts it while planning.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-usage="usage: cutter-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue <slug>"
+usage="usage: veland-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
 if [ "$cmd" = issue ]; then
@@ -73,11 +73,11 @@ elif [ "$cmd" = comment ]; then
 else
   check_id "$id"
   if [ "$cmd" = check ]; then
-    # Printed before the worktree lookup, so /cutter:close has the mode even when the ticket has no worktree.
+    # Printed before the worktree lookup, so /veland:close has the mode even when the ticket has no worktree.
     mode="$(cfg close pr)"
     shown="$(shown "$mode")"
     say "mode: $shown"
-    case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/cutter.json (want pr, pr-merge or local)" ;; esac
+    case "$mode" in pr|pr-merge|local) ;; *) die "unknown close mode '$shown' in .claude/veland.json (want pr, pr-merge or local)" ;; esac
     ticket_lines "$id"
     review="$(task_dir "$id")/review.md"
     if [ -f "$review" ] && [ ! -L "$review" ]; then say "review: $(shown "$review")"; else say "review: missing"; fi
@@ -236,10 +236,10 @@ pr_template() {
   done
   return 0
 }
-# A regular, non-empty file with one link, really inside .cutter/ (no symlink anywhere on the way), or die.
+# A regular, non-empty file with one link, really inside .veland/ (no symlink anywhere on the way), or die.
 need_file() {
   [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"
-  [ ! -L "$ROOT/.cutter" ] && [[ "$(readlink -f "$1")" == "$(readlink -f "$ROOT/.cutter")/"* ]] || die "$1 resolves outside .cutter/"
+  [ ! -L "$ROOT/.veland" ] && [[ "$(readlink -f "$1")" == "$(readlink -f "$ROOT/.veland")/"* ]] || die "$1 resolves outside .veland/"
   [ -n "$(find "$1" -maxdepth 0 -links 1)" ] || die "$1 has more than one hard link"
 }
 
@@ -296,12 +296,12 @@ case "$cmd" in
         # An explicit refspec: a narrowed remote.origin.fetch would leave origin/<base> stale and the check below moot.
         git -C "$ROOT" fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" || die "could not fetch origin/$base"
         if ! git -C "$path" merge-base --is-ancestor "refs/remotes/origin/$base" HEAD; then
-          say "cutter: origin/$base moved since $branch was rebased — rebase again" >&2; exit 4
+          say "veland: origin/$base moved since $branch was rebased — rebase again" >&2; exit 4
         fi
         checks_state
         [ -z "$failed" ] || die "checks of $branch failed:"$'\n'"$failed${pending:+$'\n'still pending:$'\n'$pending}"
         if [ -n "$pending" ]; then
-          say "cutter: checks of $branch are still pending:"$'\n'"$pending" >&2; exit 3
+          say "veland: checks of $branch are still pending:"$'\n'"$pending" >&2; exit 3
         fi
         gh pr merge "$branch" --repo "$repo" --squash --match-head-commit "$(git -C "$path" rev-parse HEAD)"
         ;;
@@ -319,8 +319,8 @@ case "$cmd" in
     has_origin || die "no origin"
     origin_parts
     [ "$o_host" = github.com ] || die "wait needs a github.com origin"
-    cap="${CUTTER_WAIT_CAP:-1800}"; interval="${CUTTER_WAIT_INTERVAL:-30}"
-    [[ "$cap" =~ ^[0-9]+$ && "$interval" =~ ^[0-9]+$ ]] || die "CUTTER_WAIT_CAP and CUTTER_WAIT_INTERVAL must be whole seconds"
+    cap="${VELAND_WAIT_CAP:-1800}"; interval="${VELAND_WAIT_INTERVAL:-30}"
+    [[ "$cap" =~ ^[0-9]+$ && "$interval" =~ ^[0-9]+$ ]] || die "VELAND_WAIT_CAP and VELAND_WAIT_INTERVAL must be whole seconds"
     repo="$(gh_repo)"
     got="$(gh_view)" || die "no PR found for $branch"
     [ "$got" = "$base OPEN false" ] || die "PR of $branch is '$got', want '$base OPEN false' (base, state, from a fork)"
@@ -412,7 +412,7 @@ case "$cmd" in
     has_origin || die "no origin"
     origin_parts
     [ "$o_host" = github.com ] || die "issue needs a github.com origin"
-    draft="$ROOT/.cutter/drafts/$id.md"
+    draft="$ROOT/.veland/drafts/$id.md"
     need_file "$draft"
     repo="$(gh_repo)"
     { IFS= read -r first || true; } <"$draft"
@@ -538,11 +538,11 @@ case "$cmd" in
     need_file "$td/comment.md"; need_file "$td/ticket.md"
     repo="$(gh_repo)"
     # The ticket must have been read from this very issue, not #<n> of another repo. Only line 4, the url
-    # cutter-ticket writes in the header, counts: the issue body and comments below it are anyone's text.
+    # veland-ticket writes in the header, counts: the issue body and comments below it are anyone's text.
     sed -n 4p "$td/ticket.md" | grep -Fixq -- "- url: https://$repo/issues/$number" || die "$td/ticket.md is not issue #$number of $repo; not commenting"
     gh issue comment "$number" --repo "$repo" --body-file "$td/comment.md"
     # A posted comment is never posted again: a second call finds no comment.md. The earlier comment.posted.md is
-    # removed first, so a symlink there cannot make mv write outside .cutter/ (rm removes the link, not its target).
+    # removed first, so a symlink there cannot make mv write outside .veland/ (rm removes the link, not its target).
     rm -f "$td/comment.posted.md"
     mv -f "$td/comment.md" "$td/comment.posted.md"
     ;;

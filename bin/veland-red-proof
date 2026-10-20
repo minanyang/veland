@@ -1,7 +1,7 @@
 #!/bin/bash
 # Prove that a ticket's tests test the ticket: they must go red without the change.
 #
-#   cutter-red-proof <id>
+#   veland-red-proof <id>
 #
 # "The string appears in a test" is not "the string is tested". A test that never imports
 # the unit it names, or asserts a constant equals itself, stays green whatever the
@@ -21,12 +21,12 @@
 # reported as `note`. Not reverted: test helpers and fixtures, package.json and lockfiles
 # (dependencies are not reinstalled).
 #
-# Runners: jest, vitest, else `node --test`. Any other stack declares its own in .claude/cutter.json:
+# Runners: jest, vitest, else `node --test`. Any other stack declares its own in .claude/veland.json:
 # `redProof.command` (a shell command with `{file}`, run once per test file in the worktree root)
 # and `redProof.tests` (git pathspec globs naming the test files); a file is judged by its exit
 # code, and a modified test file that stays green is GREEN (no `note` in this mode).
 # The worktree must be clean. The tree is always restored on exit, and the ticket lock is
-# shared with cutter-verify. Agent memory (.claude/agent-memory/) is never checked, reverted
+# shared with veland-verify. Agent memory (.claude/agent-memory/) is never checked, reverted
 # or restored: agents may write it while red-proof runs.
 # Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run
 # (including: a changed test file does not pass at HEAD).
@@ -35,7 +35,7 @@ set -uo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-id="${1:-}"; [ -n "$id" ] || die "usage: cutter-red-proof <id>"
+id="${1:-}"; [ -n "$id" ] || die "usage: veland-red-proof <id>"
 check_id "$id"
 path="$(wt_path "$id")"
 [ -z "$(tree_status "$path")" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
@@ -46,7 +46,7 @@ if [ -n "$rp_cmd" ]; then
   [ ${#rp_globs[@]} -gt 0 ] || die "redProof.command is set but redProof.tests is missing (git pathspec globs naming the test files)"
   [[ "$rp_cmd" == *'{file}'* ]] || die "redProof.command has no {file} placeholder"
 elif [ ! -f "$path/package.json" ]; then
-  die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) out of the box; for another stack set redProof.command and redProof.tests in .claude/cutter.json"
+  die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) out of the box; for another stack set redProof.command and redProof.tests in .claude/veland.json"
 fi
 base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
 

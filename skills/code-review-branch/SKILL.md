@@ -20,7 +20,7 @@ Full-branch review covering every commit on the current branch since it diverged
 
 **Default — review and apply fixes.** What an engineer wants pre-PR. Run all steps. Stage user's work as baseline (step 3); apply fixes as unstaged edits (step 5).
 
-**Findings-only.** Invoked when the caller says "no fixes" / "report only", or when the calling agent is `cutter:code-reviewer`. Never modify git state, never edit files. In step 3, skip staging and instead capture three diffs — `git diff`, `git diff --cached`, and `git diff <base>...HEAD` — treating their union as the user's work. Skip step 5 entirely. The report from step 4 is the deliverable.
+**Findings-only.** Invoked when the caller says "no fixes" / "report only", or when the calling agent is `veland:code-reviewer`. Never modify git state, never edit files. In step 3, skip staging and instead capture three diffs — `git diff`, `git diff --cached`, and `git diff <base>...HEAD` — treating their union as the user's work. Skip step 5 entirely. The report from step 4 is the deliverable.
 
 ## Procedure
 

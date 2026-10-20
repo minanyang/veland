@@ -7,15 +7,15 @@
 # Compatible with bash 3.2 (macOS): no associative arrays, no mapfile.
 
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-PLUGIN="${CUTTER_E2E_PLUGIN:-$(cd "$E2E_DIR/../.." && pwd -P)}"
+PLUGIN="${VELAND_E2E_PLUGIN:-$(cd "$E2E_DIR/../.." && pwd -P)}"
 TICKET_BRANCH="fix/gh-5-greet-twice"
 ORIGIN_URL="git@github.com:test/fixture.git"
 # What a user must allow: the commands the skills leave to the user. --settings works in an untrusted workspace,
 # where .claude/settings.json is ignored.
-E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(cutter-land issue *)","Bash(cutter-land comment *)"]}}'
+E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(veland-land issue *)","Bash(veland-land comment *)"]}}'
 
 # `claude` is resolved before PATH is rewritten.
-CLAUDE_BIN="${CUTTER_E2E_CLAUDE:-claude}"
+CLAUDE_BIN="${VELAND_E2E_CLAUDE:-claude}"
 case "$CLAUDE_BIN" in */*) ;; *) CLAUDE_BIN="$(type -P "$CLAUDE_BIN" || true)" ;; esac
 ORIG_PATH="$PATH"
 
@@ -28,7 +28,7 @@ e2e_prereqs() {
   set -- $v
   # shellcheck disable=SC2015  # the else branch is the failure either way
   [ -n "${1:-}" ] && { [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && [ "${2:-0}" -ge 38 ]; }; } || { echo "run.sh: git >= 2.38 is required (merge-tree --write-tree), found '$(git --version 2>&1)'" >&2; return 1; }
-  [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ] || { echo "run.sh: claude is not installed (set CUTTER_E2E_CLAUDE)" >&2; return 1; }
+  [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ] || { echo "run.sh: claude is not installed (set VELAND_E2E_CLAUDE)" >&2; return 1; }
 }
 
 # ---------------------------------------------------------------- environment
@@ -63,7 +63,7 @@ renv() {
   env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GH_HOST -u GH_REPO -u E2E_GH_QUIET \
     "PATH=$E2E_PATH" "GH_CONFIG_DIR=$RUN/ghconfig" "GIT_CONFIG_GLOBAL=$RUN/gitconfig" \
     "GIT_SSH_COMMAND=$(printf '%q' "$E2E_DIR/bin/ssh")" "E2E_ORIGIN=$ORIGIN" "E2E_GH_DIR=$GHD" \
-    "CUTTER_WAIT_INTERVAL=1" "GIT_TERMINAL_PROMPT=0" "$@"
+    "VELAND_WAIT_INTERVAL=1" "GIT_TERMINAL_PROMPT=0" "$@"
 }
 inrepo() { (cd "$REPO" && renv "$@"); }
 rgit() { renv git -C "$REPO" "$@"; }
@@ -99,7 +99,7 @@ new_run() {
   [ "$forms" = 1 ] || { [ ! -d "$REPO/.github/ISSUE_TEMPLATE" ] || rm -r "$REPO/.github/ISSUE_TEMPLATE"; }
   rmdir "$REPO/.github" 2>/dev/null || true
   mkdir -p "$REPO/.claude"
-  jq -n --arg close "$mode" '{base: "main", gates: ["node --test"], close: $close}' >"$REPO/.claude/cutter.json"
+  jq -n --arg close "$mode" '{base: "main", gates: ["node --test"], close: $close}' >"$REPO/.claude/veland.json"
   renv git -C "$REPO" init -q --initial-branch=main
   rgit add -A
   rgit commit -q -m "chore: fixture"
@@ -116,7 +116,7 @@ seed_state() { printf '%s\n' "$1" >"$GHD/state.json"; }
 
 new_session() { SESSION=""; }
 
-# preflight — what must hold before claude runs: no real gh on PATH, cutter-land from the plugin under test.
+# preflight — what must hold before claude runs: no real gh on PATH, veland-land from the plugin under test.
 preflight() {
   local gh cl dir want
   [ ! -f "$RUN/preflight-err" ] || return 1
@@ -126,12 +126,12 @@ preflight() {
   elif [ -n "$gh" ]; then
     echo "a gh is reachable on PATH ($gh) in a run without the fake" >"$RUN/preflight-err"; return 1
   fi
-  cl="$(PATH="$E2E_PATH" type -P cutter-land || true)"
+  cl="$(PATH="$E2E_PATH" type -P veland-land || true)"
   want="$(cd "$PLUGIN/bin" 2>/dev/null && pwd -P || true)"
   dir=""
   [ -z "$cl" ] || dir="$(cd "$(dirname "$cl")" && pwd -P)"
   if [ -z "$want" ] || [ "$dir" != "$want" ]; then
-    echo "cutter-land resolves to '${cl:-nothing}', not into $PLUGIN/bin" >"$RUN/preflight-err"; return 1
+    echo "veland-land resolves to '${cl:-nothing}', not into $PLUGIN/bin" >"$RUN/preflight-err"; return 1
   fi
 }
 
@@ -221,14 +221,14 @@ skill_grants() {
   { grep -h '^  - Bash(' "$PLUGIN"/skills/*/SKILL.md; jq -r '.permissions.allow[]' <<<"$E2E_SETTINGS"; } |
     sed -n 's/^ *- //; s/^Bash(\(.*\))$/\1/p'
 }
-# in_skill_scope <tool> <command> — a denial the skills own: any tool but Bash, a cutter-, gh or glab command, or a
+# in_skill_scope <tool> <command> — a denial the skills own: any tool but Bash, a veland-, gh or glab command, or a
 # command a grant covers (it should have run). Anything else is the model's own look around, which a user may allow;
 # so is a command chained with |, ; or &&, which the skills never run (one command per Bash call).
 in_skill_scope() {
   local g
   [ "$1" = Bash ] || return 0
   case "$2" in *'|'* | *';'* | *'&&'*) return 1 ;; esac
-  case "$2" in cutter-* | gh | "gh "* | glab | "glab "*) return 0 ;; esac
+  case "$2" in veland-* | gh | "gh "* | glab | "glab "*) return 0 ;; esac
   while IFS= read -r g; do
     # shellcheck disable=SC2053  # the grant is a glob on purpose
     [[ "$2" == $g ]] && return 0
@@ -309,10 +309,10 @@ flow_wants() { [ -n "$(flow_ids "$1" "$2")" ]; }
 
 # ---------------------------------------------------------------- prepared state and harness steps
 
-# Writes a file under the ticket's .cutter/ directory in the main checkout.
+# Writes a file under the ticket's .veland/ directory in the main checkout.
 ticket_file() { # <id> <name>, content on stdin
-  mkdir -p "$REPO/.cutter/$1"
-  cat >"$REPO/.cutter/$1/$2"
+  mkdir -p "$REPO/.veland/$1"
+  cat >"$REPO/.veland/$1/$2"
 }
 
 # The two issues the work flows plan from; GH6's are used by scenarios.sh.
@@ -327,11 +327,11 @@ GH6_TITLE="Rename greet_line to format_greeting"
 # shellcheck disable=SC2016,SC2034  # backticks are markdown; used by scenarios.sh
 GH6_BODY='Rename `greet_line` to `format_greeting` everywhere it is named: the code, the tests and the docs.'
 
-# prep_ticket [blocker] — the state /cutter:work leaves for /cutter:close: worktree and branch with the fix committed,
+# prep_ticket [blocker] — the state /veland:work leaves for /veland:close: worktree and branch with the fix committed,
 # ticket.md, an approved plan.md, review.md, evidence.md.
 prep_ticket() {
   local wt="$REPO/.worktrees/gh-5"
-  inrepo cutter-worktree add gh-5 --type fix --slug greet-twice --no-setup >/dev/null || { echo "prep: worktree add failed" >&2; return 1; }
+  inrepo veland-worktree add gh-5 --type fix --slug greet-twice --no-setup >/dev/null || { echo "prep: worktree add failed" >&2; return 1; }
   cat >"$wt/scripts/lib.sh" <<'LIB'
 #!/bin/bash
 # Shared helpers for bin/greet. Sourced, never run.
@@ -446,20 +446,20 @@ squash_merge_on_origin() {
 
 # ---------------------------------------------------------------- checkpoint predicates and snapshots
 
-has_draft() { compgen -G "$REPO/.cutter/drafts/*.md" >/dev/null; }
+has_draft() { compgen -G "$REPO/.veland/drafts/*.md" >/dev/null; }
 snapshot_draft() {
   local f
-  f="$(compgen -G "$REPO/.cutter/drafts/*.md" | head -n 1)"
+  f="$(compgen -G "$REPO/.veland/drafts/*.md" | head -n 1)"
   [ -z "$f" ] || cp "$f" "$RUN/draft-snapshot.md"
   ghlog_count issue create >"$RUN/creates-at-draft"
 }
-no_drafts() { ! compgen -G "$REPO/.cutter/drafts/*.md" >/dev/null; }
+no_drafts() { ! compgen -G "$REPO/.veland/drafts/*.md" >/dev/null; }
 issue_created() { [ "$(ghlog_count issue create)" -ge 1 ]; }
 # has_plan — plan.md exists and, when it binds more than 3 files, so does its cold read.
 has_plan() {
-  local plan="$REPO/.cutter/$TICKET/plan.md"
+  local plan="$REPO/.veland/$TICKET/plan.md"
   [ -f "$plan" ] || return 1
-  [ "$(md_section "$plan" Files | grep -c '^[-*] ')" -le 3 ] || [ -s "$REPO/.cutter/$TICKET/cold-read.md" ]
+  [ "$(md_section "$plan" Files | grep -c '^[-*] ')" -le 3 ] || [ -s "$REPO/.veland/$TICKET/cold-read.md" ]
 }
 pr_exists() { [ "$(state_json | jq '.prs | length')" -ge 1 ]; }
 pr_merged() { [ "$(state_json | jq '[.prs[] | select(.state == "MERGED")] | length')" -ge 1 ]; }

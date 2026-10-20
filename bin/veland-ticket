@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Print a ticket as Markdown, for /cutter:work to turn into a plan, or write it to --out <path>; or list the
-// issue types of origin's repo, one per line, for /cutter:open to classify a draft with.
+// Print a ticket as Markdown, for /veland:work to turn into a plan, or write it to --out <path>; or list the
+// issue types of origin's repo, one per line, for /veland:open to classify a draft with.
 //
-//   cutter-ticket github <number | issue URL> [--out <path>]     uses `gh` (run `gh auth login` once)
-//   cutter-ticket issue-types                                     nothing for a repo without them (user repos)
+//   veland-ticket github <number | issue URL> [--out <path>]     uses `gh` (run `gh auth login` once)
+//   veland-ticket issue-types                                     nothing for a repo without them (user repos)
 //
 // The issue is read from origin's repo only (a URL must name it), so the ticket, its branch, its PR and
 // any comment posted to it all concern the same repo.
 //
-// --out must name this issue's .cutter/gh-<number>/ticket.md in the main checkout, so a permission rule for
-// `cutter-ticket *` cannot be stretched into a write anywhere else.
+// --out must name this issue's .veland/gh-<number>/ticket.md in the main checkout, so a permission rule for
+// `veland-ticket *` cannot be stretched into a write anywhere else.
 
 const { execFileSync } = require('node:child_process')
 const { lstatSync, realpathSync, renameSync, writeFileSync } = require('node:fs')
@@ -18,10 +18,10 @@ const { basename, dirname, join, resolve } = require('node:path')
 const args = process.argv.slice(2)
 const [source, ref] = args
 const die = (msg, code = 2) => {
-  process.stderr.write(`cutter-ticket: ${msg}\n`)
+  process.stderr.write(`veland-ticket: ${msg}\n`)
   process.exit(code)
 }
-const usage = 'usage: cutter-ticket github <number|url> [--out <path>]\n       cutter-ticket issue-types'
+const usage = 'usage: veland-ticket github <number|url> [--out <path>]\n       veland-ticket issue-types'
 if (source === 'issue-types') {
   if (args.length !== 1) die(usage)
   issueTypes()
@@ -46,7 +46,7 @@ else {
 }
 
 // The resolved ticket.md for --out, or die before anything is fetched: its directory must be the main checkout's
-// .cutter/gh-<number>/, with no symlink at .cutter or gh-<number>.
+// .veland/gh-<number>/, with no symlink at .veland or gh-<number>.
 function outTarget(number) {
   let common
   try {
@@ -54,13 +54,13 @@ function outTarget(number) {
   } catch {
     die('not in a git repository')
   }
-  const dir = join(dirname(common), '.cutter', `gh-${number}`)
+  const dir = join(dirname(common), '.veland', `gh-${number}`)
   for (const p of [dirname(dir), dir]) {
     let st
     try {
       st = lstatSync(p)
     } catch {
-      die(`${p} does not exist: run \`cutter-worktree init gh-${number}\` first`)
+      die(`${p} does not exist: run \`veland-worktree init gh-${number}\` first`)
     }
     if (!st.isDirectory()) die(`${p} is a symlink or not a directory`)
   }
@@ -74,7 +74,7 @@ function outTarget(number) {
   return join(parent, 'ticket.md')
 }
 
-// OWNER/REPO of origin, which must be on github.com (the same host and path rules as cutter-land).
+// OWNER/REPO of origin, which must be on github.com (the same host and path rules as veland-land).
 function originRepo(form) {
   let url
   try {

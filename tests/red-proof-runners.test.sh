@@ -1,5 +1,5 @@
 #!/bin/bash
-# cutter-red-proof with real jest and vitest, on throwaway repositories with an origin.
+# veland-red-proof with real jest and vitest, on throwaway repositories with an origin.
 # Installs jest and vitest once per run (npm's cache makes repeat runs fast); skips when it cannot, fails under CI=true.
 # shellcheck disable=SC2015  # `cond && ok || bad` is safe: ok always returns 0
 set -uo pipefail
@@ -43,7 +43,7 @@ case_runner() { # <runner> <package.json> <ext> <impl at base> <impl on branch> 
   git add -A && git commit -qm "init"
   git remote add origin "$tmp/real/$runner-origin.git" && git push -q -u origin main
 
-  expect "$runner: worktree add" 0 cutter-worktree add T1 --no-setup
+  expect "$runner: worktree add" 0 veland-worktree add T1 --no-setup
   wt="$repo/.worktrees/T1"
   ln -s "$tmp/deps/node_modules" "$wt/node_modules"
 
@@ -55,7 +55,7 @@ test('mul multiplies', () => expect(mul(2, 3)).toBe(6))
 test('one is one', () => expect(1).toBe(1))
 EOF
   git -C "$wt" add -A && git -C "$wt" commit -qm "feat: add mul"
-  expect "$runner: real test goes red" 0 cutter-red-proof T1
+  expect "$runner: real test goes red" 0 veland-red-proof T1
   grep -q "runner: $runner" "$tmp/out" && ok "$runner: runner detected" || bad "$runner: runner detected"
   grep -q "^RED    src/calc.test.$ext   1 failed / 1 passed" "$tmp/out" && ok "$runner: per-test counts" || bad "$runner: per-test counts"
   grep -q '· one is one' "$tmp/out" && ok "$runner: lists the new test that passes without the change" || bad "$runner: lists the new test that passes without the change"
@@ -68,7 +68,7 @@ $header
 test('noop', () => expect(add(1, 1)).toBe(2))
 EOF
   git -C "$wt" add -A && git -C "$wt" commit -qm "test: noop"
-  expect "$runner: unrelated test stays green" 1 cutter-red-proof T1
+  expect "$runner: unrelated test stays green" 1 veland-red-proof T1
   grep -q "^GREEN  src/noop.test.$ext" "$tmp/out" && ok "$runner: names the green file" || bad "$runner: names the green file"
   [ -z "$(git -C "$wt" status --porcelain)" ] && ok "$runner: tree restored after GREEN" || bad "$runner: tree restored after GREEN"
 }

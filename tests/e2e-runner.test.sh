@@ -1,10 +1,10 @@
 #!/bin/bash
-# Self-test for tests/e2e/run.sh with a stub `claude` (CUTTER_E2E_CLAUDE): no model is called.
+# Self-test for tests/e2e/run.sh with a stub `claude` (VELAND_E2E_CLAUDE): no model is called.
 # The stub writes $STUB_STREAM (canned stream-json) to stdout and, when $STUB_RUN is set, runs that script first
 # (to call the fake gh or not). Real scenario ids drive the runner: 3 is the one-turn duplicate-issue flow.
 # Cases: unknown ids exit 2 before any claude run; a permission denial in the skills' scope is reported with its
 # command, and one outside it is a note on stderr that fails nothing; a gh call in the
-# tool log that the fake never saw fails the flow; a plugin without bin/cutter-land fails before claude runs; a
+# tool log that the fake never saw fails the flow; a plugin without bin/veland-land fails before claude runs; a
 # failing scenario makes the exit code non-zero; a failure after a checkpoint keeps the results judged at it; W3
 # counts a plan.md written by a Bash redirect; the fake gh answers a call with gh's global --hostname; a denied command
 # chained with |, ; or && is a note.
@@ -27,14 +27,14 @@ if [ "$(grep -c . "$STUB_MARK")" -ge 2 ] && [ -n "${STUB_STREAM_2:-}" ]; then ca
 STUB
 chmod +x "$tmp/claude"
 
-# A stream whose one Bash call is `gh issue list`, with an optional denial of another command: `cutter-land merge`
+# A stream whose one Bash call is `gh issue list`, with an optional denial of another command: `veland-land merge`
 # is in the skills' scope, `echo $HOME` is not.
 printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"result","subtype":"success","permission_denials":[],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-ok"
 printf '%s\n' \
-  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cutter-land merge gh-5"}}]}}' \
-  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"cutter-land merge gh-5"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-denied"
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"veland-land merge gh-5"}}]}}' \
+  '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"veland-land merge gh-5"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-denied"
 printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"echo $HOME"}}]}}' \
@@ -45,9 +45,9 @@ printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"gh issue list --state open --search greet"}}]}}' \
   '{"type":"result","subtype":"success","permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"gh issue list --state open --search greet 2>&1 | head"}}],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-chained"
 printf '%s\n' '#!/bin/bash' 'gh issue list --state open --search greet' >"$tmp/calls-gh"
-# The work-bug plan turn: ticket.md and plan.md under an excluded .cutter/, nothing else. Only the first call writes.
-printf '%s\n' '#!/bin/bash' '[ -e .cutter/gh-5/plan.md ] && exit 0' 'cutter-worktree init gh-5' \
-  'echo ticket >.cutter/gh-5/ticket.md' 'echo plan >.cutter/gh-5/plan.md' >"$tmp/writes-plan"
+# The work-bug plan turn: ticket.md and plan.md under an excluded .veland/, nothing else. Only the first call writes.
+printf '%s\n' '#!/bin/bash' '[ -e .veland/gh-5/plan.md ] && exit 0' 'veland-worktree init gh-5' \
+  'echo ticket >.veland/gh-5/ticket.md' 'echo plan >.veland/gh-5/plan.md' >"$tmp/writes-plan"
 printf '%s\n' '{"type":"result","subtype":"success","permission_denials":[],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-empty"
 mkdir -p "$tmp/plugin/bin"
 
@@ -59,7 +59,7 @@ runner() {
   while [ "$1" != -- ]; do envs+=("$1"); shift; done
   shift
   : >"$tmp/mark"
-  env "CUTTER_E2E_CLAUDE=$tmp/claude" "STUB_MARK=$tmp/mark" ${envs[@]+"${envs[@]}"} bash "$RUN_SH" "$@" >"$tmp/out" 2>"$tmp/err"
+  env "VELAND_E2E_CLAUDE=$tmp/claude" "STUB_MARK=$tmp/mark" ${envs[@]+"${envs[@]}"} bash "$RUN_SH" "$@" >"$tmp/out" 2>"$tmp/err"
   got=$?
   if [ "$got" -ne "$want" ]; then bad "$what (want exit $want, got $got)"; sed 's/^/      /' "$tmp/out" "$tmp/err"; return 1; fi
 }
@@ -83,7 +83,7 @@ fi
 
 # denial
 if runner 1 "a permission denial fails the flow" "STUB_STREAM=$tmp/stream-denied" "STUB_RUN=$tmp/calls-gh" -- 3; then
-  line_matches '^FAIL  3  [0-9]+s  .*permission denied: cutter-land merge gh-5' && ok "a permission denial fails the flow and names the command; a failing scenario makes the exit code non-zero" || { bad "a permission denial fails the flow and names the command"; sed 's/^/      /' "$tmp/out"; }
+  line_matches '^FAIL  3  [0-9]+s  .*permission denied: veland-land merge gh-5' && ok "a permission denial fails the flow and names the command; a failing scenario makes the exit code non-zero" || { bad "a permission denial fails the flow and names the command"; sed 's/^/      /' "$tmp/out"; }
 fi
 
 # a denial outside the skills' scope
@@ -100,7 +100,7 @@ fi
 
 # a denial after the plan checkpoint fails only the scenarios judged after it
 if runner 1 "a later failure keeps an earlier checkpoint" "STUB_STREAM=$tmp/stream-empty" "STUB_STREAM_2=$tmp/stream-denied" "STUB_RUN=$tmp/writes-plan" -- 5 6; then
-  line_matches '^pass  5  [0-9]+s$' && line_matches '^FAIL  6  [0-9]+s  .*permission denied: cutter-land merge gh-5' \
+  line_matches '^pass  5  [0-9]+s$' && line_matches '^FAIL  6  [0-9]+s  .*permission denied: veland-land merge gh-5' \
     && ok "a failure after a checkpoint keeps the results judged at it" || { bad "a failure after a checkpoint keeps the results judged at it"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
 fi
 
@@ -109,24 +109,24 @@ if runner 1 "a gh call missing from the fake log fails" "STUB_STREAM=$tmp/stream
   line_matches "^FAIL  3  [0-9]+s  .*tool log has 1 'gh issue list' calls, the fake gh saw 0" && ok "a gh call missing from the fake log fails the flow" || { bad "a gh call missing from the fake log fails the flow"; sed 's/^/      /' "$tmp/out"; }
 fi
 
-# the plugin under test has no bin/cutter-land
-if runner 1 "a plugin without cutter-land fails" "STUB_STREAM=$tmp/stream-ok" "STUB_RUN=$tmp/calls-gh" "CUTTER_E2E_PLUGIN=$tmp/plugin" -- 3; then
-  line_matches '^FAIL  3  [0-9]+s  .*cutter-land resolves to' && [ ! -s "$tmp/mark" ] && ok "cutter-land outside the plugin under test fails the flow before claude runs" || { bad "cutter-land outside the plugin under test fails the flow before claude runs"; sed 's/^/      /' "$tmp/out"; }
+# the plugin under test has no bin/veland-land
+if runner 1 "a plugin without veland-land fails" "STUB_STREAM=$tmp/stream-ok" "STUB_RUN=$tmp/calls-gh" "VELAND_E2E_PLUGIN=$tmp/plugin" -- 3; then
+  line_matches '^FAIL  3  [0-9]+s  .*veland-land resolves to' && [ ! -s "$tmp/mark" ] && ok "veland-land outside the plugin under test fails the flow before claude runs" || { bad "veland-land outside the plugin under test fails the flow before claude runs"; sed 's/^/      /' "$tmp/out"; }
 fi
 
 # W3: a plan.md written by a Bash heredoc, then an Explore, counts as the cold read of a wide plan
-printf '%s\n' '#!/bin/bash' 'for t in gh-5 gh-6; do' '  [ -e .cutter/$t/plan.md ] && continue' '  cutter-worktree init $t' \
-  '  printf "## Files\n- a\n- b\n- c\n- d\n" >.cutter/$t/plan.md' '  echo cold >.cutter/$t/cold-read.md' 'done' >"$tmp/writes-wide-plan"
+printf '%s\n' '#!/bin/bash' 'for t in gh-5 gh-6; do' '  [ -e .veland/$t/plan.md ] && continue' '  veland-worktree init $t' \
+  '  printf "## Files\n- a\n- b\n- c\n- d\n" >.veland/$t/plan.md' '  echo cold >.veland/$t/cold-read.md' 'done' >"$tmp/writes-wide-plan"
 printf '%s\n' \
-  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat > .cutter/gh-5/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
-  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cat > .cutter/gh-6/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat > .veland/gh-5/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cat > .veland/gh-6/plan.md <<'"'"'EOF'"'"'\nplan\nEOF"}}]}}' \
   '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Agent","input":{"subagent_type":"Explore","prompt":"cold read"}}]}}' \
   '{"type":"result","subtype":"success","permission_denials":[],"total_cost_usd":0.01,"duration_ms":10}' >"$tmp/stream-wide-plan"
 if runner 0 "a plan written by Bash counts as written" "STUB_STREAM=$tmp/stream-wide-plan" "STUB_RUN=$tmp/writes-wide-plan" -- W3; then
   line_matches '^pass  W3  [0-9]+s$' && ok "W3 counts a plan.md written by a Bash redirect" || { bad "W3 counts a plan.md written by a Bash redirect"; sed 's/^/      /' "$tmp/out" "$tmp/err"; }
 fi
 
-# the fake gh takes gh's global --hostname before the subcommand, as cutter-ticket issue-types sends it
+# the fake gh takes gh's global --hostname before the subcommand, as veland-ticket issue-types sends it
 mkdir -p "$tmp/ghd"
 echo '{"graphql":{"data":{"repository":{"issueTypes":{"nodes":[{"name":"Bug"}]}}}}}' >"$tmp/ghd/canned.json"
 if E2E_GH_DIR="$tmp/ghd" "$(dirname "$RUN_SH")/bin/gh" api --hostname github.com graphql -f 'query=q' >"$tmp/out" 2>"$tmp/err" &&

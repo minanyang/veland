@@ -2,22 +2,22 @@
 # Refuse a plan that is vague, misses the places its change touches, or names a test nobody can find, before
 # the user sees it.
 #
-#   cutter-plan-check <id>
+#   veland-plan-check <id>
 #
-# Reads .cutter/<id>/plan.md and names every line at fault, then exits 1, for: a criterion (`- AC<n> — …` under
+# Reads .veland/<id>/plan.md and names every line at fault, then exits 1, for: a criterion (`- AC<n> — …` under
 # `## Acceptance criteria`) with no `## Tests` row; a `## Tests` table missing or whose header is not
 # `| AC | Test file | Case |`; a phrase of references/banned-phrases.txt outside code; `## Readers` missing or
 # empty, or an entry with no nested hit line; a `## Tool behaviour relied on` entry with no fenced block whose
 # first line is `$ <command>` and which holds an output line; `## Overlap` missing or empty. A plan whose
 # `## Files` has more than 3 top-level bullets also needs the cold read saved as a non-blank regular file
-# .cutter/<id>/cold-read.md: without it, the last line printed is `cold read required: <n> files — …`, exit 1.
+# .veland/<id>/cold-read.md: without it, the last line printed is `cold read required: <n> files — …`, exit 1.
 # Exit 0 when none of these holds, 2 on a usage error or a missing plan.md.
 
 set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-[ $# -eq 1 ] || die "usage: cutter-plan-check <id>"
+[ $# -eq 1 ] || die "usage: veland-plan-check <id>"
 id="$1"
 check_id "$id"
 plan="$(task_dir "$id")/plan.md"

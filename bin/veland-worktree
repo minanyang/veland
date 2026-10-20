@@ -1,18 +1,18 @@
 #!/bin/bash
 # One git worktree per ticket.
 #
-#   cutter-worktree init [<id>]
-#   cutter-worktree add  <id> [--type feat] [--slug short-name] [--no-setup]
-#   cutter-worktree list
-#   cutter-worktree path <id>
-#   cutter-worktree rm   <id>
-#   cutter-worktree sync-base
-#   cutter-worktree memory <id>
+#   veland-worktree init [<id>]
+#   veland-worktree add  <id> [--type feat] [--slug short-name] [--no-setup]
+#   veland-worktree list
+#   veland-worktree path <id>
+#   veland-worktree rm   <id>
+#   veland-worktree sync-base
+#   veland-worktree memory <id>
 #
-# `init` keeps .cutter/ and the worktree directory out of git (.git/info/exclude) and prints
-# for an id `ticket dir: <.cutter/<id>/, created>` and `base: <branch> (<ref>)` — run it before writing
-# anything under .cutter/. Without an id it creates .cutter/drafts/, where /cutter:open writes issue drafts,
-# and prints what /cutter:open drafts from: `drafts: <absolute path>`, one `form: <file> name: … labels: …
+# `init` keeps .veland/ and the worktree directory out of git (.git/info/exclude) and prints
+# for an id `ticket dir: <.veland/<id>/, created>` and `base: <branch> (<ref>)` — run it before writing
+# anything under .veland/. Without an id it creates .veland/drafts/, where /veland:open writes issue drafts,
+# and prints what /veland:open drafts from: `drafts: <absolute path>`, one `form: <file> name: … labels: …
 # title: … required: … fields: …` line per issue form (or `forms: none`), one `template: <file>` line per .md
 # template and `banned: <json array>` (scripts/issue-form.js).
 # `add` cuts <type>/<id>[-<slug>] from the up-to-date base branch (config `base`, else
@@ -60,14 +60,14 @@ case "$cmd" in
     if [ -n "${1:-}" ]; then
       check_id "$1"; mkdir -p "$(task_dir "$1")"; ticket_lines "$1"
     else
-      mkdir -p "$ROOT/.cutter/drafts"
+      mkdir -p "$ROOT/.veland/drafts"
       here="$(dirname "$(readlink -f "$0")")"
       node "$here/../scripts/issue-form.js" "$ROOT" "$here/../references/banned-phrases.txt"
     fi
     ;;
 
   add)
-    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree add <id> [--type feat] [--slug name] [--no-setup]"
+    id="${1:-}"; [ -n "$id" ] || die "usage: veland-worktree add <id> [--type feat] [--slug name] [--no-setup]"
     shift; check_id "$id"
     type=feat; slug=""; setup=1
     while [ $# -gt 0 ]; do
@@ -137,14 +137,14 @@ case "$cmd" in
     ;;
 
   path)
-    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree path <id>"
+    id="${1:-}"; [ -n "$id" ] || die "usage: veland-worktree path <id>"
     check_id "$id"; wt_path "$id"
     ;;
 
   rm)
-    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree rm <id>"
+    id="${1:-}"; [ -n "$id" ] || die "usage: veland-worktree rm <id>"
     check_id "$id"
-    [ $# -eq 1 ] || die "usage: cutter-worktree rm <id>"
+    [ $# -eq 1 ] || die "usage: veland-worktree rm <id>"
     path="$(wt_path "$id")"
     branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
     git -C "$ROOT" worktree remove "$path" || die "worktree has uncommitted changes; commit or discard them yourself"
@@ -182,9 +182,9 @@ case "$cmd" in
     ;;
 
   memory)
-    id="${1:-}"; [ -n "$id" ] || die "usage: cutter-worktree memory <id>"
+    id="${1:-}"; [ -n "$id" ] || die "usage: veland-worktree memory <id>"
     check_id "$id"
-    [ $# -eq 1 ] || die "usage: cutter-worktree memory <id>"
+    [ $# -eq 1 ] || die "usage: veland-worktree memory <id>"
     path="$(wt_path "$id")"
     mem=.claude/agent-memory
     moves=()
@@ -221,5 +221,5 @@ case "$cmd" in
     git -C "$path" -c core.quotePath=false diff-tree --no-commit-id --name-only -r HEAD | sed 's/^/  /'
     ;;
 
-  *) die "usage: cutter-worktree init|add|list|path|rm|sync-base|memory ..." ;;
+  *) die "usage: veland-worktree init|add|list|path|rm|sync-base|memory ..." ;;
 esac

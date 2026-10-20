@@ -1,5 +1,5 @@
 #!/bin/bash
-# cutter guard — PreToolUse hook for Bash that blocks destructive commands.
+# veland guard — PreToolUse hook for Bash that blocks destructive commands.
 # Registered by the plugin's hooks/hooks.json with matcher "Bash".
 #
 # Receives the Claude Code hook JSON on stdin; the bash command is at
@@ -56,7 +56,7 @@ CASE_SENSITIVE_PATTERNS=(
 
 block() {
   cat >&2 <<EOF
-Blocked by cutter's guard — command matches a destructive pattern:
+Blocked by veland's guard — command matches a destructive pattern:
   $COMMAND
 
 Pattern matched: $1

@@ -71,7 +71,7 @@ Stack conventions, if the project has any, are **path-scoped rules** in `.claude
 
 ## Memory
 
-Persistent project memory lives at `.claude/agent-memory/cutter-frontend-engineer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
+Persistent project memory lives at `.claude/agent-memory/veland-frontend-engineer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
 
 **Consult memory before starting work.** Skim `MEMORY.md` for prior decisions, conventions, gotchas, and library version pins relevant to the current task. If memory contradicts what you observe in the code, trust the code and update memory.
 
@@ -109,7 +109,7 @@ If you cannot complete the task, the **Summary** line must say so. Do not fabric
 
 ## Hard rules
 
-The truly destructive Bash commands (`rm -rf`, `git push --force`, `git reset --hard`, `npm publish`, etc.) are blocked at the harness level by cutter's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
+The truly destructive Bash commands (`rm -rf`, `git push --force`, `git reset --hard`, `npm publish`, etc.) are blocked at the harness level by veland's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
 
 - Never modify backend / infra / DB code. Surface and stop.
 - Never assume design intent. If a Figma exists and its context was not handed to you, ask for it.

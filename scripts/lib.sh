@@ -1,14 +1,14 @@
 #!/bin/bash
-# Shared helpers for cutter's bin/ scripts. Sourced, never run.
+# Shared helpers for veland's bin/ scripts. Sourced, never run.
 #
 # Layout inside the project (the main checkout, wherever the script is called from):
-#   .claude/cutter.json   optional project config, committed
-#   .cutter/<id>/         ticket files (spec, plan, review, logs), never committed
+#   .claude/veland.json   optional project config, committed
+#   .veland/<id>/         ticket files (spec, plan, review, logs), never committed
 #   .worktrees/<id>/      one worktree per ticket (configurable: worktreeDir)
-# Both .cutter/ and the worktree dir are added to .git/info/exclude, never to .gitignore.
+# Both .veland/ and the worktree dir are added to .git/info/exclude, never to .gitignore.
 
 say() { printf '%s\n' "$*"; }
-die() { printf 'cutter: %s\n' "$*" >&2; exit 2; }
+die() { printf 'veland: %s\n' "$*" >&2; exit 2; }
 # Newlines and carriage returns escaped, other control characters replaced: a value must not print lines
 # that read as a script's own (a forged `pr:` or `ticket dir:`).
 shown() { local s="${1//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; printf '%s' "${s//[[:cntrl:]]/?}"; }
@@ -21,7 +21,7 @@ main_root() {
 }
 
 ROOT="$(main_root)"
-CONFIG="$ROOT/.claude/cutter.json"
+CONFIG="$ROOT/.claude/veland.json"
 
 # cfg <dotted.key> [default] — print a config value (arrays one item per line).
 cfg() { cfg_in "$CONFIG" "$@"; }
@@ -35,15 +35,15 @@ cfg_in() {
     const [file, key, dflt] = process.argv.slice(1)
     let v
     try { v = key.split(".").reduce((o, k) => (o == null ? undefined : o[k]), JSON.parse(require("fs").readFileSync(file, "utf8"))) }
-    catch (e) { console.error(`cutter: cannot read ${file}: ${e.message}`); process.exit(2) }
+    catch (e) { console.error(`veland: cannot read ${file}: ${e.message}`); process.exit(2) }
     if (v === undefined || v === null) { if (dflt !== undefined) console.log(dflt); process.exit(0) }
     console.log(Array.isArray(v) ? v.join("\n") : typeof v === "object" ? JSON.stringify(v) : String(v))
   ' "$file" "$1" ${2+"$2"}
 }
 
-# wt_cfg <worktree> <dotted.key> — a config value from the worktree's cutter.json, else the main checkout's.
+# wt_cfg <worktree> <dotted.key> — a config value from the worktree's veland.json, else the main checkout's.
 wt_cfg() {
-  local file="$1/.claude/cutter.json"
+  local file="$1/.claude/veland.json"
   [ -f "$file" ] || file="$CONFIG"
   cfg_in "$file" "$2"
 }
@@ -59,13 +59,13 @@ check_id() {
 }
 
 worktree_dir() { printf '%s/%s\n' "$ROOT" "$(cfg worktreeDir .worktrees)"; }
-task_dir() { printf '%s/.cutter/%s\n' "$ROOT" "$1"; }
+task_dir() { printf '%s/.veland/%s\n' "$ROOT" "$1"; }
 
 # The worktree of ticket <id>, or die.
 wt_path() {
   local p
   p="$(worktree_dir)/$1"
-  [ -e "$p/.git" ] || die "ticket $1 has no worktree at $p (run: cutter-worktree add $1)"
+  [ -e "$p/.git" ] || die "ticket $1 has no worktree at $p (run: veland-worktree add $1)"
   printf '%s\n' "$p"
 }
 
@@ -93,7 +93,7 @@ base_ref() {
   fi
 }
 
-# The lines the skills resolve `.cutter/<id>/` paths and the base from: `ticket dir: <abs>` and `base: <branch> (<ref>)`.
+# The lines the skills resolve `.veland/<id>/` paths and the base from: `ticket dir: <abs>` and `base: <branch> (<ref>)`.
 ticket_lines() { # <id>
   say "ticket dir: $(shown "$(task_dir "$1")")"
   say "base: $(shown "$(base_branch)") ($(shown "$(base_ref)"))"
@@ -124,19 +124,19 @@ has_script() { # <dir> <script>
   [ -f "$1/package.json" ] && node -e 'process.exit((require(process.argv[1]).scripts || {})[process.argv[2]] ? 0 : 1)' "$1/package.json" "$2"
 }
 
-# Keep cutter's directories out of git without touching the project's .gitignore.
+# Keep veland's directories out of git without touching the project's .gitignore.
 ensure_excluded() {
   local exclude entry
   exclude="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
   mkdir -p "$(dirname "$exclude")"
   touch "$exclude"
-  for entry in "/.cutter/" "/$(cfg worktreeDir .worktrees)/"; do
+  for entry in "/.veland/" "/$(cfg worktreeDir .worktrees)/"; do
     grep -qxF "$entry" "$exclude" || printf '%s\n' "$entry" >>"$exclude"
   done
 }
 
 # Agents may write their memory into a worktree while it is frozen; it is committed later
-# (cutter-worktree memory), so it never counts as a change to the tree under test.
+# (veland-worktree memory), so it never counts as a change to the tree under test.
 MEMORY_EXCLUDE=':(exclude).claude/agent-memory'
 tree_status() { git -C "$1" status --porcelain -- . "$MEMORY_EXCLUDE"; } # <dir>
 

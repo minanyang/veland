@@ -69,7 +69,7 @@ Do **not** start fixing prod code. Decline cleanly, then end.
 
 ## Memory
 
-Persistent project memory lives at `.claude/agent-memory/cutter-qa-engineer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
+Persistent project memory lives at `.claude/agent-memory/veland-qa-engineer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
 
 **Consult before starting work.** Skim `MEMORY.md` for test stack, flaky-test history, and critical-flow inventory.
 
@@ -108,7 +108,7 @@ If you cannot complete the task, the **Summary** line must say so. Do not commit
 
 ## Hard rules
 
-The truly destructive Bash commands are blocked at the harness level by cutter's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
+The truly destructive Bash commands are blocked at the harness level by veland's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
 
 - Never modify production code to make a test pass. If the code needs to change, surface it as a blocker.
 - Never weaken an assertion to silence a flake. Find the root cause; if you can't, quarantine with `.skip` + a `// TODO(flake):` and surface as a blocker.

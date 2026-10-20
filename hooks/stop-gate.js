@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// UserPromptSubmit, PostToolUse (Bash), Stop and SubagentStop hook: /cutter:work cannot end its
+// UserPromptSubmit, PostToolUse (Bash), Stop and SubagentStop hook: /veland:work cannot end its
 // implementation with an acceptance criterion that lacks evidence or a question the user has not
 // been asked, and a flow or a reviewer cannot end on a claim it has not checked.
 //
-// Binding. A session owns ticket <id> after `cutter-worktree add <id>` ran and created the worktree,
-// or after `/cutter:work <arg>` was typed for a ticket whose plan.md has `Status: approved`. State:
-//   .cutter/.sessions/<session_id>.json   { "flow": true, "ticket": "<id>" }
-//   .cutter/<id>/session                  the owning session id; the latest binding owns the ticket
-// `flow` is set by /cutter:open, /cutter:work and /cutter:close.
+// Binding. A session owns ticket <id> after `veland-worktree add <id>` ran and created the worktree,
+// or after `/veland:work <arg>` was typed for a ticket whose plan.md has `Status: approved`. State:
+//   .veland/.sessions/<session_id>.json   { "flow": true, "ticket": "<id>" }
+//   .veland/<id>/session                  the owning session id; the latest binding owns the ticket
+// `flow` is set by /veland:open, /veland:work and /veland:close.
 //
-// Stop blocks while the owned ticket's worktree exists and .cutter/<id>/evidence.md misses a plan
+// Stop blocks while the owned ticket's worktree exists and .veland/<id>/evidence.md misses a plan
 // criterion, leaves one pending or in no known state, or has an `asked` question the last message
 // does not carry. Lines: `- AC<n> — pending | met: … | deferred: "…" | asked: …`, `- asked: …`;
 // the last line for a criterion wins.
@@ -25,7 +25,7 @@ const { execFileSync } = require('node:child_process')
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SID = /^[A-Za-z0-9-]+$/
-const REVIEWERS = ['cutter:code-reviewer', 'cutter:security-reviewer']
+const REVIEWERS = ['veland:code-reviewer', 'veland:security-reviewer']
 const UNVERIFIED_EN = ['unverified', 'not verified', 'unchecked', 'not checked', 'not yet confirmed', 'not confirmed']
 const UNVERIFIED_ZH = ['未驗證', '未验证', '未經驗證', '未经验证', '未確認', '未确认', '未檢查', '未检查']
 const CLAIM =
@@ -73,7 +73,7 @@ function main() {
   try {
     if (state.ticket) gaps = evidenceGaps(md, root, sid, state.ticket, message)
   } catch {} // an unreadable plan or evidence.md passes this check, not the unverified-claim one
-  if (gaps.length) reasons.push(`Ticket ${state.ticket}: .cutter/${state.ticket}/evidence.md is not done:\n${gaps.map((g) => `- ${g}`).join('\n')}`)
+  if (gaps.length) reasons.push(`Ticket ${state.ticket}: .veland/${state.ticket}/evidence.md is not done:\n${gaps.map((g) => `- ${g}`).join('\n')}`)
   if (state.flow === true && unverified(md, message)) reasons.push(CLAIM)
   if (reasons.length) block(reasons)
   pass()
@@ -90,7 +90,7 @@ function mainRoot(cwd) {
 
 function worktreeOf({ root }, id) {
   let dir = '.worktrees'
-  const cfg = path.join(root, '.claude', 'cutter.json')
+  const cfg = path.join(root, '.claude', 'veland.json')
   if (fs.existsSync(cfg)) {
     const v = JSON.parse(fs.readFileSync(cfg, 'utf8')).worktreeDir
     if (typeof v === 'string' && v) dir = v
@@ -99,14 +99,14 @@ function worktreeOf({ root }, id) {
 }
 
 function readSession({ root }, sid) {
-  const f = path.join(root, '.cutter', '.sessions', `${sid}.json`)
+  const f = path.join(root, '.veland', '.sessions', `${sid}.json`)
   if (!fs.existsSync(f)) return null
   const s = JSON.parse(fs.readFileSync(f, 'utf8'))
   return s && typeof s === 'object' ? s : null
 }
 
 function approved(r, id) {
-  const plan = path.join(r.root, '.cutter', id, 'plan.md')
+  const plan = path.join(r.root, '.veland', id, 'plan.md')
   return fs.existsSync(plan) && /^Status:\s*approved\s*$/m.test(fs.readFileSync(plan, 'utf8'))
 }
 
@@ -122,7 +122,7 @@ function bind(input, sid, event) {
   let ticket = null
   let r
   if (event === 'UserPromptSubmit') {
-    const cmd = /^\s*\/cutter:(open|work|close)\b(.*)$/s.exec(typeof input.prompt === 'string' ? input.prompt : '')
+    const cmd = /^\s*\/veland:(open|work|close)\b(.*)$/s.exec(typeof input.prompt === 'string' ? input.prompt : '')
     if (!cmd) return
     r = mainRoot(input.cwd)
     flow = true
@@ -130,7 +130,7 @@ function bind(input, sid, event) {
   } else {
     if (input.tool_name !== 'Bash') return
     const command = input.tool_input && typeof input.tool_input.command === 'string' ? input.tool_input.command : ''
-    const m = /^\s*cutter-worktree add (\S+)(\s|$)/.exec(command)
+    const m = /^\s*veland-worktree add (\S+)(\s|$)/.exec(command)
     if (!m || !ID.test(m[1])) return
     r = mainRoot(input.cwd)
     if (!fs.existsSync(path.join(worktreeOf(r, m[1]), '.git'))) return
@@ -142,14 +142,14 @@ function bind(input, sid, event) {
   if (owned) next.ticket = owned
   if (prev.flow === next.flow && prev.ticket === next.ticket && !ticket) return
   exclude(r)
-  const cutter = path.join(r.root, '.cutter')
-  const sessions = path.join(cutter, '.sessions')
-  noLink(cutter, sessions)
+  const veland = path.join(r.root, '.veland')
+  const sessions = path.join(veland, '.sessions')
+  noLink(veland, sessions)
   fs.mkdirSync(sessions, { recursive: true })
-  noLink(cutter, sessions)
+  noLink(veland, sessions)
   write(path.join(sessions, `${sid}.json`), JSON.stringify(next) + '\n')
   if (ticket) {
-    const dir = path.join(cutter, ticket)
+    const dir = path.join(veland, ticket)
     noLink(dir)
     fs.mkdirSync(dir, { recursive: true })
     noLink(dir)
@@ -157,7 +157,7 @@ function bind(input, sid, event) {
   }
 }
 
-// A committed symlink at .cutter could otherwise point the hook's writes anywhere.
+// A committed symlink at .veland could otherwise point the hook's writes anywhere.
 function noLink(...paths) {
   for (const p of paths) if (fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${p} is a symlink`)
 }
@@ -170,14 +170,14 @@ function write(file, text) {
 function exclude({ common }) {
   const f = path.join(common, 'info', 'exclude')
   const have = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
-  if (have.split('\n').includes('/.cutter/')) return
+  if (have.split('\n').includes('/.veland/')) return
   fs.mkdirSync(path.dirname(f), { recursive: true })
-  fs.appendFileSync(f, (have && !have.endsWith('\n') ? '\n' : '') + '/.cutter/\n')
+  fs.appendFileSync(f, (have && !have.endsWith('\n') ? '\n' : '') + '/.veland/\n')
 }
 
 function evidenceGaps(md, r, sid, id, message) {
   if (!ID.test(id)) return []
-  const dir = path.join(r.root, '.cutter', id)
+  const dir = path.join(r.root, '.veland', id)
   if (fs.readFileSync(path.join(dir, 'session'), 'utf8').trim() !== sid) return []
   if (!fs.existsSync(path.join(worktreeOf(r, id), '.git'))) return []
   const plan = md.criteria(fs.readFileSync(path.join(dir, 'plan.md'), 'utf8')).map((c) => `AC${c.n}`)

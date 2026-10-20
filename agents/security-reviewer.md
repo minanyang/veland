@@ -65,7 +65,7 @@ Do **not** start patching code. Decline cleanly, then end.
 
 ## Memory
 
-Persistent project memory lives at `.claude/agent-memory/cutter-security-reviewer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
+Persistent project memory lives at `.claude/agent-memory/veland-security-reviewer/` (committed alongside the project, shareable with the team). `MEMORY.md` is loaded into your system prompt automatically.
 
 **Consult before starting work.** Skim `MEMORY.md` for accepted risks, the auth model, and prior incidents — don't re-flag things the team already decided to live with.
 
@@ -111,7 +111,7 @@ If you cannot complete the review, the **Summary** line must say so. Do not pad 
 
 ## Hard rules
 
-The truly destructive Bash commands are blocked at the harness level by cutter's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
+The truly destructive Bash commands are blocked at the harness level by veland's `guard-bash.sh` PreToolUse hook (or the project's own guard). The rules below are behavioral commitments on top of that:
 
 - Never modify code, configs, dependencies, or migrations. Read-only, always.
 - Never run a command that exfiltrates secrets (e.g. printing `.env`, dumping keys to stdout, sending data to an external service).

@@ -1,10 +1,10 @@
 {
-  "name": "cutter",
+  "name": "veland",
   "version": "0.1.0",
-  "description": "A crew of AI agents that ships your tickets — planned, verified, reviewed.",
-  "author": { "name": "Mian Yang" },
-  "homepage": "https://github.com/minanyang/cutter",
-  "repository": "https://github.com/minanyang/cutter",
+  "description": "Your agent says it's done. veland checks, then lands it.",
+  "author": { "name": "Min-An Yang (minanyang)", "url": "https://github.com/minanyang" },
+  "homepage": "https://github.com/minanyang/veland",
+  "repository": "https://github.com/minanyang/veland",
   "license": "MIT",
   "keywords": ["claude-code", "workflow", "code-review", "worktree", "agents"]
 }

@@ -58,7 +58,7 @@ if (readme === null) { bad("README.md exists"); process.exit(1) }
   const tagline = JSON.parse(read(".claude-plugin/plugin.json")).description
   const missing = [
     [lines[first] === '<div align="center">', 'first line <div align="center">'],
-    [head.includes("# cutter"), "# cutter"],
+    [head.includes("# veland"), "# veland"],
     [head.includes(tagline), `tagline "${tagline}"`],
     [head.some((s) => s.includes("img.shields.io/badge/license-MIT")), "license badge"],
     [head.some((s) => s.includes("img.shields.io/badge/Claude_Code-plugin")), "Claude Code plugin badge"],

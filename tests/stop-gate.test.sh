@@ -8,14 +8,14 @@ fail=0
 
 repo="$tmp/repo"
 git init -q "$repo"
-mkdir -p "$repo/.cutter/t1" "$repo/.cutter/t2" "$repo/.cutter/gh-7" "$repo/.worktrees/t1/.git"
+mkdir -p "$repo/.veland/t1" "$repo/.veland/t2" "$repo/.veland/gh-7" "$repo/.worktrees/t1/.git"
 plan() { # <id> <status>
-  printf '# %s\n\nStatus: %s\n\n## Acceptance criteria\n- AC1 — one\n- AC2 — two\n  - a nested bullet, not AC3\n\n## Approach\n- AC9 — not a criterion\n' "$1" "$2" >"$repo/.cutter/$1/plan.md"
+  printf '# %s\n\nStatus: %s\n\n## Acceptance criteria\n- AC1 — one\n- AC2 — two\n  - a nested bullet, not AC3\n\n## Approach\n- AC9 — not a criterion\n' "$1" "$2" >"$repo/.veland/$1/plan.md"
 }
 plan t1 approved
 plan t2 draft
 plan gh-7 approved
-evidence() { printf '%s\n' "$@" >"$repo/.cutter/t1/evidence.md"; }
+evidence() { printf '%s\n' "$@" >"$repo/.veland/t1/evidence.md"; }
 
 # send <event> <session_id> [<key> <value>]... — a value starting with { [ or equal to true/false is JSON.
 send() {
@@ -44,39 +44,39 @@ check() { # <description> <want: block|pass> <output> [text the reason must carr
 assert() { # <description> <status of the check run just before>
   if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi
 }
-owner() { [ "$(cat "$repo/.cutter/$1/session" 2>/dev/null)" = "$2" ]; }
-unowned() { [ ! -e "$repo/.cutter/$1/session" ]; }
-bound() { grep -q "\"ticket\":\"$2\"" "$repo/.cutter/.sessions/$1.json" 2>/dev/null; }
+owner() { [ "$(cat "$repo/.veland/$1/session" 2>/dev/null)" = "$2" ]; }
+unowned() { [ ! -e "$repo/.veland/$1/session" ]; }
+bound() { grep -q "\"ticket\":\"$2\"" "$repo/.veland/.sessions/$1.json" 2>/dev/null; }
 
 check "passes before any binding" pass "$(stop s1 "The change is unverified.")"
 
-out="$(prompt s1 "/cutter:work t1")"
-[ -z "$out" ] && owner t1 s1 && bound s1 t1; assert "binds on /cutter:work for an approved plan" $?
-grep -qxF "/.cutter/" "$repo/.git/info/exclude"; assert "excludes .cutter before its first write" $?
+out="$(prompt s1 "/veland:work t1")"
+[ -z "$out" ] && owner t1 s1 && bound s1 t1; assert "binds on /veland:work for an approved plan" $?
+grep -qxF "/.veland/" "$repo/.git/info/exclude"; assert "excludes .veland before its first write" $?
 
-prompt s2 "/cutter:work t2" >/dev/null
-[ ! -e "$repo/.cutter/t2/session" ] && ! grep -q ticket "$repo/.cutter/.sessions/s2.json"; assert "does not bind on /cutter:work for a draft plan" $?
+prompt s2 "/veland:work t2" >/dev/null
+[ ! -e "$repo/.veland/t2/session" ] && ! grep -q ticket "$repo/.veland/.sessions/s2.json"; assert "does not bind on /veland:work for a draft plan" $?
 
-prompt s6 "/cutter:work #7" >/dev/null
-owner gh-7 s6; assert "binds /cutter:work #<n> to gh-<n>" $?
-printf 's0\n' >"$repo/.cutter/gh-7/session"
-prompt s6 "/cutter:work https://github.com/o/r/issues/7" >/dev/null
-owner gh-7 s6; assert "binds /cutter:work <issue url> to gh-<n>" $?
+prompt s6 "/veland:work #7" >/dev/null
+owner gh-7 s6; assert "binds /veland:work #<n> to gh-<n>" $?
+printf 's0\n' >"$repo/.veland/gh-7/session"
+prompt s6 "/veland:work https://github.com/o/r/issues/7" >/dev/null
+owner gh-7 s6; assert "binds /veland:work <issue url> to gh-<n>" $?
 
-mkdir -p "$repo/.cutter/t3"
+mkdir -p "$repo/.veland/t3"
 plan t3 draft
-send PostToolUse s3 tool_name Bash tool_input '{"command":"cutter-worktree add t3"}' >/dev/null
-unowned t3; assert "does not bind on cutter-worktree add without a worktree" $?
+send PostToolUse s3 tool_name Bash tool_input '{"command":"veland-worktree add t3"}' >/dev/null
+unowned t3; assert "does not bind on veland-worktree add without a worktree" $?
 mkdir -p "$repo/.worktrees/t3/.git"
-send PostToolUse s3 tool_name Bash tool_input '{"command":"echo cutter-worktree add t3"}' >/dev/null
-unowned t3; assert "does not bind on a command that only mentions cutter-worktree add" $?
-send PostToolUse s3 tool_name Bash tool_input '{"command":"cutter-worktree add t3"}' >/dev/null
-owner t3 s3 && bound s3 t3; assert "binds on cutter-worktree add" $?
+send PostToolUse s3 tool_name Bash tool_input '{"command":"echo veland-worktree add t3"}' >/dev/null
+unowned t3; assert "does not bind on a command that only mentions veland-worktree add" $?
+send PostToolUse s3 tool_name Bash tool_input '{"command":"veland-worktree add t3"}' >/dev/null
+owner t3 s3 && bound s3 t3; assert "binds on veland-worktree add" $?
 
-before="$(ls -A "$repo/.cutter/.sessions")"
-prompt "../evil" "/cutter:work t1" >/dev/null
-prompt "a/b" "/cutter:work t1" >/dev/null
-[ "$(ls -A "$repo/.cutter/.sessions")" = "$before" ] && [ ! -e "$repo/.cutter/evil.json" ] && owner t1 s1; assert "refuses an unsafe session id" $?
+before="$(ls -A "$repo/.veland/.sessions")"
+prompt "../evil" "/veland:work t1" >/dev/null
+prompt "a/b" "/veland:work t1" >/dev/null
+[ "$(ls -A "$repo/.veland/.sessions")" = "$before" ] && [ ! -e "$repo/.veland/evil.json" ] && owner t1 s1; assert "refuses an unsafe session id" $?
 
 evidence "- AC1 — met: \`bash tests/x.sh\` → ok"
 check "blocks when evidence lacks a criterion" block "$(stop s1 "Done.")" "AC2: no line"
@@ -103,18 +103,18 @@ evidence "- AC1 — met: x" "- AC2 — pending"
 check "passes when stop_hook_active" pass "$(stop s1 "Done." stop_hook_active true)"
 check "passes while background tasks run" pass "$(stop s1 "Done." background_tasks '[{"id":"b1","type":"shell","status":"running"}]')"
 check "blocks when background_tasks is empty" block "$(stop s1 "Done." background_tasks '[]')" "AC2: pending"
-prompt s4 "/cutter:work t1" >/dev/null
+prompt s4 "/veland:work t1" >/dev/null
 check "passes for a ticket another session owns" pass "$(stop s1 "Done.")"
 check "the new owner is held to the evidence" block "$(stop s4 "Done.")" "AC2: pending"
-prompt s1 "/cutter:work t1" >/dev/null
+prompt s1 "/veland:work t1" >/dev/null
 mv "$repo/.worktrees/t1" "$repo/.worktrees/t1.off"
 check "passes after the worktree is removed" pass "$(stop s1 "Done.")"
 mv "$repo/.worktrees/t1.off" "$repo/.worktrees/t1"
-rm "$repo/.cutter/t1/evidence.md"
+rm "$repo/.veland/t1/evidence.md"
 check "passes when evidence.md cannot be read" pass "$(stop s1 "Done.")"
 check "still blocks a claim when evidence.md cannot be read" block "$(stop s1 "The retry is unverified.")" "Check it now"
 
-prompt s5 "/cutter:open fix the login" >/dev/null
+prompt s5 "/veland:open fix the login" >/dev/null
 check "blocks an unverified claim during a flow" block "$(stop s5 "The fix is in. The retry path is not yet confirmed.")" "Check it now"
 check "blocks an unverified claim in Chinese" block "$(stop s5 "修好了，但重試路徑未驗證。")" "Check it now"
 # shellcheck disable=SC2016  # backticks are the Markdown under test
@@ -124,12 +124,12 @@ unchecked
 ```')"
 check "ignores a word containing a phrase" pass "$(stop s5 "The checker is unchecked_ok.")"
 check "ignores an unverified claim outside a flow" pass "$(stop s7 "The retry path is unverified.")"
-prompt s7 "fix the bug, /cutter:open later" >/dev/null
-check "does not take a mid-prompt /cutter: as a flow" pass "$(stop s7 "The retry path is unverified.")"
-check "blocks a reviewer's unverified claim" block "$(send SubagentStop s7 agent_type cutter:code-reviewer last_assistant_message "Finding 2 is unverified.")" "Check it now"
-check "blocks the security reviewer's unverified claim" block "$(send SubagentStop s7 agent_type cutter:security-reviewer last_assistant_message "Not checked: the hook.")" "Check it now"
+prompt s7 "fix the bug, /veland:open later" >/dev/null
+check "does not take a mid-prompt /veland: as a flow" pass "$(stop s7 "The retry path is unverified.")"
+check "blocks a reviewer's unverified claim" block "$(send SubagentStop s7 agent_type veland:code-reviewer last_assistant_message "Finding 2 is unverified.")" "Check it now"
+check "blocks the security reviewer's unverified claim" block "$(send SubagentStop s7 agent_type veland:security-reviewer last_assistant_message "Not checked: the hook.")" "Check it now"
 check "ignores another agent's unverified claim" pass "$(send SubagentStop s7 agent_type Explore last_assistant_message "This is unverified.")"
-check "a reviewer's stop does not check the parent's evidence" pass "$(send SubagentStop s4 agent_type cutter:code-reviewer last_assistant_message "No findings.")"
+check "a reviewer's stop does not check the parent's evidence" pass "$(send SubagentStop s4 agent_type veland:code-reviewer last_assistant_message "No findings.")"
 
 evidence "- AC1 — met: x" "- AC2 — pending"
 out="$(stop s1 "AC2 is unverified.")"
@@ -139,7 +139,7 @@ grep -o '"decision"' <<<"$out" | wc -l | grep -qx ' *1'; assert "one block, not 
 check "passes on a malformed payload" pass "$(printf 'garbage' | (cd "$tmp" && node "$GATE"))"
 check "passes on an empty payload" pass "$(printf '{}' | (cd "$tmp" && node "$GATE"))"
 check "passes outside a git repository" pass "$(printf '{"hook_event_name":"Stop","session_id":"s1","cwd":"%s","last_assistant_message":"unverified"}' "$tmp" | (cd "$tmp" && node "$GATE"))"
-echo '{ nope' >"$repo/.cutter/.sessions/s8.json"
+echo '{ nope' >"$repo/.veland/.sessions/s8.json"
 check "passes on an unreadable session file" pass "$(stop s8 "unverified")"
 
 [ "$fail" -eq 0 ] && echo "stop-gate: all cases pass"

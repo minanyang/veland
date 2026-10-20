@@ -1,30 +1,30 @@
 # The loop
 
 ```
-/cutter:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
-/cutter:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
-/cutter:close <id>      →  rebase → verify → PR / merge → clean up
+/veland:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
+/veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
+/veland:close <id>      →  rebase → verify → PR / merge → clean up
 ```
 
 ## Principles
 
-- One ticket per session. `.cutter/<id>/` is the memory; a fresh session loses nothing.
+- One ticket per session. `.veland/<id>/` is the memory; a fresh session loses nothing.
 - Implementation never happens in the main checkout.
 - The reviewer gets the diff and the plan — never the implementer's account of what it did.
 - Mechanical verification is a script, not a model waiting on a test runner.
 - Every step stops so a human can intervene.
 
-## `/cutter:open <idea>`
+## `/veland:open <idea>`
 
 Turns an idea, a bug or an improvement into a GitHub issue: it reads enough of the codebase to name the files involved, checks for an existing issue, classifies it with the repo's own labels (`bug`, `enhancement`, …) or, in organisation repos, its issue types, and follows the repo's issue templates. Before drafting it grills you on the product decisions the request leaves open — in rounds, a recommended answer for each question, as deep as the ticket needs — and lists whatever you did not settle under `## Assumptions`. It shows you the draft and creates the issue only when you approve. It never creates labels or types. Several ideas at once become one issue each.
 
-Before drafting it runs `cutter-worktree init`, which lists the issue forms (`.github/ISSUE_TEMPLATE/*.yml`) with their labels, title prefix, required and other fields, the drafts directory and the banned phrases, so the first draft you see already has the form's shape. With issue forms it picks the form by the ticket's kind and drafts one `### <field label>` section per field, in the form's order, with the form's labels and title prefix — the sections an issue filed from the web would have, since `gh issue create --body` bypasses forms. Without forms it uses its own layout. Titles state the problem (a bug) or the need (a feature). `cutter-land issue` refuses a draft, naming the line or field, when a required form section is missing or empty, the acceptance criteria are missing or a criterion is not numbered (`AC1 — …`), two checkboxes share a line, or a phrase from `references/banned-phrases.txt` (`TBD`, `handle edge cases`, …) appears outside code.
+Before drafting it runs `veland-worktree init`, which lists the issue forms (`.github/ISSUE_TEMPLATE/*.yml`) with their labels, title prefix, required and other fields, the drafts directory and the banned phrases, so the first draft you see already has the form's shape. With issue forms it picks the form by the ticket's kind and drafts one `### <field label>` section per field, in the form's order, with the form's labels and title prefix — the sections an issue filed from the web would have, since `gh issue create --body` bypasses forms. Without forms it uses its own layout. Titles state the problem (a bug) or the need (a feature). `veland-land issue` refuses a draft, naming the line or field, when a required form section is missing or empty, the acceptance criteria are missing or a criterion is not numbered (`AC1 — …`), two checkboxes share a line, or a phrase from `references/banned-phrases.txt` (`TBD`, `handle edge cases`, …) appears outside code.
 
-Creating the issue (`cutter-land issue`) and posting `/cutter:work`'s planning comment (`cutter-land comment`) are deliberately not in the skills' `allowed-tools`: both are public writes, so each asks for your permission even after you approved the draft — the approval does not rest on the model stopping. In auto mode the classifier decides instead of a prompt.
+Creating the issue (`veland-land issue`) and posting `/veland:work`'s planning comment (`veland-land comment`) are deliberately not in the skills' `allowed-tools`: both are public writes, so each asks for your permission even after you approved the draft — the approval does not rest on the model stopping. In auto mode the classifier decides instead of a prompt.
 
-An issue is optional: `/cutter:work` also takes a task described in words.
+An issue is optional: `/veland:work` also takes a task described in words.
 
-## `/cutter:work <ticket>`
+## `/veland:work <ticket>`
 
 The ticket can be:
 
@@ -37,29 +37,29 @@ The ticket id is `gh-<n>` for an issue, else a slug. The branch type follows the
 
 It runs in two invocations and stops after each:
 
-1. **Plan** — saves the ticket to `.cutter/<id>/ticket.md`, grills you on the technical decisions (and the product ones a GitHub issue leaves open, whose answers it posts to the issue as one comment once you approve the plan), writes `.cutter/<id>/plan.md` (goal, numbered acceptance criteria, approach, the files it binds, the readers of every term it changes with the search that found them, the tool behaviour it relies on with the command and output that show it, overlap with other branches and PRs, a table of the test case proving each criterion, assumptions, out of scope) and waits for your approval. `cutter-plan-check` refuses the plan, naming each line, until every section the checks read is filled; when the plan binds more than three files, `cutter-plan-check` also refuses it until a fresh `Explore` agent has read it cold and its list of what it would have to guess is saved to `.cutter/<id>/cold-read.md`, and you are asked what the code does not answer.
-2. **Implement** — creates `.worktrees/<id>` on a new branch from the up-to-date base, implements (itself for small tickets, an engineer agent for larger ones), commits, proves the tests go red without the change, then runs the gates and a cold-context review **concurrently**. Blockers and majors are fixed, and the fix commits get one more cold review of their own; the findings of each numbered round stay in `.cutter/<id>/review.md` with what was done about each; a new full round follows only when you approve a change to the plan. A problem the change causes is fixed in the ticket; anything beyond it is asked, not left. `.cutter/<id>/evidence.md` holds each criterion's state — `met` with its evidence, `deferred` in your words, or `asked` — and the [Stop gate](hooks.md#stop-gate) keeps the session from ending while one is unaccounted for.
+1. **Plan** — saves the ticket to `.veland/<id>/ticket.md`, grills you on the technical decisions (and the product ones a GitHub issue leaves open, whose answers it posts to the issue as one comment once you approve the plan), writes `.veland/<id>/plan.md` (goal, numbered acceptance criteria, approach, the files it binds, the readers of every term it changes with the search that found them, the tool behaviour it relies on with the command and output that show it, overlap with other branches and PRs, a table of the test case proving each criterion, assumptions, out of scope) and waits for your approval. `veland-plan-check` refuses the plan, naming each line, until every section the checks read is filled; when the plan binds more than three files, `veland-plan-check` also refuses it until a fresh `Explore` agent has read it cold and its list of what it would have to guess is saved to `.veland/<id>/cold-read.md`, and you are asked what the code does not answer.
+2. **Implement** — creates `.worktrees/<id>` on a new branch from the up-to-date base, implements (itself for small tickets, an engineer agent for larger ones), commits, proves the tests go red without the change, then runs the gates and a cold-context review **concurrently**. Blockers and majors are fixed, and the fix commits get one more cold review of their own; the findings of each numbered round stay in `.veland/<id>/review.md` with what was done about each; a new full round follows only when you approve a change to the plan. A problem the change causes is fixed in the ticket; anything beyond it is asked, not left. `.veland/<id>/evidence.md` holds each criterion's state — `met` with its evidence, `deferred` in your words, or `asked` — and the [Stop gate](hooks.md#stop-gate) keeps the session from ending while one is unaccounted for.
 
-## `/cutter:close <id>`
+## `/veland:close <id>`
 
 Rebases onto the current base, verifies again, then lands the branch as configured:
 
 | `close` | |
 |---|---|
-| `pr` (default) | push and open a PR; you merge it, then run `/cutter:close <id>` again to clean up |
+| `pr` (default) | push and open a PR; you merge it, then run `/veland:close <id>` again to clean up |
 | `pr-merge` | push, open the PR and squash-merge it |
 | `local` | squash the branch onto the base locally, no PR; the next ticket starts from that local base, pushed or not |
 
 GitHub remotes use `gh`. GitLab remotes use `glab` — untested so far.
 
-The skill declares `allowed-tools` for the commands that are safe to grant (opening or updating the PR/MR goes through `cutter-land pr`), and the writes go through `cutter-land`, which takes only the ticket id, so no settings rule should allow `gh pr merge` or `git push` for it. In `pr-merge` mode, running `/cutter:close` is your request to merge. Through [the grant hook](hooks.md#grant), those grants hold for the rest of the session in which you typed `/cutter:close`, so the merge after the background `cutter-land wait` runs without a prompt.
+The skill declares `allowed-tools` for the commands that are safe to grant (opening or updating the PR/MR goes through `veland-land pr`), and the writes go through `veland-land`, which takes only the ticket id, so no settings rule should allow `gh pr merge` or `git push` for it. In `pr-merge` mode, running `/veland:close` is your request to merge. Through [the grant hook](hooks.md#grant), those grants hold for the rest of the session in which you typed `/veland:close`, so the merge after the background `veland-land wait` runs without a prompt.
 
 ## Agent memory
 
-Agents use `memory: project`, stored under `.claude/agent-memory/cutter-<name>/` and committed: `/cutter:work` moves what agents wrote during the ticket onto its branch (`cutter-worktree memory`), so it is merged with the work. Review packets leave it out of their diff and list the commits that touch it; the report shows you the branch's whole memory diff.
+Agents use `memory: project`, stored under `.claude/agent-memory/veland-<name>/` and committed: `/veland:work` moves what agents wrote during the ticket onto its branch (`veland-worktree memory`), so it is merged with the work. Review packets leave it out of their diff and list the commits that touch it; the report shows you the branch's whole memory diff.
 
 ## Agents and skills
 
-Invoke agents as `cutter:<name>` (the Agent tool needs the prefix). `mcp__context7` and `mcp__playwright` are used when those MCP servers are installed, and skipped otherwise.
+Invoke agents as `veland:<name>` (the Agent tool needs the prefix). `mcp__context7` and `mcp__playwright` are used when those MCP servers are installed, and skipped otherwise.
 
-`cutter:code-reviewer` preloads the two review skills (`/cutter:code-review`, `/cutter:code-review-branch`) as its procedure; you can also run them yourself. Bare names (`/commit`) also work when no other skill has that name.
+`veland:code-reviewer` preloads the two review skills (`/veland:code-review`, `/veland:code-review-branch`) as its procedure; you can also run them yourself. Bare names (`/commit`) also work when no other skill has that name.

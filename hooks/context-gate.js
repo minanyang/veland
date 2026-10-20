@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// UserPromptSubmit hook: refuse /cutter:work and /cutter:close on a session that is
+// UserPromptSubmit hook: refuse /veland:work and /veland:close on a session that is
 // already carrying a large context, and say to /clear first.
 //
 // A flow skill run on top of an unrelated conversation re-reads all of it on every turn:
 // slower turns and a bigger bill, for context the ticket does not need. The ticket's files
-// in .cutter/<id>/ are the memory; a fresh session loses nothing.
+// in .veland/<id>/ are the memory; a fresh session loses nothing.
 //
 // Context = input + cache_creation + cache_read tokens of the last assistant message in
 // the transcript. A compaction after that message means the context was just reset.
 //
-// .claude/cutter.json: { "contextGate": { "maxTokens": 200000 } }; maxTokens 0 turns it off.
+// .claude/veland.json: { "contextGate": { "maxTokens": 200000 } }; maxTokens 0 turns it off.
 // The nearest one at or above the session's cwd, within its repo, counts, so a worktree's own file wins. One
 // that does not parse, or whose maxTokens is not a number, gets the default and a warning.
 
@@ -23,7 +23,7 @@ try {
   process.exit(0) // never block a prompt on a malformed payload
 }
 
-const cmd = /^\s*\/cutter:(work|close)\b(.*)$/.exec(input.prompt || '')
+const cmd = /^\s*\/veland:(work|close)\b(.*)$/.exec(input.prompt || '')
 if (!cmd) process.exit(0)
 
 const DEFAULT = 200_000
@@ -32,7 +32,7 @@ let warning = ''
 // The nearest config up to the repo root (the first directory with a .git dir or file); none outside a repo.
 let file = ''
 for (let dir = path.resolve(input.cwd || process.cwd()); ; dir = path.dirname(dir)) {
-  const f = path.join(dir, '.claude', 'cutter.json')
+  const f = path.join(dir, '.claude', 'veland.json')
   if (!file && fs.statSync(f, { throwIfNoEntry: false })?.isFile()) file = f // not a FIFO or device to block on
   if (fs.existsSync(path.join(dir, '.git'))) break
   if (path.dirname(dir) === dir) {
@@ -49,7 +49,7 @@ if (file) {
     warning = `cannot read it (${e.name})` // not e.message: it can quote the file's contents
   }
 }
-if (warning) warning = `cutter: ${file}: ${warning}; using the default ${DEFAULT / 1000}k context limit.`
+if (warning) warning = `veland: ${file}: ${warning}; using the default ${DEFAULT / 1000}k context limit.`
 const pass = () => {
   if (warning) process.stdout.write(JSON.stringify({ systemMessage: warning }))
   process.exit(0)
@@ -80,13 +80,13 @@ for (let i = lines.length - 1; i >= 0 && !ctx; i--) {
 }
 if (ctx < limit) pass()
 
-const again = `/cutter:${cmd[1]}${cmd[2].trim() ? ' ' + cmd[2].trim() : ''}`
+const again = `/veland:${cmd[1]}${cmd[2].trim() ? ' ' + cmd[2].trim() : ''}`
 process.stdout.write(
   JSON.stringify({
     decision: 'block',
     reason:
-      `Context is ${Math.round(ctx / 1000)}k tokens, over cutter's ${Math.round(limit / 1000)}k limit for a flow skill. ` +
-      `Run /clear, then ${again} — the ticket's files in .cutter/ carry everything the next session needs.`,
+      `Context is ${Math.round(ctx / 1000)}k tokens, over veland's ${Math.round(limit / 1000)}k limit for a flow skill. ` +
+      `Run /clear, then ${again} — the ticket's files in .veland/ carry everything the next session needs.`,
     ...(warning && { systemMessage: warning }),
   }),
 )

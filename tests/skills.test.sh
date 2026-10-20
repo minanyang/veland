@@ -2,10 +2,10 @@
 # The skills' `allowed-tools` must cover every command their fenced bash blocks run and every command their prose names in inline code (unless Claude Code allows it as read-only, it is left to the user, or it is named but never run), and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
-# open and work must load the shared references/grill.md (beside the skills directory) through a granted `cutter-grill`.
+# open and work must load the shared references/grill.md (beside the skills directory) through a granted `veland-grill`.
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
-# work and close must resolve .cutter/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
+# work and close must resolve .veland/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
 # open, work and close must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
@@ -20,8 +20,8 @@ const bad = (m) => { console.log(`FAIL  ${m}`); fail = 1 }
 // Commands left to the user's own permissions, per skill (prefix of the placeholder-normalised line).
 const userOwn = {
   close: [],
-  work: ["git -C X add ", "git -C X commit ", "cutter-land comment "],
-  open: ["cutter-land issue "],
+  work: ["git -C X add ", "git -C X commit ", "veland-land comment "],
+  open: ["veland-land issue "],
 }
 const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
 // Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
@@ -36,8 +36,8 @@ const notRun = {
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
-const bareGrants = ["cutter-worktree *", "cutter-land *", "git *"]
-const publicWrites = ["cutter-land issue", "cutter-land comment"]
+const bareGrants = ["veland-worktree *", "veland-land *", "git *"]
+const publicWrites = ["veland-land issue", "veland-land comment"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 
@@ -100,7 +100,7 @@ for (const skill of Object.keys(userOwn)) {
   }
   for (const raw of spans) {
     const line = norm(raw)
-    if (!/^(git|gh|glab|cutter-[a-z-]+) /.test(line)) continue
+    if (!/^(git|gh|glab|veland-[a-z-]+) /.test(line)) continue
     if (/&&|\|\||;|\|/.test(line)) bad(`${skill}: chained command in prose: ${raw}`)
     else if (covered(line)) ok(`${skill}: covered (prose): ${raw}`)
     else if (ownedBy(skill, line)) ok(`${skill}: left to the user: ${raw}`)
@@ -110,8 +110,8 @@ for (const skill of Object.keys(userOwn)) {
   }
 }
 
-// No skill may grant a public write, by any pattern that covers it: `*`, `cutter-land *`, `cutter-land i*`,
-// the legacy `cutter-land issue:*`, or the command itself.
+// No skill may grant a public write, by any pattern that covers it: `*`, `veland-land *`, `veland-land i*`,
+// the legacy `veland-land issue:*`, or the command itself.
 for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}/SKILL.md`))) {
   const fm = (/^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")) || ["", ""])[1]
   const covers = (body, w) => {
@@ -127,13 +127,13 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
 }
 
 // open and work load the one shared grill rather than each carrying a copy. A Read of it would prompt (the plugin
-// root is outside the workspace and a Read rule takes only an absolute path), so they run the granted cutter-grill.
+// root is outside the workspace and a Read rule takes only an absolute path), so they run the granted veland-grill.
 const grill = `${dir}/../references/grill.md`
 fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.md is missing")
 for (const skill of ["open", "work"]) {
   const text = fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")
-  text.includes("run `cutter-grill`") && /^  - Bash\(cutter-grill\)$/m.test(text)
-    ? ok(`${skill}: loads the grill through a granted cutter-grill`) : bad(`${skill}: does not load the grill through a granted cutter-grill`)
+  text.includes("run `veland-grill`") && /^  - Bash\(veland-grill\)$/m.test(text)
+    ? ok(`${skill}: loads the grill through a granted veland-grill`) : bad(`${skill}: does not load the grill through a granted veland-grill`)
 }
 
 // open reads the issue types through its granted script: Claude Code refuses the raw GraphQL query for its braces.
@@ -141,24 +141,24 @@ for (const skill of ["open", "work"]) {
   const text = fs.readFileSync(`${dir}/open/SKILL.md`, "utf8")
   const fm = /^---\n([\s\S]*?)\n---/.exec(text)[1]
   const step2 = (/^## Step 2\b[\s\S]*?(?=^## )/m.exec(text) || [""])[0]
-  const runs = [...step2.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "cutter-ticket issue-types"))
-  fm.split("\n").some((l) => l.trim() === "- Bash(cutter-ticket issue-types)") && runs
-    ? ok("open: looks up issue types through a granted cutter-ticket issue-types")
-    : bad("open: does not look up issue types through a granted cutter-ticket issue-types")
+  const runs = [...step2.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "veland-ticket issue-types"))
+  fm.split("\n").some((l) => l.trim() === "- Bash(veland-ticket issue-types)") && runs
+    ? ok("open: looks up issue types through a granted veland-ticket issue-types")
+    : bad("open: does not look up issue types through a granted veland-ticket issue-types")
 }
 
-// open drafts from cutter-worktree init's listing, not from reading the forms or the banned file itself.
+// open drafts from veland-worktree init's listing, not from reading the forms or the banned file itself.
 {
   const text = fs.readFileSync(`${dir}/open/SKILL.md`, "utf8")
   // Up to the next step: Step 3's draft layout has `## ` headings of its own.
   const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
-  const runsInit = (s) => [...s.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "cutter-worktree init"))
+  const runsInit = (s) => [...s.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "veland-worktree init"))
   const s2 = step(2), s3 = step(3)
-  runsInit(s2) && !runsInit(s3) && !s3.includes("Run `cutter-worktree init`") &&
+  runsInit(s2) && !runsInit(s3) && !s3.includes("Run `veland-worktree init`") &&
     ["`form:`", "`drafts:`", "`banned:`"].every((l) => (s2 + s3).includes(l)) &&
     s3.includes("`<drafts>/<short-slug>.md`") && !text.includes("Read it whole") && !text.includes("`references/banned-phrases.txt`")
-    ? ok("open: drafts from cutter-worktree init's form, drafts and banned lines")
-    : bad("open: drafts from cutter-worktree init's form, drafts and banned lines")
+    ? ok("open: drafts from veland-worktree init's form, drafts and banned lines")
+    : bad("open: drafts from veland-worktree init's form, drafts and banned lines")
 }
 
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
@@ -174,10 +174,10 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
 {
   const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
   const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
-  step(1).includes("cold read required") && step(1).includes("`.cutter/<id>/cold-read.md`")
+  step(1).includes("cold read required") && step(1).includes("`.veland/<id>/cold-read.md`")
     ? ok("work: acts on plan-check's cold read line") : bad("work: does not act on plan-check's cold read line")
   const draft = step(0).slice(step(0).indexOf("exists as a draft"))
-  draft.indexOf("`cutter-plan-check <id>`") !== -1 && draft.indexOf("`cutter-plan-check <id>`") < draft.indexOf("show the draft once")
+  draft.indexOf("`veland-plan-check <id>`") !== -1 && draft.indexOf("`veland-plan-check <id>`") < draft.indexOf("show the draft once")
     ? ok("work: checks a draft plan before showing it") : bad("work: does not check a draft plan before showing it")
 }
 
@@ -190,7 +190,7 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
   text.includes("Accepting the recommendations (\"go with your recommendations\") answers every question asked in that round")
     ? ok("grill: an accepted recommendation is an answer") : bad("grill: an accepted recommendation is not an answer")
   const step1 = (/^## Step 1\b[\s\S]*?(?=^## Step )/m.exec(fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")) || [""])[0]
-  step1.includes("`.cutter/<id>/comment.md` — every open question the ticket itself states among them, whether the user answered it or accepted the recommendation")
+  step1.includes("`.veland/<id>/comment.md` — every open question the ticket itself states among them, whether the user answered it or accepted the recommendation")
     ? ok("work: posts the answers to the ticket's own questions through comment.md")
     : bad("work: does not post the answers to the ticket's own questions through comment.md")
 }
@@ -199,8 +199,8 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
 {
   const text = fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")
   const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
-  step0.includes("`mode: <close>`") && step0.includes("never read `.claude/cutter.json`") &&
-    !text.includes("comes from `.claude/cutter.json`")
+  step0.includes("`mode: <close>`") && step0.includes("never read `.claude/veland.json`") &&
+    !text.includes("comes from `.claude/veland.json`")
     ? ok("close: takes the mode from check's mode: line") : bad("close: does not take the mode from check's mode: line")
 }
 
@@ -215,25 +215,25 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     : bad("close: does not fill the template check names or add the sections pr names")
 }
 
-// .cutter/<id>/ paths resolve against the printed ticket dir, never the worktree, and the base comes from base:.
+// .veland/<id>/ paths resolve against the printed ticket dir, never the worktree, and the base comes from base:.
 {
   const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
   const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
   text.includes("`ticket dir: <path>`") && text.includes("`base: <branch> (<ref>)`") && text.includes("never under the worktree") &&
-    step0.includes("run `cutter-worktree init <id>` on every invocation, before anything reads or writes under `.cutter/`") &&
+    step0.includes("run `veland-worktree init <id>` on every invocation, before anything reads or writes under `.veland/`") &&
     !text.includes(".worktrees/<id>")
-    ? ok("work: resolves .cutter paths against ticket dir: and takes the base from base:")
-    : bad("work: resolves .cutter paths against ticket dir: and takes the base from base:")
+    ? ok("work: resolves .veland paths against ticket dir: and takes the base from base:")
+    : bad("work: resolves .veland paths against ticket dir: and takes the base from base:")
 }
 {
   const text = fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")
   const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
   const first = (/```bash\n([\s\S]*?)```/.exec(step0) || ["", ""])[1].split("\n").filter(Boolean)
-  first[0] === "cutter-land check <id>" && first[1] === "cutter-worktree path <id>" &&
+  first[0] === "veland-land check <id>" && first[1] === "veland-worktree path <id>" &&
     step0.includes("`ticket dir: <path>`") && step0.includes("`review: missing`") && step0.includes("never under the worktree") &&
-    !text.includes("`.cutter/<id>/review.md` is missing")
-    ? ok("close: runs check first and resolves .cutter paths against ticket dir:")
-    : bad("close: runs check first and resolves .cutter paths against ticket dir:")
+    !text.includes("`.veland/<id>/review.md` is missing")
+    ? ok("close: runs check first and resolves .veland paths against ticket dir:")
+    : bad("close: runs check first and resolves .veland paths against ticket dir:")
 }
 
 for (const skill of ["open", "work", "close"])

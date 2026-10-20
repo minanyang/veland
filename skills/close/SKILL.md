@@ -1,19 +1,19 @@
 ---
 name: close
-description: Land a ticket that /cutter:work finished — rebase it onto the current base, verify again, then open a PR, merge it, or merge locally, as the project configures; remove the worktree once merged. Use when the user runs /cutter:close <id>.
+description: Land a ticket that /veland:work finished — rebase it onto the current base, verify again, then open a PR, merge it, or merge locally, as the project configures; remove the worktree once merged. Use when the user runs /veland:close <id>.
 disable-model-invocation: true
 allowed-tools:
-  - Bash(cutter-land check *)
-  - Bash(cutter-land rebase *)
-  - Bash(cutter-land push *)
-  - Bash(cutter-land merge *)
-  - Bash(cutter-land wait *)
-  - Bash(cutter-land squash *)
-  - Bash(cutter-land pr *)
-  - Bash(cutter-verify *)
-  - Bash(cutter-worktree path *)
-  - Bash(cutter-worktree rm *)
-  - Bash(cutter-worktree sync-base)
+  - Bash(veland-land check *)
+  - Bash(veland-land rebase *)
+  - Bash(veland-land push *)
+  - Bash(veland-land merge *)
+  - Bash(veland-land wait *)
+  - Bash(veland-land squash *)
+  - Bash(veland-land pr *)
+  - Bash(veland-verify *)
+  - Bash(veland-worktree path *)
+  - Bash(veland-worktree rm *)
+  - Bash(veland-worktree sync-base)
   - Bash(git remote get-url origin)
   - Bash(gh auth status)
   - Bash(gh pr view *)
@@ -24,48 +24,48 @@ allowed-tools:
 
 # Close a ticket
 
-`/cutter:close <id>` lands the branch `/cutter:work` produced. How it lands is the `close` setting in `.claude/cutter.json`, which `cutter-land check` prints in Step 0:
+`/veland:close <id>` lands the branch `/veland:work` produced. How it lands is the `close` setting in `.claude/veland.json`, which `veland-land check` prints in Step 0:
 
 | `close` | What happens |
 |---|---|
-| `pr` (default) | push the branch, open a PR; a human merges it. Run `/cutter:close <id>` again after the merge to clean up. |
+| `pr` (default) | push the branch, open a PR; a human merges it. Run `/veland:close <id>` again after the merge to clean up. |
 | `pr-merge` | push, open the PR, and squash-merge it. |
 | `local` | no PR: squash the ticket branch onto the base branch locally. Pushing the base is left to the user. |
 
 The PR tool follows `origin`: github.com → `gh`, a GitLab host → `glab`. Any other host, or no `origin`, supports only `local`.
 
-Run one command per Bash call — no `&&`, `;` or `|` — so each call matches this skill's `allowed-tools` on its own. In `pr-merge` mode, running `/cutter:close` is the user's request to merge: state the PR URL, then merge.
+Run one command per Bash call — no `&&`, `;` or `|` — so each call matches this skill's `allowed-tools` on its own. In `pr-merge` mode, running `/veland:close` is the user's request to merge: state the PR URL, then merge.
 
 ## Step 0 — Take stock, stop on anything unfinished
 
 ```bash
-cutter-land check <id>
-cutter-worktree path <id>
+veland-land check <id>
+veland-worktree path <id>
 ```
 
-`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/cutter.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. Then, before it looks for the worktree, it prints `ticket dir: <path>`, `base: <branch> (<ref>)`, and `review: <path>` or `review: missing`. Every `.cutter/<id>/` path in this skill (`review.md`, `pr-title`, `pr-body.md`, `commit-msg`) is under that ticket dir — in the main checkout, never under the worktree — and `<base>` is the branch on the `base:` line. An exit 2 after the `review:` line saying the ticket has no worktree is the no-worktree case below. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`; and the repo's PR/MR template the body must follow, `pr template: <path>` (relative to the worktree), or `pr template: none`.
+`check` prints `mode: <close>` first: that value is the mode for the whole run, in every step below — never read `.claude/veland.json` for it. An exit 2 from `check` that names an unknown close mode or an unreadable config is a stop: quote the script's line and say the valid values are `pr`, `pr-merge` and `local`. Then, before it looks for the worktree, it prints `ticket dir: <path>`, `base: <branch> (<ref>)`, and `review: <path>` or `review: missing`. Every `.veland/<id>/` path in this skill (`review.md`, `pr-title`, `pr-body.md`, `commit-msg`) is under that ticket dir — in the main checkout, never under the worktree — and `<base>` is the branch on the `base:` line. An exit 2 after the `review:` line saying the ticket has no worktree is the no-worktree case below. In `pr` or `pr-merge` mode, `check` also prints the branch's PR on GitHub: `pr: <STATE> <url>`, or `pr: none`; and the repo's PR/MR template the body must follow, `pr template: <path>` (relative to the worktree), or `pr template: none`.
 
 Stop and say why if any of these holds:
 
-- only in `pr` or `pr-merge` mode (`local` never calls `gh` or `glab`, not even to check): the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/cutter.json` needs neither;
+- only in `pr` or `pr-merge` mode (`local` never calls `gh` or `glab`, not even to check): the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/veland.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
-- `review: missing`, or the review it names lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/cutter:work`'s job.
+- `review: missing`, or the review it names lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/veland:work`'s job.
 
-`pr: MERGED <url>` means the PR was merged since the last run: once the `gh auth status` and uncommitted-changes checks pass, go straight to Step 4 (`sync-base`, then `rm`) — no `review.md` check, rebase, verify, push or `cutter-land pr`. Any other `pr:` line (`OPEN`, `CLOSED`, `none`) goes on as below.
+`pr: MERGED <url>` means the PR was merged since the last run: once the `gh auth status` and uncommitted-changes checks pass, go straight to Step 4 (`sync-base`, then `rm`) — no `review.md` check, rebase, verify, push or `veland-land pr`. Any other `pr:` line (`OPEN`, `CLOSED`, `none`) goes on as below.
 
 ## Step 1 — Rebase onto the current base
 
 ```bash
-cutter-land rebase <id>
+veland-land rebase <id>
 ```
 
-The base is the branch on `check`'s `base:` line (`base` from the config, else `develop` when origin has it, else origin's default branch). In `local` mode the rebase goes onto the local base when it contains `origin/<base>`, so tickets closed earlier and not pushed yet are kept; when the two have diverged it refuses — stop and leave reconciling the base to the user. On a conflict `cutter-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
+The base is the branch on `check`'s `base:` line (`base` from the config, else `develop` when origin has it, else origin's default branch). In `local` mode the rebase goes onto the local base when it contains `origin/<base>`, so tickets closed earlier and not pushed yet are kept; when the two have diverged it refuses — stop and leave reconciling the base to the user. On a conflict `veland-land rebase` lists the conflicting files and leaves the rebase: stop, show them, and leave it for the user to resolve (or resolve it with them). Never `git rebase --skip` or drop a commit to get past it.
 
 ## Step 2 — Verify the rebased tree
 
 ```bash
-cutter-verify <id>
+veland-verify <id>
 ```
 
 It must pass on the rebased tree. A failure here is new (the base moved): fix it as a commit on the branch, or stop and report it.
@@ -74,19 +74,19 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 **`pr` and `pr-merge`:**
 
-1. Push: `cutter-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
-2. Open the PR against the base: write `.cutter/<id>/pr-title` (one line: the ticket's title, in the repo's commit style, read with `git log -n 5 --oneline` in the main checkout) and `.cutter/<id>/pr-body.md`, then run `cutter-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
-   - the plan's goal and acceptance criteria as a checklist, the final `cutter-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source.
-   - When `check` printed `pr template: <path>`, read `<worktree>/<path>` (the worktree from `cutter-worktree path <id>`) with the Read tool and fill its sections with this content instead of using this layout, copying its `##` heading lines verbatim. When `cutter-land pr` refuses because `pr-body.md` lacks sections of the template, add them to `pr-body.md` and run `cutter-land pr <id>` again.
-3. `pr-merge` only: state the PR URL, then `cutter-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind cutter's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
+1. Push: `veland-land push <id>` — it pushes only the ticket branch, with `--force-with-lease` only when origin already has it.
+2. Open the PR against the base: write `.veland/<id>/pr-title` (one line: the ticket's title, in the repo's commit style, read with `git log -n 5 --oneline` in the main checkout) and `.veland/<id>/pr-body.md`, then run `veland-land pr <id>`. It creates the PR/MR, or, when the branch already has an open one (a previous run that stopped before merging), replaces only its body and refuses a PR whose base is not the configured base, and refuses a branch whose PR is already merged. Body:
+   - the plan's goal and acceptance criteria as a checklist, the final `veland-verify` table, the review verdict with what was done about each finding, and `Closes #<n>` for a `gh-<n>` ticket or the ticket's URL for any other source.
+   - When `check` printed `pr template: <path>`, read `<worktree>/<path>` (the worktree from `veland-worktree path <id>`) with the Read tool and fill its sections with this content instead of using this layout, copying its `##` heading lines verbatim. When `veland-land pr` refuses because `pr-body.md` lacks sections of the template, add them to `pr-body.md` and run `veland-land pr <id>` again.
+3. `pr-merge` only: state the PR URL, then `veland-land merge <id>` — a squash merge without the delete-branch flags: `gh` would remove the worktree and branch behind veland's back; Step 4 removes both, local and remote. It refuses a PR whose base is not the configured base. On exit 0 go to Step 4. Otherwise, by exit code:
    - **3** — checks still running or not registered yet. Wait for them in the background, never in a foreground polling loop:
 
      ```bash
-     cutter-land wait <id>
+     veland-land wait <id>
      ```
 
-     Run it with `run_in_background`; you are woken when it exits. Exit 0: run `cutter-land merge <id>` again and act on its exit code the same way. Exit 1 (a check failed, or still pending after 30 minutes) or 2 (a refusal): stop, report the PR URL and the checks it named; the worktree stays.
-   - **4** — `origin/<base>` moved since the rebase: go back to Step 1 (rebase, verify, push, `cutter-land pr <id>` to refresh the body) and merge again. At most 3 rounds of rebase in all; after the third, stop and report the PR URL.
+     Run it with `run_in_background`; you are woken when it exits. Exit 0: run `veland-land merge <id>` again and act on its exit code the same way. Exit 1 (a check failed, or still pending after 30 minutes) or 2 (a refusal): stop, report the PR URL and the checks it named; the worktree stays.
+   - **4** — `origin/<base>` moved since the rebase: go back to Step 1 (rebase, verify, push, `veland-land pr <id>` to refresh the body) and merge again. At most 3 rounds of rebase in all; after the third, stop and report the PR URL.
    - **2** — failed checks or any other refusal: stop, report the PR URL and what it named.
 
    Never merge around a refusal.
@@ -94,8 +94,8 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 
 **`local`:**
 
-1. Write `.cutter/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style (`git log -n 5 --oneline` in the main checkout), then a blank line and a short body when it helps.
-2. `cutter-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout with `git merge --ff-only` if it is on the base branch (uncommitted changes to files the ticket does not touch are kept), otherwise by updating the base ref. A refusal that says the base moved means go back to Step 1; one that names uncommitted changes in the main checkout is the user's to commit or stash — stop and show it, never stash, reset or discard them yourself.
+1. Write `.veland/<id>/commit-msg` — the squash commit's message: the ticket's title in the repo's commit style (`git log -n 5 --oneline` in the main checkout), then a blank line and a short body when it helps.
+2. `veland-land squash <id>` — one commit on the base with the branch's tree, applied in the main checkout with `git merge --ff-only` if it is on the base branch (uncommitted changes to files the ticket does not touch are kept), otherwise by updating the base ref. A refusal that says the base moved means go back to Step 1; one that names uncommitted changes in the main checkout is the user's to commit or stash — stop and show it, never stash, reset or discard them yourself.
 3. Go to Step 4.
 
 ## Step 4 — Clean up after the merge
@@ -103,13 +103,13 @@ It must pass on the rebased tree. A failure here is new (the base moved): fix it
 Only once the branch is merged (squash-merged PR, or the local squash). After a merged PR (`pr-merge`, or `pr` on its cleanup run) bring the main checkout's base up to date first; skip `sync-base` in `local` mode, whose base is already ahead:
 
 ```bash
-cutter-worktree sync-base
-cutter-worktree rm <id>
+veland-worktree sync-base
+veland-worktree rm <id>
 ```
 
 `sync-base` fast-forwards the base only when the main checkout is on it and `git merge --ff-only` allows it — uncommitted changes to files the incoming commits do not touch are kept; otherwise it leaves the base and says why. Never pull, reset or switch branches in the main checkout to make it go through.
 
-It removes the worktree and deletes the branch once its changes are on the base — merged as git sees it, or squash-merged (every file it touched is identical on `origin/<base>`, or on the local base after a local squash) — along with the pushed branch on origin if a merged PR left it behind. A branch whose changes are not on the base is kept and reported; never delete it yourself. Keep `.cutter/<id>/` — it is the ticket's record.
+It removes the worktree and deletes the branch once its changes are on the base — merged as git sees it, or squash-merged (every file it touched is identical on `origin/<base>`, or on the local base after a local squash) — along with the pushed branch on origin if a merged PR left it behind. A branch whose changes are not on the base is kept and reported; never delete it yourself. Keep `.veland/<id>/` — it is the ticket's record.
 
 ## Step 5 — Report
 
@@ -121,14 +121,14 @@ What landed and where (PR URL or base commit), the final verify table — on a c
 - Between routine tool calls, at most one line per phase change — a phase is one of this skill's numbered steps.
 - Say each fact once: what the reply has already shown is not summarised again.
 
-Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/cutter:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.cutter/`.
+Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/veland:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.veland/`.
 
 The final reply is Step 5's report.
 
 ## Never
 
-- Never land a branch whose rebased tree did not pass `cutter-verify`.
-- Never force-push (except `cutter-land push`'s `--force-with-lease`), and never push the base branch in `local` mode.
+- Never land a branch whose rebased tree did not pass `veland-verify`.
+- Never force-push (except `veland-land push`'s `--force-with-lease`), and never push the base branch in `local` mode.
 - Never resolve a rebase conflict by dropping commits or `--skip`.
 - Never remove a worktree before its branch is merged.
 - Never merge in `pr` mode — that is the human's click.

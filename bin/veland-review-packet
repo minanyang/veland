@@ -2,15 +2,15 @@
 # Build a cold reviewer's starting material in one place, so the review opens with one Read
 # and one parallel batch instead of many one-slice-per-turn reads.
 #
-#   cutter-review-packet <id>            full packet: the whole branch
-#   cutter-review-packet <id> --fixes    fixes packet: only the commits made after the last full review
+#   veland-review-packet <id>            full packet: the whole branch
+#   veland-review-packet <id> --fixes    fixes packet: only the commits made after the last full review
 #
 # review.md is a sequence of "## Round <n> — full" and "## Round <n> — fixes" sections.
 #
-# The full packet writes .cutter/<id>/review.diff (merge base...HEAD, generated files and lockfiles
-# excluded) and .cutter/<id>/review-packet.md (tree identity, convention files, changed files
+# The full packet writes .veland/<id>/review.diff (merge base...HEAD, generated files and lockfiles
+# excluded) and .veland/<id>/review-packet.md (tree identity, convention files, changed files
 # with line counts, stat, commits, the last verify summary), and records the reviewed HEAD in
-# .cutter/<id>/review-head.
+# .veland/<id>/review-head.
 #
 # --fixes writes fixes.diff and fixes-packet.md for review-head...HEAD, with the findings of the last
 # "## Round <n>" section of review.md (to the end of the file) minus its "### Fixes applied" subsection,
@@ -23,15 +23,15 @@
 #
 # Both modes write a `## Plan checks` section (`none` when empty), always against the whole branch (merge
 # base...HEAD), so cases added before the full review do not show as missing in the fixes packet: each `## Tests` case name of
-# .cutter/<id>/plan.md not found in the added lines of its test file, and each `(gone)` Readers term still at
+# .veland/<id>/plan.md not found in the added lines of its test file, and each `(gone)` Readers term still at
 # HEAD on a line that diff did not add (lockfiles, `generated` paths and CHANGELOG* excluded).
 # Both write `- security review: required (<reasons>)` when the packet's diff touches a bin/ script named in a
 # `Bash(<name> …)` entry of any skills/*/SKILL.md's allowed-tools, the frontmatter of a skills/*/SKILL.md or agents/*.md,
 # hooks/hooks.json, a file its commands name under ${CLAUDE_PLUGIN_ROOT}, or a file one of those scripts loads (one
 # level) by a `source "$(dirname …)/…"` or a relative `require` resolvable without running it; no such line otherwise.
 #
-# Before anything is built, the `preReviewGates` commands from .claude/cutter.json run in the
-# worktree (logs in .cutter/<id>/pre-review/). The first that fails exits 1, naming it and printing
+# Before anything is built, the `preReviewGates` commands from .claude/veland.json run in the
+# worktree (logs in .veland/<id>/pre-review/). The first that fails exits 1, naming it and printing
 # the log tail; no packet and no review-head are written. Fix, commit, rebuild.
 #
 # The packet holds only what the tree says. It never carries the implementer's report or a
@@ -41,7 +41,7 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-usage="usage: cutter-review-packet <id> [--fixes]"
+usage="usage: veland-review-packet <id> [--fixes]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
 check_id "$id"
 fixes=""
@@ -275,7 +275,7 @@ security="$(node -e '
   fi
   if [ -f "$dir/verify/summary.txt" ]; then
     echo
-    echo "## Last cutter-verify run — gates already ran; do not re-run them"
+    echo "## Last veland-verify run — gates already ran; do not re-run them"
     echo
     echo '```'
     cat "$dir/verify/summary.txt"

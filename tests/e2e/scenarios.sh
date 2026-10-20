@@ -60,7 +60,7 @@ canned_rollups() {
   printf '{"rollups":[%s]}\n' "$seq"
 }
 
-OPEN_PROMPT="/cutter:open bin/greet prints every greeting twice"
+OPEN_PROMPT="/veland:open bin/greet prints every greeting twice"
 REPLY="go with your recommendations"
 
 # ---------------------------------------------------------------- flows
@@ -112,7 +112,7 @@ flow_work_bug() {
   TICKET=gh-5
   new_run 1 pr
   canned "$(canned_work)"
-  drive "/cutter:work gh-5" "$REPLY" 6 has_plan
+  drive "/veland:work gh-5" "$REPLY" 6 has_plan
   check_scenarios plan || return 0
   flow_wants work-bug end || return 0
   place_memory
@@ -124,26 +124,26 @@ flow_work_wide() {
   TICKET=gh-6
   new_run 1 pr
   canned "$(canned_work)"
-  drive "/cutter:work gh-6" "$REPLY" 6 has_plan
+  drive "/veland:work gh-6" "$REPLY" 6 has_plan
   check_scenarios plan
 }
 
 flow_close_local() {
   new_run 1 local
   prep_ticket
-  drive "/cutter:close gh-5" "continue" 6 base_advanced
+  drive "/veland:close gh-5" "continue" 6 base_advanced
   check_scenarios end
 }
 
 flow_close_pr() {
   new_run 1 pr pr-template
   prep_ticket
-  drive "/cutter:close gh-5" "continue" 6 pr_exists
+  drive "/veland:close gh-5" "continue" 6 pr_exists
   check_scenarios opened || return 0
   flow_wants close-pr end || return 0
   squash_merge_on_origin
   new_session
-  drive "/cutter:close gh-5" "continue" 6 worktree_gone
+  drive "/veland:close gh-5" "continue" 6 worktree_gone
   check_scenarios end
 }
 
@@ -151,7 +151,7 @@ flow_close_reuse() {
   new_run 1 pr
   prep_ticket
   seed_state "$(jq -n --arg b "$TICKET_BRANCH" '{issues: [], comments: [], rollupCalls: 0, prs: [{number: 1, headRefName: $b, baseRefName: "main", title: "fix(greet): print the greeting once", body: "old body", state: "OPEN", url: "https://github.com/test/fixture/pull/1"}]}')"
-  drive "/cutter:close gh-5" "continue" 6 pr_edited
+  drive "/veland:close gh-5" "continue" 6 pr_edited
   check_scenarios end
 }
 
@@ -159,25 +159,25 @@ flow_close_pr_merge() {
   new_run 1 pr-merge
   prep_ticket
   canned "$(canned_rollups "$CHECK_GREEN")"
-  drive "/cutter:close gh-5" "continue" 6 worktree_gone
+  drive "/veland:close gh-5" "continue" 6 worktree_gone
   check_scenarios end
 }
 
 flow_close_nogh() {
   new_run 0 pr
   prep_ticket
-  drive "/cutter:close gh-5" "" 1 never
+  drive "/veland:close gh-5" "" 1 never
   new_run 1 pr
   prep_ticket
   canned '{"authExit": 1}'
-  drive "/cutter:close gh-5" "" 1 never
+  drive "/veland:close gh-5" "" 1 never
   check_scenarios end
 }
 
 flow_close_blocker() {
   new_run 1 local
   prep_ticket blocker
-  drive "/cutter:close gh-5" "" 1 never
+  drive "/veland:close gh-5" "" 1 never
   check_scenarios end
 }
 
@@ -185,7 +185,7 @@ flow_close_checks_fail() {
   new_run 1 pr-merge
   prep_ticket
   canned "$(canned_rollups "$CHECK_FAILED")"
-  drive "/cutter:close gh-5" "" 1 never
+  drive "/veland:close gh-5" "" 1 never
   check_scenarios end
 }
 
@@ -195,7 +195,7 @@ flow_close_base_moved() {
   new_run 1 pr-merge
   prep_ticket
   canned "$(canned_rollups "$CHECK_PENDING" "$CHECK_GREEN" | jq '. + {onFirstRollup: {pushFile: "README.md"}}')"
-  drive "/cutter:close gh-5" "continue" 6 worktree_gone
+  drive "/veland:close gh-5" "continue" 6 worktree_gone
   check_scenarios end
 }
 
@@ -203,7 +203,7 @@ flow_close_pending() {
   new_run 1 pr-merge
   prep_ticket
   canned "$(canned_rollups "$CHECK_PENDING" "$CHECK_PENDING" "$CHECK_GREEN")"
-  drive "/cutter:close gh-5" "continue" 6 worktree_gone
+  drive "/veland:close gh-5" "continue" 6 worktree_gone
   check_scenarios end
 }
 
@@ -234,7 +234,7 @@ scenario_1() {
   ensure "gh issue create ran before the approval" [ "$(cat "$RUN/creates-at-draft")" = 0 ]
   ensure "gh issue create is not called exactly once" [ "$(ghlog_count issue create)" = 1 ]
   ensure "the issue was not created with exactly the draft's labels" created_labels_match "$labels"
-  ensure "the issue was not created through cutter-land issue" [ "$(tool_count '^cutter-land issue ')" -ge 1 ]
+  ensure "the issue was not created through veland-land issue" [ "$(tool_count '^veland-land issue ')" -ge 1 ]
   ensure "a gh issue create command was run directly" [ "$(tool_count '^gh issue create')" = 0 ]
   ensure "the draft was not deleted" no_drafts
 }
@@ -254,7 +254,7 @@ scenario_3() {
   ensure "claude made no tool call" ran_something
   ensure "gh issue list was not called" [ "$(ghlog_count issue list)" -ge 1 ]
   ensure "gh issue create was called" [ "$(ghlog_count issue create)" = 0 ]
-  ensure "cutter-land issue was run" [ "$(tool_count '^cutter-land issue ')" = 0 ]
+  ensure "veland-land issue was run" [ "$(tool_count '^veland-land issue ')" = 0 ]
 }
 
 scenario_4() {
@@ -266,7 +266,7 @@ scenario_4() {
     ensure "run $n: a draft was written" no_drafts
     ensure "run $n: gh issue create was called" [ "$(ghlog_count issue create)" = 0 ]
     ensure "run $n: a gh issue create command ran" [ "$(tool_count '^gh issue create')" = 0 ]
-    ensure "run $n: cutter-land issue was run" [ "$(tool_count '^cutter-land issue ')" = 0 ]
+    ensure "run $n: veland-land issue was run" [ "$(tool_count '^veland-land issue ')" = 0 ]
     if [ "$(cat "$RUN/fake")" = 1 ]; then ensure "run $n: gh auth status was never called" [ "$(ghlog_count auth status)" -ge 1 ]; fi
   done <"$FLOW_ROOT/runs"
   [ "$n" = 2 ] || WHY="${WHY:+$WHY; }the flow made $n runs, not 2"
@@ -305,22 +305,22 @@ scenario_O3() {
 # ---------------------------------------------------------------- scenarios: work
 
 scenario_5() {
-  ensure "ticket.md is missing" [ -s "$REPO/.cutter/gh-5/ticket.md" ]
-  ensure "plan.md is missing" [ -s "$REPO/.cutter/gh-5/plan.md" ]
+  ensure "ticket.md is missing" [ -s "$REPO/.veland/gh-5/ticket.md" ]
+  ensure "plan.md is missing" [ -s "$REPO/.veland/gh-5/plan.md" ]
   ensure "the main checkout is dirty" [ -z "$(rgit status --porcelain)" ]
   ensure "a worktree exists" [ "$(rgit worktree list | wc -l | tr -d ' ')" = 1 ]
   ensure "a ticket branch exists" [ -z "$(rgit branch --list '*gh-5*')" ]
 }
 
 scenario_W1() {
-  ensure "cutter-plan-check gh-5 does not exit 0" inrepo cutter-plan-check gh-5
+  ensure "veland-plan-check gh-5 does not exit 0" inrepo veland-plan-check gh-5
 }
 
 scenario_W3() {
-  local plan="$REPO/.cutter/$TICKET/plan.md" files first explores
+  local plan="$REPO/.veland/$TICKET/plan.md" files first explores
   files="$(md_section "$plan" Files | grep -c '^[-*] ')"
   # The first write of plan.md: the Write or Edit tool, or a Bash command redirecting into it (a heredoc).
-  first="$(tool_calls | jq -s --arg p "/.cutter/$TICKET/plan.md" --arg re ">[[:space:]]*['\"]?[^[:space:]]*\\.cutter/$TICKET/plan\\.md" \
+  first="$(tool_calls | jq -s --arg p "/.veland/$TICKET/plan.md" --arg re ">[[:space:]]*['\"]?[^[:space:]]*\\.veland/$TICKET/plan\\.md" \
     '[.[] | select(((.name == "Write" or .name == "Edit") and ((.file_path // "") | endswith($p))) or (.name == "Bash" and ((.command // "") | test($re)))) | .seq] | min // -1')"
   explores="$(tool_calls | jq -s --argjson first "$first" '[.[] | select((.name == "Agent" or .name == "Task") and .subagent_type == "Explore" and .seq > $first)] | length')"
   # shellcheck disable=SC2153  # FLOW is set by run_flow
@@ -330,7 +330,7 @@ scenario_W3() {
   if [ "$files" -gt 3 ]; then
     ensure "$TICKET: plan.md was never written (Write, Edit or a Bash redirect)" [ "$first" -ge 0 ]
     ensure "$TICKET: the plan binds $files files but no Explore agent ran after plan.md was written" [ "$explores" -ge 1 ]
-    ensure "$TICKET: the plan binds $files files but cold-read.md is missing or empty" [ -s "$REPO/.cutter/$TICKET/cold-read.md" ]
+    ensure "$TICKET: the plan binds $files files but cold-read.md is missing or empty" [ -s "$REPO/.veland/$TICKET/cold-read.md" ]
   else
     ensure "$TICKET: the plan binds $files files but an Explore agent ran after plan.md was written" [ "$explores" = 0 ]
   fi
@@ -341,28 +341,28 @@ scenario_6() {
   branch="$(rgit for-each-ref --format='%(refname:short)' 'refs/heads/fix/gh-5-*' | head -n 1)"
   ensure "there is no fix/gh-5-* branch" [ -n "$branch" ]
   ensure "the branch has no commit beyond main" [ "$(rgit rev-list --count "main..${branch:-main}")" -ge 1 ]
-  ensure "cutter-red-proof was not run" [ "$(tool_count '^cutter-red-proof gh-5')" -ge 1 ]
+  ensure "veland-red-proof was not run" [ "$(tool_count '^veland-red-proof gh-5')" -ge 1 ]
   # Red-proof's report of the reverted run: every changed test file it ran failed.
-  ensure "red-proof/report.json is missing" [ -s "$REPO/.cutter/gh-5/red-proof/report.json" ]
+  ensure "red-proof/report.json is missing" [ -s "$REPO/.veland/gh-5/red-proof/report.json" ]
   ensure "red-proof's report has a test file that passed without the change" \
-    jq -e '(.testResults | length) > 0 and all(.testResults[]; .status != "passed")' "$REPO/.cutter/gh-5/red-proof/report.json"
-  ensure "verify/summary.txt is missing" [ -s "$REPO/.cutter/gh-5/verify/summary.txt" ]
-  ensure "verify/summary.txt shows a FAIL" not grep -q FAIL "$REPO/.cutter/gh-5/verify/summary.txt"
-  ensure "review.md is missing" [ -s "$REPO/.cutter/gh-5/review.md" ]
+    jq -e '(.testResults | length) > 0 and all(.testResults[]; .status != "passed")' "$REPO/.veland/gh-5/red-proof/report.json"
+  ensure "verify/summary.txt is missing" [ -s "$REPO/.veland/gh-5/verify/summary.txt" ]
+  ensure "verify/summary.txt shows a FAIL" not grep -q FAIL "$REPO/.veland/gh-5/verify/summary.txt"
+  ensure "review.md is missing" [ -s "$REPO/.veland/gh-5/review.md" ]
   ensure "origin's heads changed" [ "$(origin_heads)" = "$(cat "$RUN/initial-heads")" ]
 }
 
 scenario_W2() {
   ensure "gh issue comment is not called exactly once" [ "$(ghlog_count issue comment)" = 1 ]
-  ensure "comment.posted.md is missing" [ -s "$REPO/.cutter/gh-5/comment.posted.md" ]
+  ensure "comment.posted.md is missing" [ -s "$REPO/.veland/gh-5/comment.posted.md" ]
 }
 
 scenario_W4() {
-  ensure "no cutter:security-reviewer agent ran" [ "$(agent_count cutter:security-reviewer)" -ge 1 ]
+  ensure "no veland:security-reviewer agent ran" [ "$(agent_count veland:security-reviewer)" -ge 1 ]
 }
 
 scenario_W5() {
-  local plan="$REPO/.cutter/gh-5/plan.md" ev="$REPO/.cutter/gh-5/evidence.md" ac last n=0
+  local plan="$REPO/.veland/gh-5/plan.md" ev="$REPO/.veland/gh-5/evidence.md" ac last n=0
   ensure "evidence.md is missing" [ -s "$ev" ]
   for ac in $(md_section "$plan" "Acceptance criteria" | grep -oE '^- AC[0-9]+' | sed 's/^- //'); do
     n=$((n + 1))
@@ -376,12 +376,12 @@ scenario_W5() {
 }
 
 scenario_W6() {
-  local rev="$REPO/.cutter/gh-5/review.md" head commits="" branch
+  local rev="$REPO/.veland/gh-5/review.md" head commits="" branch
   branch="$(rgit for-each-ref --format='%(refname:short)' 'refs/heads/fix/gh-5-*' | head -n 1)"
   ensure "review.md does not start with '## Round 1 — full'" [ "$(grep -m1 '^## ' "$rev")" = '## Round 1 — full' ]
   ensure "review.md has a third round" not grep -Eq '^## Round ([3-9]|[1-9][0-9])' "$rev"
   if grep -q '^## Round 2 — fixes' "$rev"; then
-    head="$(cat "$REPO/.cutter/gh-5/review-head" 2>/dev/null)"
+    head="$(cat "$REPO/.veland/gh-5/review-head" 2>/dev/null)"
     if [ -n "$head" ]; then commits="$(rgit log --format=%H "$head..$branch" -- . ':(exclude).claude/agent-memory')"; fi
     ensure "a Round 2 exists but no commit followed round 1" [ -n "$commits" ]
   fi
@@ -404,7 +404,7 @@ scenario_W7() {
 scenario_7() {
   ensure "the base did not gain exactly one commit" [ "$(rgit rev-list --count "$(cat "$RUN/initial-main")..main")" = 1 ]
   ensure "the new commit's tree is not the ticket branch's" [ "$(rgit rev-parse 'main^{tree}')" = "$(cat "$RUN/branch-tree")" ]
-  ensure "the commit message is not .cutter/gh-5/commit-msg" [ "$(rgit log -1 --format=%B main)" = "$(cat "$REPO/.cutter/gh-5/commit-msg")" ]
+  ensure "the commit message is not .veland/gh-5/commit-msg" [ "$(rgit log -1 --format=%B main)" = "$(cat "$REPO/.veland/gh-5/commit-msg")" ]
   ensure "origin's heads changed" [ "$(origin_heads)" = "$(cat "$RUN/initial-heads")" ]
   ensure "gh was called" [ ! -s "$GHD/calls.log" ]
   ensure "the ticket branch still exists" not git -C "$REPO" show-ref --verify --quiet "refs/heads/$TICKET_BRANCH"
@@ -442,7 +442,7 @@ scenario_11() {
   ensure "gh pr merge got --delete-branch" not ghlog_flag_present pr merge --delete-branch
   ensure "gh pr merge got -d" not ghlog_flag_present pr merge -d
   ensure "gh pr merge got --admin" not ghlog_flag_present pr merge --admin
-  ensure "cutter-land wait was run" [ "$(tool_count '^cutter-land wait ')" = 0 ]
+  ensure "veland-land wait was run" [ "$(tool_count '^veland-land wait ')" = 0 ]
   ensure "the worktree was not removed" worktree_gone
 }
 
@@ -467,7 +467,7 @@ scenario_13() {
 }
 
 scenario_14() {
-  ensure "close did not take stock of the ticket (Step 0)" [ "$(tool_count '^cutter-(worktree path|land check) ')" -ge 1 ]
+  ensure "close did not take stock of the ticket (Step 0)" [ "$(tool_count '^veland-(worktree path|land check) ')" -ge 1 ]
   ensure "origin's heads changed" [ "$(origin_heads)" = "$(cat "$RUN/initial-heads")" ]
   ensure "gh was called" [ ! -s "$GHD/calls.log" ]
   ensure "the base gained a commit" [ "$(rgit rev-parse main)" = "$(cat "$RUN/initial-main")" ]
@@ -483,17 +483,17 @@ scenario_C1() {
 }
 
 scenario_C2() {
-  ensure "close did not rebase exactly twice" [ "$(tool_count '^cutter-land rebase ')" = 2 ]
+  ensure "close did not rebase exactly twice" [ "$(tool_count '^veland-land rebase ')" = 2 ]
   ensure "gh pr merge is not called exactly once" [ "$(ghlog_count pr merge)" = 1 ]
   ensure "the PR is not merged" pr_merged
 }
 
 scenario_C3() {
   local wait_seq merge_after
-  wait_seq="$(tool_calls | jq -s '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^cutter-land wait ")) and .run_in_background == true) | .seq] | min // -1')"
-  merge_after="$(tool_calls | jq -s --argjson w "$wait_seq" '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^cutter-land merge ")) and .seq > $w)] | length')"
-  ensure "cutter-land wait did not run with run_in_background" [ "$wait_seq" -ge 0 ]
-  ensure "no cutter-land merge followed the wait" [ "$merge_after" -ge 1 ]
+  wait_seq="$(tool_calls | jq -s '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^veland-land wait ")) and .run_in_background == true) | .seq] | min // -1')"
+  merge_after="$(tool_calls | jq -s --argjson w "$wait_seq" '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^veland-land merge ")) and .seq > $w)] | length')"
+  ensure "veland-land wait did not run with run_in_background" [ "$wait_seq" -ge 0 ]
+  ensure "no veland-land merge followed the wait" [ "$merge_after" -ge 1 ]
   ensure "gh pr merge is not called exactly once" [ "$(ghlog_count pr merge)" = 1 ]
   ensure "the PR is not merged" pr_merged
 }

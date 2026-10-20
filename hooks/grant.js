@@ -3,7 +3,7 @@
 // session in which the user typed it. Claude Code applies a skill's `allowed-tools` only to the turn
 // the skill was invoked in, not to a background wake-up, a later approval turn or a `--resume` turn.
 //
-// UserPromptSubmit: a prompt that starts with `/cutter:open`, `/cutter:work` or `/cutter:close`
+// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work` or `/veland:close`
 // records that skill's `Bash(...)` grants, as its SKILL.md lists them now, as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
 //   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
@@ -12,7 +12,7 @@
 // entry is confirmed only when the transcript line of that prompt_id is the user's typed skill.
 //
 // PreToolUse: allows a single command (no shell metacharacters) matching a confirmed grant, or a
-// pending one that the transcript confirms, outside a subagent. A cutter script run on a ticket is
+// pending one that the transcript confirms, outside a subagent. A veland script run on a ticket is
 // allowed only for the entry's ticket id: the one typed with the skill, or for a task in words the
 // first one the hook allows. Anything else, and any error of its own, prints nothing: Claude Code
 // decides as usual.
@@ -21,17 +21,17 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const SID = /^[A-Za-z0-9-]+$/
-const TYPED = /^\s*\/cutter:(open|work|close)(?=\s|$)/
+const TYPED = /^\s*\/veland:(open|work|close)(?=\s|$)/
 const META = /[;&|<>$`\n\r]/
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-// The word that carries the ticket id: `cutter-land <sub> <id>`, `cutter-verify <id>`, ….
+// The word that carries the ticket id: `veland-land <sub> <id>`, `veland-verify <id>`, ….
 const ID_WORD = {
-  'cutter-land': 2,
-  'cutter-worktree': 2,
-  'cutter-verify': 1,
-  'cutter-red-proof': 1,
-  'cutter-review-packet': 1,
-  'cutter-plan-check': 1,
+  'veland-land': 2,
+  'veland-worktree': 2,
+  'veland-verify': 1,
+  'veland-red-proof': 1,
+  'veland-review-packet': 1,
+  'veland-plan-check': 1,
 }
 const CHUNK = 1 << 20
 const MAX_SCAN = 16 << 20
@@ -109,7 +109,7 @@ function allow(skill) {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'allow',
-        permissionDecisionReason: `cutter: granted by /cutter:${skill}`,
+        permissionDecisionReason: `veland: granted by /veland:${skill}`,
       },
     }),
   )
@@ -173,7 +173,7 @@ function typedLine(line, id, skill) {
     (l.origin ? l.origin.kind === 'human' : l.turnOrigin === 'sdk' && l.isMeta !== true && l.promptSource == null) &&
     !!l.message &&
     typeof l.message.content === 'string' &&
-    l.message.content.startsWith(`<command-message>cutter:${skill}</command-message>\n<command-name>/cutter:${skill}</command-name>`)
+    l.message.content.startsWith(`<command-message>veland:${skill}</command-message>\n<command-name>/veland:${skill}</command-name>`)
   )
 }
 

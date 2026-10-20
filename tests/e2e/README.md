@@ -1,8 +1,8 @@
 # End-to-end scenarios
 
-`run.sh` drives `/cutter:open`, `/cutter:work` and `/cutter:close` through real `claude -p` runs against throwaway repos,
+`run.sh` drives `/veland:open`, `/veland:work` and `/veland:close` through real `claude -p` runs against throwaway repos,
 a github.com origin backed by a local bare repo, and a fake `gh`. Each scenario passes or fails on state alone: files
-under `.cutter/`, git state (main checkout, worktree, branches), origin's heads, the fake `gh` call log, and the tool
+under `.veland/`, git state (main checkout, worktree, branches), origin's heads, the fake `gh` call log, and the tool
 calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_background`) — never the model's text.
 
 ## Run
@@ -38,10 +38,10 @@ About 15 minutes and $9: `total 872s` and `cost $9.00` (the sum of the stream-js
 `total_cost_usd`) for all 27 scenarios on 2026-10-18 with `--model sonnet`. Six failed in that run, from two causes the
 model has to find out by itself because no command prints the answer:
 
-- 8, 10, 12, C1, C3 — close looked for `.cutter/gh-5/review.md` in the worktree instead of the main checkout, found
+- 8, 10, 12, C1, C3 — close looked for `.veland/gh-5/review.md` in the worktree instead of the main checkout, found
   nothing and stopped, so the branch was not landed in time.
 - O1 — open drafted the issue before looking at `.github/ISSUE_TEMPLATE/`, so the first draft had no `Form:` line
-  (`cutter-land issue` refused it, and the next turn fixed it).
+  (`veland-land issue` refused it, and the next turn fixed it).
 
 ## How it is set up
 
@@ -50,7 +50,7 @@ model has to find out by itself because no command prints the answer:
   to the last checkpoint needed. Skills that grill the user are answered with `go with your recommendations` until
   the checkpoint state exists (a draft, `plan.md`, the memory commit, a PR), at most 6 turns per checkpoint.
 - **Close flows start from prepared state** (`prep_ticket`): the worktree, a committed fix, `ticket.md`, an approved
-  `plan.md`, `review.md` and `evidence.md` — `/cutter:work` is not run.
+  `plan.md`, `review.md` and `evidence.md` — `/veland:work` is not run.
 - **Fake `gh`** (`bin/gh`) answers from `canned.json` and `state.json`, logs every call's argv to `calls.log`, and
   squash-merges into the bare origin on `pr merge`. **Fake `ssh`** (`bin/ssh`) is `GIT_SSH_COMMAND`: it runs
   `git-upload-pack` / `git-receive-pack` on the bare origin for `git@github.com:test/fixture.git`.
@@ -59,36 +59,36 @@ model has to find out by itself because no command prints the answer:
   `GH_ENTERPRISE_TOKEN`. A flow with the fake also fails when its tool log has more executed `gh <sub> <sub2>`
   commands than the fake's call log has entries.
 - **Permissions.** `claude -p` runs with `--permission-mode acceptEdits`, never `--dangerously-skip-permissions`. A
-  `permission_denials` entry in the stream-json `result` in the skills' scope — any tool but Bash, a `cutter-`, `gh`
+  `permission_denials` entry in the stream-json `result` in the skills' scope — any tool but Bash, a `veland-`, `gh`
   or `glab` command, or one a skill's `allowed-tools` or the runner's grants cover — fails every scenario of the flow
   and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script, or a
   command it chained with `|`, `;` or `&&`, which the skills never run): it is printed on stderr as
   `note: <flow> denied (not the skill's): <command>` and fails nothing. What
   the skills leave to the user is granted to these throwaway runs with `--settings` (an untrusted workspace ignores
-  `.claude/settings.json`): `git -C * add *`, `git -C * commit *`, `cutter-land issue *`, `cutter-land comment *`. They
+  `.claude/settings.json`): `git -C * add *`, `git -C * commit *`, `veland-land issue *`, `veland-land comment *`. They
   are the harness's grants, not rules to copy into your own settings: `git -C * commit *` can also match
   `git -C <dir> -c core.hooksPath=<dir> commit`, which runs any code.
-- **The plugin under test** is `CUTTER_E2E_PLUGIN` (default: this repo). It is passed as `--plugin-dir`, its `bin/` comes
+- **The plugin under test** is `VELAND_E2E_PLUGIN` (default: this repo). It is passed as `--plugin-dir`, its `bin/` comes
   right after the fake `gh` on PATH, every PATH entry containing `/.claude/plugins/` is dropped, and a flow fails before
-  calling `claude` when `command -v cutter-land` does not resolve into that `bin/`.
+  calling `claude` when `command -v veland-land` does not resolve into that `bin/`.
 
 ## Showing a scenario can fail
 
 Run a scenario against a copy of the plugin with one edit; it must print `FAIL`:
 
 ```bash
-copy="$(mktemp -d)" && cp -R . "$copy/cutter"
-# 1. cutter-land merge without the pin: edit "$copy/cutter/bin/cutter-land", delete `--match-head-commit "$(git -C "$path" rev-parse HEAD)"`
-CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh 11
-# 2. close without the blocker check: edit "$copy/cutter/skills/close/SKILL.md", delete the last bullet of Step 0
-CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh 14
-# 3. close's grants lost after the background wait: edit "$copy/cutter/hooks/hooks.json", delete both `hooks/grant.js` entries
-CUTTER_E2E_PLUGIN="$copy/cutter" bash tests/e2e/run.sh C3
+copy="$(mktemp -d)" && cp -R . "$copy/veland"
+# 1. veland-land merge without the pin: edit "$copy/veland/bin/veland-land", delete `--match-head-commit "$(git -C "$path" rev-parse HEAD)"`
+VELAND_E2E_PLUGIN="$copy/veland" bash tests/e2e/run.sh 11
+# 2. close without the blocker check: edit "$copy/veland/skills/close/SKILL.md", delete the last bullet of Step 0
+VELAND_E2E_PLUGIN="$copy/veland" bash tests/e2e/run.sh 14
+# 3. close's grants lost after the background wait: edit "$copy/veland/hooks/hooks.json", delete both `hooks/grant.js` entries
+VELAND_E2E_PLUGIN="$copy/veland" bash tests/e2e/run.sh C3
 ```
 
 ## The runner's own test
 
-`bash tests/e2e-runner.test.sh` checks the runner offline with a stub `claude` (`CUTTER_E2E_CLAUDE`): a denial in the
+`bash tests/e2e-runner.test.sh` checks the runner offline with a stub `claude` (`VELAND_E2E_CLAUDE`): a denial in the
 skills' scope is reported with its command and one outside it is only a note, a tool-log `gh` call missing from the
 fake's log fails the flow, an unknown id exits 2, and a failing scenario makes the exit code non-zero. It is in the
 gates.

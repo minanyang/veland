@@ -34,7 +34,7 @@ const flag = (name) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const flags = (name) => argv.flatMap((a, i) => (a === name ? [argv[i + 1]] : []))
-// The subcommand words, with gh's global --hostname <host> (cutter-ticket issue-types sends it) left out.
+// The subcommand words, with gh's global --hostname <host> (veland-ticket issue-types sends it) left out.
 const cmd = argv[1] === '--hostname' ? [argv[0], ...argv.slice(3)] : argv
 // Positionals: what is left once flags and their values are gone.
 const valued = new Set(['--repo', '--json', '--jq', '--state', '--search', '--limit', '--title', '--body-file', '--label', '--type', '--base', '--head', '--match-head-commit', '-f', '-F', '-R', '-q'])
@@ -157,7 +157,7 @@ if (key === 'auth status') {
   }
   emit(view)
 } else if (key === 'pr list') {
-  // The open PRs /cutter:work's overlap check reads; the fake's PRs carry no files.
+  // The open PRs /veland:work's overlap check reads; the fake's PRs carry no files.
   const fields = (flag('--json') || 'number,title,headRefName').split(',')
   const rows = state.prs.filter((p) => p.state === 'OPEN')
     .map((p) => Object.fromEntries(fields.map((f) => [f, f === 'files' ? [] : p[f] === undefined ? null : p[f]])))

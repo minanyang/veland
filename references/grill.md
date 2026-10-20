@@ -1,6 +1,6 @@
 # Grill — walk the open decisions before drafting
 
-`/cutter:open` and `/cutter:work` read this before they draft. The skill says which kind of question it asks; this file says how.
+`/veland:open` and `/veland:work` read this before they draft. The skill says which kind of question it asks; this file says how.
 
 ## Facts are looked up, decisions are asked
 

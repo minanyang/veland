@@ -18,7 +18,7 @@ Review only what the user has not yet committed. Stage their work, leave your fi
 
 **Default — review and apply fixes.** What an engineer wants when self-polishing. Run all steps. Stage user's work as baseline (step 2), apply fixes as unstaged edits (step 6) — the staged-vs-unstaged separation in `git diff` is the load-bearing pattern.
 
-**Findings-only.** Invoked when the caller says "no fixes" / "report only" / "review without patching", or when the calling agent is `cutter:code-reviewer`. Never modify git state, never edit files. Skip step 2 (no `git add`) and skip step 6 (no fixes). In step 3, read uncommitted work via `git diff` and `git diff --cached` directly. The report from step 5 is the deliverable.
+**Findings-only.** Invoked when the caller says "no fixes" / "report only" / "review without patching", or when the calling agent is `veland:code-reviewer`. Never modify git state, never edit files. Skip step 2 (no `git add`) and skip step 6 (no fixes). In step 3, read uncommitted work via `git diff` and `git diff --cached` directly. The report from step 5 is the deliverable.
 
 ## Defaults
 
@@ -98,7 +98,7 @@ A final `git status` should make this separation obvious.
 ## When NOT to use this skill
 
 - User asks to review the whole branch / compare against `main` or `develop` → use `code-review-branch`.
-- User asks to review a specific PR by number → use `/review <pr#>` or `gh pr view`. Claude Code's bundled `/review` takes a PR number, branch, or path; this skill (`/cutter:code-review`) does not.
+- User asks to review a specific PR by number → use `/review <pr#>` or `gh pr view`. Claude Code's bundled `/review` takes a PR number, branch, or path; this skill (`/veland:code-review`) does not.
 - User asks for a security audit → use `security-review`.
 - There are no uncommitted changes (`git status` is clean) → tell the user the working tree is clean and stop. Don't fabricate findings.
 

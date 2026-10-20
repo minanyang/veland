@@ -18,9 +18,9 @@ check() { # <description> <want: block|pass|warn|warn+block> <prompt> <transcrip
   local out got; out="$(run "$3" "$4" "${5:-$tmp}")"
   case "$out" in
     '') got=pass ;;
-    *'"decision":"block"'*'"systemMessage":"cutter: '*) got=warn+block ;;
+    *'"decision":"block"'*'"systemMessage":"veland: '*) got=warn+block ;;
     *'"decision":"block"'*) got=block ;;
-    '{"systemMessage":"cutter: '*) got=warn ;;
+    '{"systemMessage":"veland: '*) got=warn ;;
     *) got=other ;;
   esac
   if [ "$got" = "$2" ]; then
@@ -35,49 +35,49 @@ transcript "$tmp/mid.jsonl" 150000
 transcript "$tmp/small.jsonl" 50000
 transcript "$tmp/compacted.jsonl" 250000 yes
 
-check "blocks /cutter:work on a big context" block "/cutter:work gh-12" "$tmp/big.jsonl"
-check "blocks /cutter:close on a big context" block "/cutter:close gh-12" "$tmp/big.jsonl"
-check "passes on a small context" pass "/cutter:work gh-12" "$tmp/small.jsonl"
-check "default limit is 200k" pass "/cutter:work gh-12" "$tmp/mid.jsonl"
-check "passes right after a compaction" pass "/cutter:work gh-12" "$tmp/compacted.jsonl"
+check "blocks /veland:work on a big context" block "/veland:work gh-12" "$tmp/big.jsonl"
+check "blocks /veland:close on a big context" block "/veland:close gh-12" "$tmp/big.jsonl"
+check "passes on a small context" pass "/veland:work gh-12" "$tmp/small.jsonl"
+check "default limit is 200k" pass "/veland:work gh-12" "$tmp/mid.jsonl"
+check "passes right after a compaction" pass "/veland:work gh-12" "$tmp/compacted.jsonl"
 check "ignores other prompts" pass "fix the bug" "$tmp/big.jsonl"
 check "ignores other skills" pass "/work TASK-1" "$tmp/big.jsonl"
-check "passes with no transcript" pass "/cutter:work x" "$tmp/missing.jsonl"
+check "passes with no transcript" pass "/veland:work x" "$tmp/missing.jsonl"
 check "passes on a malformed payload" pass "" ""
 mkdir -p "$tmp/proj/.claude" "$tmp/proj/.git"
-echo '{ "contextGate": { "maxTokens": 300000 } }' >"$tmp/proj/.claude/cutter.json"
-check "honours a raised limit" pass "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj"
+echo '{ "contextGate": { "maxTokens": 300000 } }' >"$tmp/proj/.claude/veland.json"
+check "honours a raised limit" pass "/veland:work x" "$tmp/big.jsonl" "$tmp/proj"
 mkdir -p "$tmp/proj/a/b"
-check "honours a raised limit from a subdirectory" pass "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj/a/b"
+check "honours a raised limit from a subdirectory" pass "/veland:work x" "$tmp/big.jsonl" "$tmp/proj/a/b"
 mkdir -p "$tmp/proj/inner/.git" "$tmp/proj/inner/sub"
-check "ignores a config above the repo root" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj/inner/sub"
+check "ignores a config above the repo root" block "/veland:work x" "$tmp/big.jsonl" "$tmp/proj/inner/sub"
 mkdir -p "$tmp/norepo/.claude" "$tmp/norepo/sub"
-echo '{ "contextGate": { "maxTokens": 300000 } }' >"$tmp/norepo/.claude/cutter.json"
-check "ignores a config outside any repo" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/norepo/sub"
+echo '{ "contextGate": { "maxTokens": 300000 } }' >"$tmp/norepo/.claude/veland.json"
+check "ignores a config outside any repo" block "/veland:work x" "$tmp/big.jsonl" "$tmp/norepo/sub"
 mkdir -p "$tmp/proj/wt/.claude" "$tmp/proj/wt/sub"
 echo 'gitdir: ../.git/worktrees/wt' >"$tmp/proj/wt/.git"
-echo '{ "contextGate": { "maxTokens": 100000 } }' >"$tmp/proj/wt/.claude/cutter.json"
+echo '{ "contextGate": { "maxTokens": 100000 } }' >"$tmp/proj/wt/.claude/veland.json"
 transcript "$tmp/110k.jsonl" 110000
-check "nearest config wins" block "/cutter:work x" "$tmp/110k.jsonl" "$tmp/proj/wt/sub"
-echo '{ "base": "main" }' >"$tmp/proj/wt/.claude/cutter.json"
-check "a config without contextGate is final and silent" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
-echo '{ nope' >"$tmp/proj/wt/.claude/cutter.json"
-check "warns on a broken config and passes" warn "/cutter:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub"
-echo 'TOKEN=s3cret' >"$tmp/proj/wt/.claude/cutter.json"
-out="$(run "/cutter:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub")"
+check "nearest config wins" block "/veland:work x" "$tmp/110k.jsonl" "$tmp/proj/wt/sub"
+echo '{ "base": "main" }' >"$tmp/proj/wt/.claude/veland.json"
+check "a config without contextGate is final and silent" block "/veland:work x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
+echo '{ nope' >"$tmp/proj/wt/.claude/veland.json"
+check "warns on a broken config and passes" warn "/veland:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub"
+echo 'TOKEN=s3cret' >"$tmp/proj/wt/.claude/veland.json"
+out="$(run "/veland:work x" "$tmp/small.jsonl" "$tmp/proj/wt/sub")"
 case "$out" in
   *s3cret*) echo "FAIL  the warning quotes the file (got: $out)"; fail=1 ;;
   *SyntaxError*) echo "ok    the warning names the error type, not the file's contents" ;;
   *) echo "FAIL  the warning names no error type (got: ${out:-nothing})"; fail=1 ;;
 esac
-echo '{ "contextGate": { "maxTokens": "lots" } }' >"$tmp/proj/wt/.claude/cutter.json"
-check "warns on a non-numeric maxTokens and blocks" warn+block "/cutter:close x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
+echo '{ "contextGate": { "maxTokens": "lots" } }' >"$tmp/proj/wt/.claude/veland.json"
+check "warns on a non-numeric maxTokens and blocks" warn+block "/veland:close x" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
 check "does not warn on other prompts" pass "fix the bug" "$tmp/big.jsonl" "$tmp/proj/wt/sub"
 mkdir -p "$tmp/fifo/.claude" "$tmp/fifo/.git"
-mkfifo "$tmp/fifo/.claude/cutter.json"
-check "skips a config that is not a regular file" block "/cutter:work x" "$tmp/big.jsonl" "$tmp/fifo"
-echo '{ "contextGate": { "maxTokens": 0 } }' >"$tmp/proj/.claude/cutter.json"
-check "maxTokens 0 turns it off" pass "/cutter:work x" "$tmp/big.jsonl" "$tmp/proj"
+mkfifo "$tmp/fifo/.claude/veland.json"
+check "skips a config that is not a regular file" block "/veland:work x" "$tmp/big.jsonl" "$tmp/fifo"
+echo '{ "contextGate": { "maxTokens": 0 } }' >"$tmp/proj/.claude/veland.json"
+check "maxTokens 0 turns it off" pass "/veland:work x" "$tmp/big.jsonl" "$tmp/proj"
 if printf 'garbage' | node "$GATE" | grep -q block; then echo "FAIL  garbage input blocked"; fail=1; else echo "ok    garbage input passes"; fi
 
 [ "$fail" -eq 0 ] && echo "context-gate: all cases pass"
