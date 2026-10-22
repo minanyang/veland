@@ -205,6 +205,9 @@ check "$T: after a wake" allow "$(bash_ s40 "veland-batch run gh-5 reply")" "gra
 check "$T: a run on another ticket than the typed one" allow "$(bash_ s40 "veland-batch run gh-6 implement")" "granted by /veland:batch"
 check "$T: not another skill's grant" nothing "$(bash_ s40 "veland-land merge gh-5")"
 check "$T: not init, which only the typed turn runs" nothing "$(bash_ s40 "veland-batch init gh-9")"
+node -e 'const f = process.argv[1], r = JSON.parse(require("fs").readFileSync(f, "utf8")); for (const p of Object.values(r.skills.batch)) p.grants.push("veland-batch approve *", "veland-batch init *"); require("fs").writeFileSync(f, JSON.stringify(r))' "$CLAUDE_PLUGIN_DATA/sessions/s40.json"
+check "$T: not approve, even from a record an older SKILL.md wrote" nothing "$(bash_ s40 "veland-batch approve gh-5")"
+check "$T: nor init from such a record" nothing "$(bash_ s40 "veland-batch init gh-9")"
 
 T="does not allow a skill named by a scheduled prompt"
 scheduled s20 "/veland:close gh-5"

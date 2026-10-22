@@ -39,7 +39,7 @@ A refused `veland-batch run` (a permission or the schedule) is reported to the u
 
 ## Step 2 — Rounds of answers
 
-When `status` lists `answer` lines, Read each such ticket's `.veland/_batch/<id>/turn.md` and show them all, grouped by ticket, in one message. For an `approvable` one, also Read `.veland/<id>/plan.md` and show it verbatim after its turn: the user approves the plan, not the worker's account of it. Give the choices per ticket: answers to its questions, or, for an `approvable` one, `approve`, `revise <notes>` and `drop`. Wait for the reply; it may cover several tickets.
+When `status` lists `answer` lines, Read each such ticket's `.veland/_batch/<id>/turn.md` and show them all, grouped by ticket, in one message. For an `approvable` one, also Read `.veland/<id>/plan.md` and show it verbatim after its turn, under its path, and tell the user they can open that file themselves before approving: the user approves the plan, not the worker's account of it. Give the choices per ticket: answers to its questions, or, for an `approvable` one, `approve`, `revise <notes>` and `drop`. Wait for the reply; it may cover several tickets.
 
 Write each ticket's reply to `.veland/_batch/<id>/reply.md`, then start `veland-batch run <id> reply` in the background (same flags as Step 1):
 

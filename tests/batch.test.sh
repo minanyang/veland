@@ -370,6 +370,7 @@ row t1 plan plan 0; plan_md t1 draft a; row t2 plan plan 0
 need "a ticket with no approvable plan is refused" exits 2 approve t2
 need "names why" has "approve t2 refused: t2 is waiting and its plan.md is not a draft that passes veland-plan-check"
 need "approve exits 0" exits 0 approve t1
+need "it names the plan it approved, with its hash" grep -qE '^plan: \.veland/t1/plan\.md sha256 [0-9a-f]{12}$' "$tmp/out"
 need "the record is under the git dir, outside .veland" test -s .git/veland-batch/t1.approved
 need "it writes the approve reply" grep -qF 'Approved. Set `Status: approved` in plan.md and stop' "$B/t1/reply.md"
 plan_md t1 approved a

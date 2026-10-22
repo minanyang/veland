@@ -28,7 +28,7 @@
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
 // `answer <id>[ approvable]`, and `done` when every ticket is settled.
 // `approve` records the user's approval of a draft plan that passes veland-plan-check: the sha256 of plan.md with its
-// Status line blanked, in <git common dir>/veland-batch/<id>.approved, out of a plan session's reach (it may write
+// Status line blanked, in <git common dir>/veland-batch/<id>.approved, printing the plan's path and short hash, out of a plan session's reach (it may write
 // only under .veland/<id>/, and Claude Code refuses edits under .git/); a worker of an approved ticket, which can run
 // commands, could still write it. A plan session's ticket is `approved`
 // only when plan.md says so and that record matches it. It then writes the approve reply to reply.md.
@@ -704,7 +704,7 @@ function approve(argv) {
   fs.mkdirSync(path.dirname(approval(id)), { recursive: true })
   put(approval(id), planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8')) + '\n')
   put(path.join(bdir(id), 'reply.md'), APPROVE_REPLY)
-  process.stdout.write(`approved: ${id}\nreply: ${rel(path.join(bdir(id), 'reply.md'))}\n`)
+  process.stdout.write(`approved: ${id}\nplan: ${rel(path.join(tdir(id), 'plan.md'))} sha256 ${planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8')).slice(0, 12)}\nreply: ${rel(path.join(bdir(id), 'reply.md'))}\n`)
 }
 
 const [cmd, ...args] = process.argv.slice(2)
