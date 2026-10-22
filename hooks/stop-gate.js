@@ -7,7 +7,7 @@
 // or after `/veland:work <arg>` was typed for a ticket whose plan.md has `Status: approved`. State:
 //   .veland/.sessions/<session_id>.json   { "flow": true, "ticket": "<id>" }
 //   .veland/<id>/session                  the owning session id; the latest binding owns the ticket
-// `flow` is set by /veland:open, /veland:work and /veland:close.
+// `flow` is set by /veland:open, /veland:work, /veland:close and /veland:batch.
 //
 // Stop blocks while the owned ticket's worktree exists and .veland/<id>/evidence.md misses a plan
 // criterion, leaves one pending or in no known state, or has an `asked` question the last message
@@ -122,7 +122,7 @@ function bind(input, sid, event) {
   let ticket = null
   let r
   if (event === 'UserPromptSubmit') {
-    const cmd = /^\s*\/veland:(open|work|close)\b(.*)$/s.exec(typeof input.prompt === 'string' ? input.prompt : '')
+    const cmd = /^\s*\/veland:(open|work|close|batch)\b(.*)$/s.exec(typeof input.prompt === 'string' ? input.prompt : '')
     if (!cmd) return
     r = mainRoot(input.cwd)
     flow = true

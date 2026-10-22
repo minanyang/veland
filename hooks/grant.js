@@ -3,7 +3,7 @@
 // session in which the user typed it. Claude Code applies a skill's `allowed-tools` only to the turn
 // the skill was invoked in, not to a background wake-up, a later approval turn or a `--resume` turn.
 //
-// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work` or `/veland:close`
+// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`
 // records that skill's `Bash(...)` grants, as its SKILL.md lists them now, as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
 //   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
@@ -21,7 +21,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const SID = /^[A-Za-z0-9-]+$/
-const TYPED = /^\s*\/veland:(open|work|close)(?=\s|$)/
+const TYPED = /^\s*\/veland:(open|work|close|batch)(?=\s|$)/
 const META = /[;&|<>$`\n\r]/
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // The word that carries the ticket id: `veland-land <sub> <id>`, `veland-verify <id>`, ….

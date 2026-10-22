@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reads stream-json logs of `claude -p` runs: tool calls, permission denials, cost and duration. Never reads text.
 //
-//   toollog.js calls   <log>...   one JSON object per tool call: {turn, seq, name, command, subagent_type, run_in_background, file_path, denied}
+//   toollog.js calls   <log>...   one JSON object per tool call: {turn, seq, name, command, subagent_type, run_in_background, file_path, skill, denied}
 //   toollog.js denials <log>...   every denied call, one per line: <tool name> TAB <command, or the tool name>
 //   toollog.js stats   <log>...   {"cost": <usd>, "ms": <duration>}
 //
@@ -39,6 +39,7 @@ const parse = (files) => {
             subagent_type: typeof i.subagent_type === 'string' ? i.subagent_type : null,
             run_in_background: i.run_in_background === true,
             file_path: typeof i.file_path === 'string' ? i.file_path : null,
+            skill: typeof i.skill === 'string' ? i.skill : null,
           })
         }
       } else if (ev.type === 'result') {

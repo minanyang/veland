@@ -56,6 +56,17 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 - It adds `security review: required` with the reasons when the diff touches a script a skill grants in `allowed-tools`, a skill's or agent's frontmatter, `hooks/hooks.json`, a script it registers, or a file such a script or hook loads (one level, by a static `source` or relative `require`).
 - `--fixes` covers only the commits since the last review, with its findings (the plan checks still read the whole branch).
 
+## veland-batch
+
+The mechanics of `/veland:batch`. Refusals print `veland-batch: <why>` on stderr with exit 2.
+
+- `veland-batch init <arg>... [--search "<query>"]` resolves every argument to a ticket (`gh-<n>`, `<n>`, `#<n>`, an issue URL of origin's repo, an existing id) before writing anything, then writes `.veland/_batch/tickets` and the board. A batch with an unsettled ticket is not replaced; a settled one is moved to `.veland/_batch.<timestamp>/`.
+- `veland-batch run <id> <plan|reply|implement|close>` runs one worker turn in the foreground: `claude -p` (or `$VELAND_BATCH_CLAUDE`) with `--session-id`, or `--resume` for `reply`, which sends `.veland/_batch/<id>/reply.md`. It records `runs.tsv`, the stream-json log, the permission denials and `turn.md` (every assistant text block of the run) under `.veland/_batch/<id>/`, and refuses what `status` would not list.
+- `veland-batch status` rewrites and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`, `answer <id>` (` approvable` when a passing draft can be approved) and `done`.
+- `veland-batch drop <id>` stops the ticket's running worker and never schedules it again.
+
+`batch.parallel` ([configuration](configuration.md)) caps the implementation workers.
+
 ## veland-grill
 
 `veland-grill` prints the shared grill (`references/grill.md`) that `/veland:open` and `/veland:work` follow; a skill cannot Read a file under the plugin root without a prompt.

@@ -14,7 +14,7 @@ Refuses `/veland:work` and `/veland:close` when the session already carries more
 
 A session owns a ticket once it runs `veland-worktree add <id>` or types `/veland:work <id>` for an approved plan (the latest session to bind it owns it). While the ticket's worktree exists, the session cannot end a turn while `.veland/<id>/evidence.md` misses a criterion, leaves one `pending`, or has an `asked` question that is not in the turn's last message.
 
-In a session that typed `/veland:open`, `/veland:work` or `/veland:close`, and for `veland:code-reviewer` and `veland:security-reviewer`, it also refuses a last message that calls something unverified, unchecked or not yet confirmed (English or Chinese, outside code).
+In a session that typed `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`, and for `veland:code-reviewer` and `veland:security-reviewer`, it also refuses a last message that calls something unverified, unchecked or not yet confirmed (English or Chinese, outside code).
 
 It blocks once per stop, lets the turn end while background tasks run, and fails open on its own errors. Session bindings live in `.veland/.sessions/`.
 
@@ -22,7 +22,7 @@ It blocks once per stop, lets the turn end while background tasks run, and fails
 
 Claude Code applies a skill's `allowed-tools` only to the turn in which you typed it: the turn a background task wakes (close's merge after `veland-land wait`, work's steps after the gates or reviewers finish), a later turn of the same session (work after you say "approved, go") and a `--resume` turn fall back to your normal permissions, so the loop would stop to ask, or be refused under `claude -p`.
 
-When you type `/veland:open`, `/veland:work` or `/veland:close`, the hook records that skill's `Bash(...)` grants as its `SKILL.md` lists them at that moment, and allows a single command (no `;`, `&`, `|`, `<`, `>`, `$`, backtick or newline) matching one of them for the whole session in which you typed the skill — not in subagents, and not another skill's grants.
+When you type `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`, the hook records that skill's `Bash(...)` grants as its `SKILL.md` lists them at that moment, and allows a single command (no `;`, `&`, `|`, `<`, `>`, `$`, backtick or newline) matching one of them for the whole session in which you typed the skill — not in subagents, and not another skill's grants.
 
 Only a skill you typed (or passed to `claude -p`) counts: the hook confirms the prompt against the session's transcript before its first grant, so a prompt you did not type — a scheduled (`CronCreate`) one naming the skill, say — grants nothing.
 

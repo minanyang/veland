@@ -29,12 +29,13 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 - 審查的 agent 只拿到 diff 和計畫，拿不到實作者的說法；
 - 每一步都會停下來，讓你可以介入。
 
-## 三個指令
+## 指令
 
 ```
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
+/veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
 ```
 
 **`/veland:open <idea>`** 把一個想法、bug 或改進變成 GitHub issue，套用 repo 自己的 issue form、label 和 issue type；設定 `tickets: files` 時，則變成 `.veland/` 底下的 ticket 檔案，只留在你的電腦上。它會先問清楚這個想法沒交代的產品問題，把草稿給你看，你核准後才建立 ticket。
@@ -42,6 +43,8 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 **`/veland:work <ticket>`** 可以接一個 issue，或一段文字描述的任務。它先規劃：問技術問題，寫出計畫，包含驗收條件、會動到的檔案、證明每個條件的測試，然後停下來等你核准。接著在 worktree 裡實作：寫程式、commit、證明新測試在拿掉改動後會失敗、同時跑 gates 和冷審查、修正審查找到的問題，最後回報。
 
 **`/veland:close <id>`** rebase、再驗證一次，然後把整個 branch 壓成一個 squash commit 落地：開 PR 讓你合併、開 PR 並在 checks 通過後自己合併，或在本機合併，最後清理現場。
+
+**`/veland:batch <tickets>`** 在同一個 terminal 處理一整串 ticket：可以給 id、issue 編號，或 `--search "<query>"`。每張 ticket 在自己的背景 `claude -p` worker 裡跑不變的 `/veland:work` 和 `/veland:close`；你分批回答 grill、核准計畫，由 script 一次一張地落地。
 
 每一步的細節見 [docs/loop.md](docs/loop.md)（英文）。
 
@@ -68,6 +71,15 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 
 base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.claude/veland.json`，見 [docs/configuration.md](docs/configuration.md)（英文）。`tickets` 可以是 `"github"`（GitHub issue）或 `"files"`（`.veland/<slug>/ticket.md`，不會被 push）；沒設定時，`origin` 在 github.com 的 repo 用 `github`，其他一律用 `files`。它和 `close` 互不相干：repo 可以把 ticket 檔案留在本機，照樣用 PR 落地；不過在 `pr` 和 `pr-merge` 模式下，PR 內文仍會帶出計畫的目標和驗收條件。
 
+## 批次處理
+
+`/veland:batch gh-12 gh-13` 或 `/veland:batch --search "label:bug"` 會同時規劃所有 ticket，把問題和計畫一次給你，核准的 ticket 在其他 ticket 還在規劃時就開始實作。`.veland/_batch/board.md` 列出每張 ticket 的階段、worker session、結果與證據，以及需要你處理的事。
+
+- `.claude/veland.json` 的 `batch.parallel` 限制同時實作的 worker 數（預設 `1`）；計畫綁定相同檔案的 ticket 不會同時跑，落地一律一次一張、依 board 順序。
+- 想進入某個 worker，用 board 上的 session id 執行 `claude --resume <session id>`。
+- worker 以 `acceptEdits` 執行，你的設定要允許 `Bash(git -C * add *)` 和 `Bash(git -C * commit *)`（注意事項見 [e2e README](tests/e2e/README.md)）。
+- `pr` 模式下，檔案重疊的 ticket 會產生重疊的 PR；`batch.parallel` 大於 1 時，多張 ticket 的 agent memory 會落在多個 branch。
+
 ## 內容
 
 ### Agents
@@ -90,6 +102,7 @@ base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.
 | `/veland:open` | 起草 ticket（GitHub issue，或設定 `tickets: files` 時 `.veland/` 底下的檔案），核准後建立 |
 | `/veland:work` | 規劃 ticket，再到 worktree 裡實作、驗證、審查 |
 | `/veland:close` | rebase、驗證、落地、清理 |
+| `/veland:batch` | 在同一個 terminal 處理多張 ticket，每張在背景 worker 裡完成 |
 | `/veland:commit` | 只 commit 這個 session 改過的路徑，訊息照 repo 自己的風格。會直接 commit，只有疑似 secret、範圍不清楚或有不相關的改動時才停下來問。說「message only」就只給草稿 |
 | `/veland:code-review` | 審查還沒 commit 的改動 |
 | `/veland:code-review-branch` | 審查整個 branch 相對於 base 的改動 |

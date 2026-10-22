@@ -63,7 +63,7 @@ renv() {
   env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GH_HOST -u GH_REPO -u E2E_GH_QUIET \
     "PATH=$E2E_PATH" "GH_CONFIG_DIR=$RUN/ghconfig" "GIT_CONFIG_GLOBAL=$RUN/gitconfig" \
     "GIT_SSH_COMMAND=$(printf '%q' "$E2E_DIR/bin/ssh")" "E2E_ORIGIN=$ORIGIN" "E2E_GH_DIR=$GHD" \
-    "VELAND_WAIT_INTERVAL=1" "GIT_TERMINAL_PROMPT=0" "$@"
+    "VELAND_WAIT_INTERVAL=1" "GIT_TERMINAL_PROMPT=0" "VELAND_BATCH_CLAUDE=$RUN/claude-worker" "$@"
 }
 inrepo() { (cd "$REPO" && renv "$@"); }
 rgit() { renv git -C "$REPO" "$@"; }
@@ -74,12 +74,14 @@ use_run() {
   E2E_PATH="$(cat "$RUN/path")"
 }
 
-# new_run <with-fake 1|0> <close mode> [pr-template] [issue-forms] [no-origin] — a fresh run: bare origin, fixture repo
-# pushed to it. With no-origin the repo has no remote and nothing is pushed (origin.git stays empty).
+# new_run <with-fake 1|0> <close mode> [pr-template] [issue-forms] [no-origin] [parallel2] — a fresh run: bare origin,
+# fixture repo pushed to it. With no-origin the repo has no remote and nothing is pushed (origin.git stays empty).
+# With parallel2 the config gets `batch: {parallel: 2}`. Every run has $RUN/claude-worker, the worker veland-batch
+# starts (VELAND_BATCH_CLAUDE): the claude binary with the flags of turn().
 new_run() {
-  local fake="$1" mode="$2" tpl=0 forms=0 remote=1 a
+  local fake="$1" mode="$2" tpl=0 forms=0 remote=1 par=0 a
   shift 2
-  for a in "$@"; do case "$a" in pr-template) tpl=1 ;; issue-forms) forms=1 ;; no-origin) remote=0 ;; esac; done
+  for a in "$@"; do case "$a" in pr-template) tpl=1 ;; issue-forms) forms=1 ;; no-origin) remote=0 ;; parallel2) par=2 ;; esac; done
   local dir
   dir="$(mktemp -d "$FLOW_ROOT/run.XXXXXX")"
   dir="$(cd "$dir" && pwd -P)"
@@ -100,7 +102,12 @@ new_run() {
   [ "$forms" = 1 ] || { [ ! -d "$REPO/.github/ISSUE_TEMPLATE" ] || rm -r "$REPO/.github/ISSUE_TEMPLATE"; }
   rmdir "$REPO/.github" 2>/dev/null || true
   mkdir -p "$REPO/.claude"
-  jq -n --arg close "$mode" '{base: "main", gates: ["node --test"], close: $close}' >"$REPO/.claude/veland.json"
+  jq -n --arg close "$mode" --argjson par "$par" \
+    '{base: "main", gates: ["node --test"], close: $close} + (if $par > 0 then {batch: {parallel: $par}} else {} end)' >"$REPO/.claude/veland.json"
+  # The worker: the same flags as turn(); veland-batch adds -p, the output format, the permission mode and the session.
+  printf '#!/bin/bash\nexec %q "$@" --model sonnet --plugin-dir %q --setting-sources project --settings %q\n' \
+    "$CLAUDE_BIN" "$PLUGIN" "$E2E_SETTINGS" >"$RUN/claude-worker"
+  chmod +x "$RUN/claude-worker"
   renv git -C "$REPO" init -q --initial-branch=main
   rgit add -A
   rgit commit -q -m "chore: fixture"
@@ -497,3 +504,21 @@ place_memory() {
 # not <command...> — negation for ensure.
 not() { ! "$@"; }
 not_match() { ! [[ "$1" =~ $2 ]]; } # <string> <ERE>
+
+# ---------------------------------------------------------------- batch: run records
+
+# batch_ids — the batch's ticket ids in board order.
+batch_ids() { if [ -f "$REPO/.veland/_batch/tickets" ]; then cat "$REPO/.veland/_batch/tickets"; fi; }
+# batch_runs [<id>] — the rows of runs.tsv (header dropped) as tab-separated
+# `<id> <n> <kind> <session> <session_kind> <start> <end> <exit> <pid>`, for one ticket or all in board order; an
+# empty field (a run still open) is `-`.
+batch_runs() {
+  local id f
+  for id in ${1:-$(batch_ids)}; do
+    f="$REPO/.veland/_batch/$id/runs.tsv"
+    [ -f "$f" ] || continue
+    tail -n +2 "$f" | awk -F'\t' -v id="$id" 'BEGIN { OFS = "\t" } { for (i = 1; i <= NF; i++) if ($i == "") $i = "-"; print id, $0 }'
+  done
+}
+# batch_settled — veland-batch status ends with `done`: every ticket is landed, pr-open, failed, held or dropped.
+batch_settled() { [ "$(inrepo veland-batch status 2>/dev/null | tail -n 1)" = "done" ]; }

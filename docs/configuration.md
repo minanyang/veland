@@ -13,7 +13,8 @@ Optional `.claude/veland.json`, committed with the project:
   "generated": ["src/api/generated"],
   "redProof": { "command": "pytest {file}", "tests": ["tests/test_*.py"] },
   "preReviewGates": ["ruff check ."],
-  "contextGate": { "maxTokens": 200000 }
+  "contextGate": { "maxTokens": 200000 },
+  "batch": { "parallel": 2 }
 }
 ```
 
@@ -29,6 +30,7 @@ Optional `.claude/veland.json`, committed with the project:
 | `redProof.command` | JavaScript runners (jest, vitest, `node --test`) are detected. For any other stack, a shell command containing `{file}`, run once per changed test file in the worktree root with the shell-quoted path substituted; the file's exit code is the result |
 | `redProof.tests` | required with `redProof.command`: git pathspec globs naming the test files (`tests/*.test.sh`) |
 | `preReviewGates` | none. Shell commands (quick gates: lint, typecheck) that `veland-review-packet` runs first; a failure exits 1 and no packet is built |
+| `batch.parallel` | `1`. The most implementation workers `/veland:batch` runs at once; an integer of 1 or more, else `veland-batch` exits 2. Planning always starts every ticket, and close is one at a time |
 | `contextGate.maxTokens` | `200000`; `0` turns the gate off. A file that does not parse, or a `maxTokens` that is not a number, gets the default and a warning |
 
 The close modes are described in [the loop](loop.md#velandclose-id). `tickets` and `close` are read independently: where tickets live does not decide how they land, so a repo on GitHub can keep its ticket files off GitHub with `"tickets": "files"` and still land each one by PR (the PR body still carries the plan's goal and acceptance criteria), and every combination of the two is valid.
