@@ -27,7 +27,9 @@ printf '%s\n' "$*" >>"$STUB_LOG"
 case "$1 $2" in
   "issue view")
     case " $STUB_ISSUES " in
-      *" $3 "*) printf '{"number":%s,"title":"Issue %s","body":"b","url":"https://github.com/acme/batch/issues/%s","state":"OPEN","labels":[],"issueType":null,"comments":[]}\n' "$3" "$3" "$3" ;;
+      *" $3 "*)
+        state=OPEN; case " ${STUB_CLOSED-} " in *" $3 "*) state=CLOSED ;; esac
+        printf '{"number":%s,"title":"Issue %s","body":"b","url":"https://github.com/acme/batch/issues/%s","state":"%s","labels":[],"issueType":null,"comments":[]}\n' "$3" "$3" "$3" "$state" ;;
       *) echo "GraphQL: Could not resolve to an issue or pull request with the number of $3." >&2; exit 1 ;;
     esac ;;
   "issue list") echo "${STUB_SEARCH-[]}" ;;
@@ -152,6 +154,13 @@ run_bg() {
   return 1
 }
 field() { awk -F'\t' -v n="$2" -v c="$3" 'NR == n + 1 { print $c }' "$B/$1/runs.tsv"; } # <id> <run n> <column>
+# roadmap <row>... — a .veland/roadmap.md holding <row>s and the three sections.
+roadmap() {
+  mkdir -p .veland
+  { printf '# Roadmap\n\n| Version | Contents | Why this order | State |\n|---|---|---|---|\n'; printf '%s\n' "$@"
+    printf '\n## Not yet assigned\n- later idea\n\n## Later\n\n## Decided against\n- milestones — never\n'; } >.veland/roadmap.md
+}
+landed() { implemented "$@"; row "$1" close close 0; rmdir ".worktrees/$1"; } # <id> <file>...
 
 # ---------------------------------------------------------------- init
 
@@ -188,6 +197,73 @@ need "the search is pinned to origin's repo" grep -qxF 'issue list --repo github
 need "the board is written" test -f "$B/board.md"
 need "every ticket can plan" test "$(acts)" = "plan gh-5,plan gh-6,plan gh-7,plan gh-8,plan t1,plan gh-9"
 need "no worker" test ! -s "$WORKER_LOG"
+end
+
+reset; ticket t1 v3
+roadmap '| v1 | first `t1`; second `gh-5`; use `md-check.js` | base | Planned |' '| v3 | x `t1` | y | Planned |'
+begin "init: a roadmap version resolves to its row's ticket ids"
+need "a ticket id wins over a version of that name" eval 'exits 0 init v3 && test "$(cat "$B/tickets")" = v3 && test ! -e "$B/versions"'
+vb drop v3
+need "exit 0" exits 0 init v1 t1
+need "its ids, deduplicated with the other arguments" test "$(tr '\n' ' ' <"$B/tickets")" = "t1 gh-5 "
+need "gh-5 is fetched like any argument" grep -qx '# Issue 5' .veland/gh-5/ticket.md
+need "the version is recorded" test "$(cat "$B/versions")" = v1
+need "no closed ids" test ! -e "$B/versions.closed"
+need "an unknown name is still no ticket" eval 'exits 2 init v9 && has "veland-batch: no ticket: v9 (no .veland/v9/ticket.md)"'
+end
+
+reset
+roadmap '| v1 | first `t1` | base | Planned |' '| v2 | an idea; another | later | Planned |'
+begin "init: a roadmap version with no ticket ids exits 2"
+need "exit 2" exits 2 init v2
+need "names the way to make them" line "veland-batch: version v2 has no ticket ids: run /veland:roadmap tickets v2"
+need "no _batch" test ! -e "$B"
+roadmap '| v2 | an idea | | Planned |'
+need "a roadmap that fails its check exits 2" exits 2 init v2
+need "naming the fault" has "veland-batch: no ticket: v2 (.veland/roadmap.md:5: version v2 has an empty Why this order)"
+end
+
+reset
+roadmap '| v1 | a `gh-5`; b `gh-6`; c `gh-7` | base | Planned |'
+begin "init: a version leaves out its closed issues and counts them as landed"
+STUB_CLOSED="6 7" vb init v1
+need "exit 0" test $? -eq 0
+need "only the open issue is batched" test "$(cat "$B/tickets")" = gh-5
+need "the closed ones are recorded" test "$(tr '\n' ' ' <"$B/versions.closed")" = "gh-6 gh-7 "
+need "their state was asked of origin's repo" grep -qxF 'issue view 6 --repo github.com/acme/batch --json state' "$STUB_LOG"
+need "a closed issue is not fetched" test ! -e .veland/gh-6
+need "not done while gh-5 is open" eval 'vb status && not has "roadmap: " && grep -qF "| Planned |" .veland/roadmap.md'
+landed gh-5 a
+need "done once gh-5 landed" eval 'vb status && line "roadmap: v1 Done $(date +%Y-%m-%d)"'
+end
+
+reset; ticket t1 t2
+roadmap '| v1 | a `t1`; b `t2` | base | Planned |' '| v2 | c `t1` | after | Planned |'
+cp .veland/roadmap.md "$tmp/before.md"
+begin "status: a version whose tickets all landed reads Done <date>"
+vb init v1
+landed t1 a; landed t2 b
+today="$(date +%Y-%m-%d)"
+need "status exits 0" exits 0 status
+need "prints it" line "roadmap: v1 Done $today"
+need "v1 reads Done <date>" grep -qxF "| v1 | a \`t1\`; b \`t2\` | base | Done $today |" .veland/roadmap.md
+need "nothing else changes" test "$(diff "$tmp/before.md" .veland/roadmap.md | grep -c '^[<>]')" = 2
+need "not v2, which is not in the batch" grep -qxF '| v2 | c `t1` | after | Planned |' .veland/roadmap.md
+sed -i.bak "s/Done $today/Done 2020-01-01/" .veland/roadmap.md; rm .veland/roadmap.md.bak
+need "the date never moves" eval 'vb status && not has "roadmap: " && grep -qF "| Done 2020-01-01 |" .veland/roadmap.md'
+roadmap '| v2 | c `t1` | after | Planned |'
+need "a version whose row has gone is skipped" eval 'vb status && not has "roadmap: " && grep -qxF "| v2 | c \`t1\` | after | Planned |" .veland/roadmap.md'
+end
+
+reset; ticket t1 t2
+roadmap '| v1 | a `t1`; b `t2` | base | Planned |'
+begin "status: a version with a ticket not landed keeps its state"
+vb init v1
+landed t1 a
+row t2 plan plan 1
+need "status exits 0" exits 0 status
+need "prints no roadmap line" not has "roadmap: "
+need "v1 keeps its state" grep -qxF '| v1 | a `t1`; b `t2` | base | Planned |' .veland/roadmap.md
 end
 
 # ---------------------------------------------------------------- board

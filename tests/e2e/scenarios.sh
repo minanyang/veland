@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sourced by run.sh: the 18 flows and the 35 scenario_<id> assertion functions.
+# Sourced by run.sh: the 20 flows and the 40 scenario_<id> assertion functions.
 #
 # A flow is one sequence of `claude -p` turns on one fixture; each scenario is an assertion function bound to a flow
 # and a checkpoint within it (`bindings`). Assertions go through lib.sh helpers that read files, git state, origin's
@@ -7,10 +7,10 @@
 
 # Report order.
 # shellcheck disable=SC2034  # used by run.sh and lib.sh
-ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3 B1 B2 B3 B4 B5 B6"
+ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3 B1 B2 B3 B4 B5 B6 R1 R2 R3 R4 R5"
 # Execution order.
 # shellcheck disable=SC2034  # used by run.sh
-FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two"
+FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two roadmap-files roadmap-gh"
 
 # bindings <id> — the "<flow>:<checkpoint>" pairs a scenario is judged at.
 bindings() {
@@ -36,6 +36,11 @@ bindings() {
     C2) echo "close-base-moved:end" ;;
     C3) echo "close-pending:end" ;;
     B1 | B2 | B3 | B4 | B5 | B6) echo "batch-two:end" ;;
+    R1) echo "roadmap-files:created" ;;
+    R2) echo "roadmap-files:merged" ;;
+    R3) echo "roadmap-files:shown" ;;
+    R4) echo "roadmap-files:tickets" ;;
+    R5) echo "roadmap-gh:end" ;;
   esac
 }
 
@@ -235,6 +240,70 @@ flow_batch_two() {
   new_run 1 local parallel2
   canned "$(canned_work)"
   drive "/veland:batch gh-5 gh-6" "$BATCH_REPLY" 8 batch_settled
+  check_scenarios end
+}
+
+# No origin: tickets: files. Each typed /veland:roadmap is its own session: requirements and their approval (created),
+# more requirements and their approval (merged), no arguments (shown), then tickets for the first version and their
+# approval (tickets). A step runs only when a selected scenario is judged at it.
+ROADMAP_PROMPT="/veland:roadmap greet: a --shout flag that prints the greeting in upper case; greet several names at once, one line each; a --lang flag for French and Spanish greetings"
+ROADMAP_MORE="/veland:roadmap greet: read the names from a file given with --from; a man page for greet"
+flow_roadmap_files() {
+  local v
+  new_run 1 local no-origin
+  drive "$ROADMAP_PROMPT" "$REPLY" 6 has_roadmap_draft
+  if ! has_roadmap_draft; then echo "no draft"; elif has_roadmap; then echo present; else echo absent; fi >"$RUN/roadmap-at-draft"
+  drive "approve" "approve" 6 has_roadmap
+  check_scenarios created || return 0
+  if flow_wants roadmap-files merged; then
+    cp "$REPO/.veland/roadmap.md" "$RUN/roadmap-created.md" 2>/dev/null
+    new_session
+    drive "$ROADMAP_MORE" "$REPLY" 6 has_roadmap_draft
+    if ! has_roadmap_draft; then echo "no draft"; elif cmp -s "$RUN/roadmap-created.md" "$REPO/.veland/roadmap.md"; then echo same; else echo changed; fi >"$RUN/roadmap-at-draft-2"
+    drive "approve" "approve" 6 roadmap_merged
+    check_scenarios merged || return 0
+  fi
+  if flow_wants roadmap-files shown; then
+    cp "$REPO/.veland/roadmap.md" "$RUN/roadmap-before-show.md" 2>/dev/null
+    run_logs | wc -l | tr -d ' ' >"$RUN/turns-before-show"
+    new_session
+    drive "/veland:roadmap" "" 1 never
+    check_scenarios shown || return 0
+  fi
+  flow_wants roadmap-files tickets || return 0
+  roadmap_rows | jq -r '.version' | head -n 1 >"$RUN/roadmap-version"
+  v="$(cat "$RUN/roadmap-version")"
+  run_logs | wc -l | tr -d ' ' >"$RUN/turns-before-tickets"
+  if [ -n "$v" ]; then
+    new_session
+    drive "/veland:roadmap tickets $v" "$REPLY" 6 has_draft
+    count_file_tickets >"$RUN/tickets-at-draft"
+    drive "approve" "approve" 6 roadmap_linked "$v"
+  fi
+  check_scenarios tickets
+}
+
+# The fake gh: tickets: github. A prepared roadmap.md has one version of two items with no ids.
+flow_roadmap_gh() {
+  new_run 1 pr
+  canned "$(canned_labels)"
+  mkdir -p "$REPO/.veland"
+  cat >"$REPO/.veland/roadmap.md" <<'ROADMAP'
+# Roadmap
+
+| Version | Contents | Why this order | State |
+|---|---|---|---|
+| v1 | A --shout flag that prints the greeting in upper case; Greet several names at once, one line each | Both are small changes to bin/greet that ship alone | Planned |
+
+## Not yet assigned
+
+## Later
+
+## Decided against
+ROADMAP
+  drive "/veland:roadmap tickets v1" "$REPLY" 6 has_draft
+  ghlog_count issue create >"$RUN/creates-at-draft"
+  drive "approve" "approve" 6 roadmap_linked v1
   check_scenarios end
 }
 
@@ -663,4 +732,102 @@ scenario_B6() {
     [ "$(rgit log -1 --format=%B "$c" | grep -cx 'Closes #6')" = 1 ] && l6="$i"
   done < <(rgit rev-list --reverse "$(cat "$RUN/initial-main")..main")
   ensure "the commit closing #5 does not come before the one closing #6" [ "${l5:-9}" -lt "${l6:-0}" ]
+}
+
+# ---------------------------------------------------------------- scenarios: roadmap
+
+# tool_calls_since <n> — the tool calls of the run's turns from the (n+1)th on.
+tool_calls_since() { tool_calls | jq -c --argjson n "$1" 'select(.turn >= $n)'; }
+# roadmap_writes — Write or Edit calls on .veland/roadmap.md: only veland-roadmap may write it.
+roadmap_writes() {
+  tool_calls | jq -s '[.[] | select((.name == "Edit" or .name == "Write" or .name == "MultiEdit") and ((.file_path // "") | endswith("/.veland/roadmap.md")))] | length'
+}
+# roadmap_merged — the second run's draft was applied: no draft, and roadmap.md is no longer the first run's.
+roadmap_merged() { ! has_roadmap_draft && has_roadmap && ! cmp -s "$RUN/roadmap-created.md" "$REPO/.veland/roadmap.md"; }
+# roadmap_linked <version> — every item of the version ends in a ticket id.
+roadmap_linked() { roadmap_rows | jq -se --arg v "$1" '[.[] | select(.version == $v)] | length == 1 and (.[0].items | length > 0 and all(.id != null))' >/dev/null; }
+# count_file_tickets — the number of .veland/<id>/ticket.md files.
+count_file_tickets() {
+  local f n=0
+  for f in "$REPO"/.veland/*/ticket.md; do if [ -e "$f" ]; then n=$((n + 1)); fi; done
+  echo "$n"
+}
+
+scenario_R1() {
+  local f="$REPO/.veland/roadmap.md" s re='^\|[[:space:]]*Version[[:space:]]*\|[[:space:]]*Contents[[:space:]]*\|[[:space:]]*Why this order[[:space:]]*\|[[:space:]]*State[[:space:]]*\|[[:space:]]*$'
+  ensure "no draft was written before the approval" [ "$(cat "$RUN/roadmap-at-draft")" != "no draft" ]
+  ensure "roadmap.md existed before the approval" [ "$(cat "$RUN/roadmap-at-draft")" != present ]
+  ensure "roadmap.md is missing" [ -f "$f" ]
+  ensure "the draft was not deleted" not has_roadmap_draft
+  ensure "roadmap.md has no '| Version | Contents | Why this order | State |' row" grep -Eq "$re" "$f"
+  for s in "Not yet assigned" "Later" "Decided against"; do
+    ensure "roadmap.md does not have '## $s' exactly once" [ "$(grep -cx "## $s" "$f")" = 1 ]
+  done
+  ensure "roadmap.md has no version row" [ "$(roadmap_rows | jq -s 'length')" -ge 1 ]
+  ensure "a version row has an empty Why this order" [ "$(roadmap_rows | jq -s '[.[] | select(.why == "")] | length')" = 0 ]
+  ensure "git status is not empty" [ -z "$(rgit status --porcelain)" ]
+  ensure "git tracks a file under .veland/" [ -z "$(rgit ls-files .veland)" ]
+  ensure "veland-roadmap apply was not run" [ "$(tool_count '^veland-roadmap apply$')" -ge 1 ]
+  ensure "roadmap.md was written with Write or Edit" [ "$(roadmap_writes)" = 0 ]
+}
+
+scenario_R2() {
+  local f="$REPO/.veland/roadmap.md" snap="$RUN/roadmap-created.md" l
+  ensure "no roadmap.md after the first run" [ -s "$snap" ]
+  ensure "no draft was written before the approval" [ "$(cat "$RUN/roadmap-at-draft-2")" != "no draft" ]
+  ensure "roadmap.md changed before the approval" [ "$(cat "$RUN/roadmap-at-draft-2")" != changed ]
+  ensure "the second run merged nothing into roadmap.md" not cmp -s "$snap" "$f"
+  ensure "the draft was not deleted" not has_roadmap_draft
+  while IFS= read -r l; do
+    ensure "roadmap.md lost the line: $l" grep -Fxq -- "$l" "$f"
+  done < <(grep -v '^[[:space:]]*$' "$snap")
+  ensure "roadmap.md was written with Write or Edit" [ "$(roadmap_writes)" = 0 ]
+}
+
+scenario_R3() {
+  local since
+  since="$(cat "$RUN/turns-before-show")"
+  ensure "no roadmap.md to show" [ -s "$RUN/roadmap-before-show.md" ]
+  ensure "roadmap.md changed" cmp -s "$RUN/roadmap-before-show.md" "$REPO/.veland/roadmap.md"
+  ensure "a draft was left" not has_roadmap_draft
+  ensure "/veland:roadmap with no arguments called Edit or Write" \
+    [ "$(tool_calls_since "$since" | jq -s '[.[] | select(.name == "Edit" or .name == "Write" or .name == "MultiEdit" or .name == "NotebookEdit")] | length')" = 0 ]
+  ensure "veland-roadmap show did not run" \
+    [ "$(tool_calls_since "$since" | jq -s '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^veland-roadmap show( |$)")))] | length')" -ge 1 ]
+}
+
+scenario_R4() {
+  local v items ids id since
+  v="$(cat "$RUN/roadmap-version")"
+  since="$(cat "$RUN/turns-before-tickets")"
+  ensure "roadmap.md has no version" [ -n "$v" ]
+  items="$(roadmap_rows | jq -s --arg v "$v" '[.[] | select(.version == $v)][0].items // [] | length')"
+  ids="$(roadmap_ids "$v")"
+  ensure "version '$v' has no items" [ "$items" -ge 1 ]
+  ensure "not every item of '$v' ends in a ticket id" [ "$(printf '%s\n' "$ids" | grep -c .)" = "$items" ]
+  ensure "two items of '$v' share an id" [ "$(printf '%s\n' "$ids" | grep . | sort -u | wc -l | tr -d ' ')" = "$items" ]
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    ensure "$id has no .veland/$id/ticket.md" [ -s "$REPO/.veland/$id/ticket.md" ]
+  done <<<"$ids"
+  ensure "a ticket file existed before the approval" [ "$(cat "$RUN/tickets-at-draft")" = 0 ]
+  ensure "veland-land ticket did not run for exactly one slug per item" \
+    [ "$(tool_calls_since "$since" | jq -r 'select(.name == "Bash" and .denied == false) | .command // "" | select(test("^veland-land ticket "))' | sort -u | wc -l | tr -d ' ')" = "$items" ]
+  ensure "veland-roadmap link was not run" [ "$(tool_count '^veland-roadmap link ')" -ge 1 ]
+  ensure "roadmap.md was written with Write or Edit" [ "$(roadmap_writes)" = 0 ]
+  ensure "gh was called" [ ! -s "$GHD/calls.log" ]
+}
+
+scenario_R5() {
+  local want got
+  want="$(state_json | jq -r '.issues[].number | "gh-\(.)"' | sort)"
+  got="$(roadmap_ids v1 | sort)"
+  ensure "gh issue create ran before the approval" [ "$(cat "$RUN/creates-at-draft")" = 0 ]
+  ensure "gh issue create is not called exactly twice" [ "$(ghlog_count issue create)" = 2 ]
+  ensure "a gh issue create command was run directly" [ "$(tool_count '^gh issue create')" = 0 ]
+  ensure "the issues were not created through veland-land issue" [ "$(tool_count '^veland-land issue ')" -ge 2 ]
+  ensure "v1's items do not all end in an id" roadmap_linked v1
+  ensure "v1's ids are not the created issues" [ "$(printf '%s\n' "$want" | grep -c .)" = 2 ]
+  ensure "v1's ids are not the created issues" [ "$got" = "$want" ]
+  ensure "roadmap.md was written with Write or Edit" [ "$(roadmap_writes)" = 0 ]
 }

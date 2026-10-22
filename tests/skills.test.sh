@@ -2,11 +2,11 @@
 # The skills' `allowed-tools` must cover every command their fenced bash blocks run and every command their prose names in inline code (unless Claude Code allows it as read-only, it is left to the user, or it is named but never run), and must not
 # grant anything that can destroy work, force-push, bypass branch protection or run arbitrary code.
 # Creating an issue and posting a comment are public writes: never granted, so they always prompt.
-# open and work must load the shared references/grill.md (beside the skills directory) through a granted `veland-grill`.
+# open, work and roadmap must load the shared references/grill.md (beside the skills directory) through a granted `veland-grill`.
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
 # work and close must resolve .veland/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
-# open, work, close and batch must each have a `## Replies` section.
+# open, work, close, batch and roadmap must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
 SKILLS_DIR="${SKILLS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/skills}"
@@ -23,6 +23,7 @@ const userOwn = {
   work: ["git -C X add ", "git -C X commit ", "veland-land comment "],
   open: ["veland-land issue "],
   batch: ["veland-land comment ", "veland-batch approve "],
+  roadmap: ["veland-land issue "],
 }
 const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
 // Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
@@ -35,6 +36,7 @@ const notRun = {
   work: [],
   open: ["gh auth login"],
   batch: [],
+  roadmap: ["gh auth login"],
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
@@ -130,11 +132,11 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
     : ok(`${skill}: grants no public write or batch approval`)
 }
 
-// open and work load the one shared grill rather than each carrying a copy. A Read of it would prompt (the plugin
-// root is outside the workspace and a Read rule takes only an absolute path), so they run the granted veland-grill.
+// open, work and roadmap load the one shared grill rather than each carrying a copy. A Read of it would prompt (the
+// plugin root is outside the workspace and a Read rule takes only an absolute path), so they run the granted veland-grill.
 const grill = `${dir}/../references/grill.md`
 fs.existsSync(grill) ? ok("references/grill.md exists") : bad("references/grill.md is missing")
-for (const skill of ["open", "work"]) {
+for (const skill of ["open", "work", "roadmap"]) {
   const text = fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")
   text.includes("run `veland-grill`") && /^  - Bash\(veland-grill\)$/m.test(text)
     ? ok(`${skill}: loads the grill through a granted veland-grill`) : bad(`${skill}: does not load the grill through a granted veland-grill`)
@@ -173,7 +175,7 @@ for (const skill of ["open", "work"]) {
 
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
   "Only when a check is impossible, say so, naming what was tried and why it cannot be checked."
-for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/batch/SKILL.md", "skills/code-review/SKILL.md",
+for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/batch/SKILL.md", "skills/roadmap/SKILL.md", "skills/code-review/SKILL.md",
   "skills/code-review-branch/SKILL.md", "agents/code-reviewer.md", "agents/security-reviewer.md"]) {
   const file = `${dir}/../${f}`
   fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(rule)
@@ -246,7 +248,7 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     : bad("close: runs check first and resolves .veland paths against ticket dir:")
 }
 
-for (const skill of ["open", "work", "close", "batch"])
+for (const skill of ["open", "work", "close", "batch", "roadmap"])
   /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
     ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)
 process.exit(fail)

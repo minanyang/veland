@@ -56,9 +56,19 @@ GitHub remotes use `gh`. GitLab remotes use `glab` — untested so far.
 
 The skill declares `allowed-tools` for the commands that are safe to grant (opening or updating the PR/MR goes through `veland-land pr`), and the writes go through `veland-land`, which takes only the ticket id, so no settings rule should allow `gh pr merge` or `git push` for it. In `pr-merge` mode, running `/veland:close` is your request to merge. Through [the grant hook](hooks.md#grant), those grants hold for the rest of the session in which you typed `/veland:close`, so the merge after the background `veland-land wait` runs without a prompt.
 
+## `/veland:roadmap [requirements]`
+
+Keeps `.veland/roadmap.md`, inside the excluded `.veland/`, so it is never committed: a table `Version | Contents | Why this order | State`, one row per version in the order they ship, then `## Not yet assigned`, `## Later` and `## Decided against` (each entry with its reason). The skill never writes the file itself; `veland-roadmap` ([scripts](scripts.md#veland-roadmap)) checks, applies and links it.
+
+- **With requirements** it grounds them in the code, grills you on the product questions, and writes `.veland/roadmap.draft.md`: a copy of the current file with each requirement placed into a version or a section, and new versions ordered by dependency, risk and what can ship alone. `veland-roadmap check` refuses a draft with an empty `Why this order`, a missing section or a bad version name, and lists every existing row and entry the draft does not keep byte for byte as `not kept:`. You see the draft, the assumptions the grill left and those lines; only your approval runs `veland-roadmap apply`, which renames the draft to `.veland/roadmap.md`. Existing rows, states and entries change only when you ask for it.
+- **Without arguments** it prints each version with its state and items, and the next version, and writes nothing.
+- **`tickets <version>`** drafts one ticket per item that has none, in `/veland:open`'s format and the [`tickets`](configuration.md) mode — after looking for an existing ticket to link instead and one grill round for the whole version — shows them together, and on your approval creates each (`veland-land ticket`, or `veland-land issue`, which asks your permission) and links its id into the row (`veland-roadmap link`).
+
+Then `/veland:batch <version>` works that row's tickets and, once they have all landed, rewrites its `State` to `Done <YYYY-MM-DD>`.
+
 ## `/veland:batch <tickets>`
 
-Conducts a backlog from one terminal. The arguments are `gh-<n>`, `<n>`, `#<n>`, an issue URL of origin's repo, existing ticket ids, or `--search "<query>"`; one that resolves to no ticket stops the batch before anything starts.
+Conducts a backlog from one terminal. The arguments are `gh-<n>`, `<n>`, `#<n>`, an issue URL of origin's repo, existing ticket ids, a roadmap version (its row's ticket ids), or `--search "<query>"`; one that resolves to no ticket stops the batch before anything starts.
 
 The mechanics live in `veland-batch` ([scripts](scripts.md#veland-batch)); the skill only relays. Every ticket's `/veland:work` and `/veland:close` run, unchanged, in a background `claude -p` worker started by `veland-batch run`, each in its own session. The conductor:
 

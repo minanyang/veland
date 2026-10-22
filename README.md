@@ -35,6 +35,7 @@ veland turns each ticket into a loop that does not take the agent's word:
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
+/veland:roadmap [reqs]  →  order requirements into versions; /veland:batch <version> runs one
 /veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
 ```
 
@@ -101,6 +102,7 @@ Invoke as `veland:<name>` (the Agent tool needs the prefix).
 | `/veland:open` | Draft a ticket — a GitHub issue, or with `tickets: files` a file under `.veland/` — and create it on approval |
 | `/veland:work` | Plan a ticket, then build, verify and review it in a worktree |
 | `/veland:close` | Rebase, verify, land and clean up |
+| `/veland:roadmap` | Order requirements into versions in `.veland/roadmap.md`, each with the reason for its place, once you approve; turn a version into one ticket per item, which `/veland:batch <version>` works and marks `Done` |
 | `/veland:batch` | Work and close many tickets from one terminal, each in a background worker |
 | `/veland:commit` | Commit what this session changed — only those paths, in the repo's own message style. Commits straight away; stops to ask only on a likely secret, unclear scope or unrelated changes. Say "message only" for a draft |
 | `/veland:code-review` | Review pending (uncommitted) changes |

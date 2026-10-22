@@ -3,8 +3,8 @@
 // session in which the user typed it. Claude Code applies a skill's `allowed-tools` only to the turn
 // the skill was invoked in, not to a background wake-up, a later approval turn or a `--resume` turn.
 //
-// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`
-// records that skill's `Bash(...)` grants, as its SKILL.md lists them now (but TYPED_ONLY), as pending, in
+// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work`, `/veland:close`, `/veland:batch` or
+// `/veland:roadmap` records that skill's `Bash(...)` grants, as its SKILL.md lists them now (but TYPED_ONLY), as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
 //   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
 // outside the working directory, so the agent cannot write itself a record without being asked.
@@ -14,14 +14,16 @@
 // PreToolUse: allows a single command (no shell metacharacters) matching a confirmed grant, or a
 // pending one that the transcript confirms, outside a subagent. A veland script run on a ticket is
 // allowed only for the entry's ticket id: the one typed with the skill, or for a task in words the
-// first one the hook allows. Anything else, and any error of its own, prints nothing: Claude Code
-// decides as usual.
+// first one the hook allows; an UNBOUND skill's entry, which creates a ticket per roadmap item, binds
+// none. Anything else, and any error of its own, prints nothing: Claude Code decides as usual.
 
 const fs = require('node:fs')
 const path = require('node:path')
 
 const SID = /^[A-Za-z0-9-]+$/
-const TYPED = /^\s*\/veland:(open|work|close|batch)(?=\s|$)/
+const TYPED = /^\s*\/veland:(open|work|close|batch|roadmap)(?=\s|$)/
+// Skills whose entry is not bound to one ticket id: /veland:roadmap runs `veland-land ticket <slug>` once per item.
+const UNBOUND = new Set(['roadmap'])
 const META = /[;&|<>$`\n\r]/
 // Grants used only in the turn the skill was typed, where its allowed-tools apply anyway: kept out of the record so a
 // later turn cannot start a new batch the user never named.
@@ -61,7 +63,7 @@ function main() {
   if (input.hook_event_name === 'UserPromptSubmit') {
     const typed = TYPED.exec(typeof input.prompt === 'string' ? input.prompt : '')
     if (typed && typeof input.prompt_id === 'string' && input.prompt_id) {
-      record(file, typed[1], input.prompt_id, typedId(input.prompt.slice(typed[0].length)))
+      record(file, typed[1], input.prompt_id, UNBOUND.has(typed[1]) ? undefined : typedId(input.prompt.slice(typed[0].length)))
     }
     pass()
   }
@@ -74,8 +76,8 @@ function main() {
   const skills = readSkills(file)
   for (const [skill, entry] of Object.entries(skills)) {
     const confirmed = entry && entry.confirmed
-    if (!granting(confirmed, command, ticket)) continue
-    if (ticket && !confirmed.id) {
+    if (!granting(confirmed, command, ticket, skill)) continue
+    if (ticket && !confirmed.id && !UNBOUND.has(skill)) {
       confirmed.id = ticket
       write(file, skills)
     }
@@ -83,8 +85,8 @@ function main() {
   }
   for (const [skill, entry] of Object.entries(skills)) {
     const pending = entry && entry.pending
-    if (!granting(pending, command, ticket) || !typedBy(input.transcript_path, pending.prompt_id, skill)) continue
-    skills[skill] = { confirmed: ticket && !pending.id ? { ...pending, id: ticket } : pending }
+    if (!granting(pending, command, ticket, skill) || !typedBy(input.transcript_path, pending.prompt_id, skill)) continue
+    skills[skill] = { confirmed: ticket && !pending.id && !UNBOUND.has(skill) ? { ...pending, id: ticket } : pending }
     write(file, skills)
     allow(skill)
   }
@@ -122,11 +124,11 @@ function allow(skill) {
   pass()
 }
 
-function granting(part, command, ticket) {
+function granting(part, command, ticket, skill) {
   if (ALWAYS_ASK.test(command)) return false
   if (!part || !Array.isArray(part.grants) || !part.grants.some((g) => typeof g === 'string' && matches(g, command))) return false
   if (ticket === undefined) return true
-  return !!ticket && (part.id === undefined || part.id === ticket)
+  return !!ticket && (UNBOUND.has(skill) || part.id === undefined || part.id === ticket)
 }
 
 // Reads the transcript backwards, at most MAX_SCAN bytes, for the line of prompt `id`: the user's

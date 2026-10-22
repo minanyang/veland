@@ -61,6 +61,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 The mechanics of `/veland:batch`. Refusals print `veland-batch: <why>` on stderr with exit 2.
 
 - `veland-batch init <arg>... [--search "<query>"]` resolves every argument to a ticket (`gh-<n>`, `<n>`, `#<n>`, an issue URL of origin's repo, an existing id) before writing anything, then writes `.veland/_batch/tickets` and the board. A batch with an unsettled ticket is not replaced; a settled one is moved to `.veland/_batch.<timestamp>/`.
+- An argument that resolves to no ticket, is not a number and names a version of `.veland/roadmap.md` stands for the ticket ids in that version's row. A row with no id exits 2 (`version <v> has no ticket ids: run /veland:roadmap tickets <v>`); a `gh-<n>` whose issue is closed is left out and counts as landed. The versions are recorded in `.veland/_batch/versions` (the closed ids in `versions.closed`), and once every id of a version is `landed` (`pr-open` does not count), `status` or `init` rewrites only that row's `State` cell to `Done <YYYY-MM-DD>` (local date, never moved once written) and `status` prints `roadmap: <version> Done <date>`.
 - `veland-batch run <id> <plan|reply|implement|close>` runs one worker turn in the foreground: `claude -p` (or `$VELAND_BATCH_CLAUDE`) with `--session-id`, or `--resume` for `reply`, which sends `.veland/_batch/<id>/reply.md`; a plan session may write only under `.veland/<id>/`, implementation and close run in `acceptEdits`. It records `runs.tsv`, the stream-json log, the permission denials and `turn.md` (every assistant text block of the run) under `.veland/_batch/<id>/`, and refuses what `status` would not list, and a reply starting with `/`, which the worker would take as a typed command.
 - `veland-batch status` rewrites and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`, `answer <id>` (` approvable` when a passing draft can be approved) and `done`.
 - `veland-batch drop <id>` stops the ticket's running worker and never schedules it again.
@@ -68,9 +69,19 @@ The mechanics of `/veland:batch`. Refusals print `veland-batch: <why>` on stderr
 
 `batch.parallel` ([configuration](configuration.md)) caps the implementation workers.
 
+## veland-roadmap
+
+`veland-roadmap show [<version>] | check | apply | link <version> <item n> <id>` — the one reader and writer of `.veland/roadmap.md` for `/veland:roadmap` (and the parser `veland-batch` shares, `scripts/roadmap.js`). Refusals print `veland-roadmap: <why>` with exit 2.
+
+- The file has a table whose header row is `| Version | Contents | Why this order | State |`, then `## Not yet assigned`, `## Later` and `## Decided against`, each once. A `Version` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`, is not all digits and is unique; `Contents` holds items separated by `; `, an item's ticket id being its last code span (`gh-<n>`, or an id with `.veland/<id>/ticket.md`); `Why this order` is never empty; a `## Decided against` entry gives a reason after ` — `.
+- `show` prints `<version> — <state>`, `  <n>. <item>` per item, then `next: <version|none>` (the first version not `Done <YYYY-MM-DD>`); with a version, only that one. Without a roadmap it prints `no roadmap: .veland/roadmap.md` and exits 0. It never writes.
+- `check` validates `.veland/roadmap.draft.md`: exit 1 with one `<file>:<line>: <why>` per fault, else one `not kept: <line>` per row or section entry of `roadmap.md` that the draft no longer has byte for byte (a row anywhere in the table, an entry in its own section).
+- `apply` runs `check`, writes nothing on a fault, else renames the draft to `.veland/roadmap.md` and prints `roadmap: <path>` and the `not kept:` lines.
+- `link` appends `` `<id>` `` to an item; it refuses an item that already has an id, and an id that is neither `gh-<n>` nor a directory with `.veland/<id>/ticket.md`.
+
 ## veland-grill
 
-`veland-grill` prints the shared grill (`references/grill.md`) that `/veland:open` and `/veland:work` follow; a skill cannot Read a file under the plugin root without a prompt.
+`veland-grill` prints the shared grill (`references/grill.md`) that `/veland:open`, `/veland:work` and `/veland:roadmap` follow; a skill cannot Read a file under the plugin root without a prompt.
 
 ## veland-ticket
 

@@ -35,6 +35,7 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
+/veland:roadmap [reqs]  →  order requirements into versions; /veland:batch <version> runs one
 /veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
 ```
 
@@ -101,6 +102,7 @@ base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.
 | `/veland:open` | 起草 ticket（GitHub issue，或設定 `tickets: files` 時 `.veland/` 底下的檔案），核准後建立 |
 | `/veland:work` | 規劃 ticket，再到 worktree 裡實作、驗證、審查 |
 | `/veland:close` | rebase、驗證、落地、清理 |
+| `/veland:roadmap` | 把需求排進 `.veland/roadmap.md` 的版本裡，每個版本寫明排在這裡的理由，你核准後才寫入；可以把一個版本的每個項目各開成一張 ticket，交給 `/veland:batch <version>` 處理並標成 `Done` |
 | `/veland:batch` | 在同一個 terminal 處理多張 ticket，每張在背景 worker 裡完成 |
 | `/veland:commit` | 只 commit 這個 session 改過的路徑，訊息照 repo 自己的風格。會直接 commit，只有疑似 secret、範圍不清楚或有不相關的改動時才停下來問。說「message only」就只給草稿 |
 | `/veland:code-review` | 審查還沒 commit 的改動 |
