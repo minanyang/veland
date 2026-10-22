@@ -66,7 +66,7 @@ Requires `git` and `node` (18+). GitHub issue tickets (`tickets: github`, which 
 2. `/veland:work 12` plans ticket `gh-12` and stops. Read the plan, answer or approve, then run `/veland:work gh-12` again (or say "go") to build it.
 3. `/veland:close gh-12` lands it. By default it opens a PR; once you merge it, run `/veland:close gh-12` again to clean up.
 
-Optional settings — base branch, gates, close mode, where tickets live — live in `.claude/veland.json`: see [docs/configuration.md](docs/configuration.md). `tickets` is `"github"` (GitHub issues) or `"files"` (`.veland/<slug>/ticket.md`, never pushed); without it, a repo whose `origin` is on github.com gets `github` and any other gets `files`. It is independent of `close`: a repo can keep its tickets private and still land them by PR.
+Optional settings — base branch, gates, close mode, where tickets live — live in `.claude/veland.json`: see [docs/configuration.md](docs/configuration.md). `tickets` is `"github"` (GitHub issues) or `"files"` (`.veland/<slug>/ticket.md`, never pushed); without it, a repo whose `origin` is on github.com gets `github` and any other gets `files`. It is independent of `close`: a repo can keep its ticket files off GitHub and still land them by PR, though in `pr` and `pr-merge` modes the PR body carries the plan's goal and acceptance criteria.
 
 ## What's inside
 

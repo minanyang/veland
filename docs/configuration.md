@@ -31,7 +31,7 @@ Optional `.claude/veland.json`, committed with the project:
 | `preReviewGates` | none. Shell commands (quick gates: lint, typecheck) that `veland-review-packet` runs first; a failure exits 1 and no packet is built |
 | `contextGate.maxTokens` | `200000`; `0` turns the gate off. A file that does not parse, or a `maxTokens` that is not a number, gets the default and a warning |
 
-The close modes are described in [the loop](loop.md#velandclose-id). `tickets` and `close` are read independently: where tickets live does not decide how they land, so a repo on GitHub can keep its tickets private with `"tickets": "files"` and still land each one by PR, and every combination of the two is valid.
+The close modes are described in [the loop](loop.md#velandclose-id). `tickets` and `close` are read independently: where tickets live does not decide how they land, so a repo on GitHub can keep its ticket files off GitHub with `"tickets": "files"` and still land each one by PR (the PR body still carries the plan's goal and acceptance criteria), and every combination of the two is valid.
 
 ## Where each key is read from
 
