@@ -12,7 +12,7 @@ TICKET_BRANCH="fix/gh-5-greet-twice"
 ORIGIN_URL="git@github.com:test/fixture.git"
 # What a user must allow: the commands the skills leave to the user. --settings works in an untrusted workspace,
 # where .claude/settings.json is ignored.
-E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(veland-land issue *)","Bash(veland-land comment *)"]}}'
+E2E_SETTINGS='{"permissions":{"allow":["Bash(git -C * add *)","Bash(git -C * commit *)","Bash(veland-land issue *)","Bash(veland-land comment *)","Bash(veland-batch approve *)"]}}'
 
 # `claude` is resolved before PATH is rewritten.
 CLAUDE_BIN="${VELAND_E2E_CLAUDE:-claude}"

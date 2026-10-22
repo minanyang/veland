@@ -380,6 +380,10 @@ need "naming it" grep -qF "| t2 | failed | s-t2-1 | failed | plan.md says approv
 plan_md t1 approved a c
 need "a plan changed after approval fails" phase_is t1 failed
 need "neither implements" acts_are "done"
+need "a ticket batched again" exits 0 init t1
+row t1 plan plan 0
+plan_md t1 approved a
+need "needs a new approval for the plan approved before" eval 'test ! -e .git/veland-batch/t1.approved && phase_is t1 failed'
 end
 
 # ---------------------------------------------------------------- schedule

@@ -22,7 +22,7 @@ const userOwn = {
   close: [],
   work: ["git -C X add ", "git -C X commit ", "veland-land comment "],
   open: ["veland-land issue "],
-  batch: ["veland-land comment "],
+  batch: ["veland-land comment ", "veland-batch approve "],
 }
 const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
 // Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
@@ -39,7 +39,9 @@ const notRun = {
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
 const bareGrants = ["veland-worktree *", "veland-land *", "git *"]
-const publicWrites = ["veland-land issue", "veland-land comment"]
+// Commands that must always ask: the public writes, and a batch's plan approval, which text a worker wrote must
+// never be able to give.
+const publicWrites = ["veland-land issue", "veland-land comment", "veland-batch approve"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 
@@ -112,7 +114,7 @@ for (const skill of Object.keys(userOwn)) {
   }
 }
 
-// No skill may grant a public write, by any pattern that covers it: `*`, `veland-land *`, `veland-land i*`,
+// No skill may grant one of them, by any pattern that covers it: `*`, `veland-land *`, `veland-land i*`,
 // the legacy `veland-land issue:*`, or the command itself.
 for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}/SKILL.md`))) {
   const fm = (/^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")) || ["", ""])[1]
@@ -124,8 +126,8 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
   // A bare `Bash` (or `Bash()`) grants every command.
   const tools = (/^allowed-tools:(.*(?:\n  - .*)*)/m.exec(fm) || ["", ""])[1]
   hits.push(...[...tools.matchAll(/(?:^|[\s,-])(Bash(?:\(\s*\))?)(?=[\s,]|$)/g)].map((b) => [b[1]]))
-  hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants a public write, which must always prompt`))
-    : ok(`${skill}: grants no public write`)
+  hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants ${b[1] ?? b[0]}, which must always prompt`))
+    : ok(`${skill}: grants no public write or batch approval`)
 }
 
 // open and work load the one shared grill rather than each carrying a copy. A Read of it would prompt (the plugin

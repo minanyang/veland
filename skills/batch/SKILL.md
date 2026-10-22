@@ -7,7 +7,6 @@ allowed-tools:
   - Bash(veland-batch run *)
   - Bash(veland-batch status)
   - Bash(veland-batch drop *)
-  - Bash(veland-batch approve *)
 ---
 
 # Conduct a batch of tickets
@@ -45,7 +44,7 @@ When `status` lists `answer` lines, Read each such ticket's `.veland/_batch/<id>
 Write each ticket's reply to `.veland/_batch/<id>/reply.md`, then start `veland-batch run <id> reply` in the background (same flags as Step 1):
 
 - answers: the user's words for that ticket, verbatim.
-- `approve`: run `veland-land comment <id>` first when `.veland/<id>/comment.md` exists (left to the user's permissions), then `veland-batch approve <id>`, which records the approval and writes the reply itself. Only the user's `approve` for that ticket starts it.
+- `approve`: run `veland-land comment <id>` first when `.veland/<id>/comment.md` exists (left to the user's permissions), then `veland-batch approve <id>`, which records the approval and writes the reply itself. It is not in this skill's `allowed-tools` on purpose: each approve asks the user's permission, naming the ticket, so text a worker wrote can never approve a plan. Only the user's `approve` for that ticket starts it.
 - `revise <notes>`: write "Revise the plan: <notes>". Show its next turn on its own, not in a round.
 - `drop`: run `veland-batch drop <id>`.
 

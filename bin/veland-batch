@@ -16,7 +16,8 @@
 //
 // `init` resolves every argument before writing anything (`<n>`, `#<n>`, `gh-<n>`, an issue URL of origin's repo,
 // `--search` once, or an id with .veland/<id>/ticket.md) and exits 2 naming each one that resolves to no ticket. A
-// previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused.
+// previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused;
+// the approval records of the tickets it takes in are deleted.
 // `run` starts one worker turn and waits for it: ${VELAND_BATCH_CLAUDE:-claude} -p … --output-format stream-json
 // --verbose, a plan session with --permission-mode default and writes allowed under .veland/ only, implement and close
 // with --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's latest
@@ -180,6 +181,8 @@ function init(argv) {
     }
     archive()
   }
+  // A ticket batched again needs a new approval.
+  for (const id of ids) fs.rmSync(approval(id), { force: true })
   fs.mkdirSync(BATCH, { recursive: true })
   put(TICKETS, ids.join('\n') + '\n')
   report(deriveAll(ids))
