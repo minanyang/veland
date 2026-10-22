@@ -1,6 +1,6 @@
 # End-to-end scenarios
 
-`run.sh` drives `/veland:open`, `/veland:work` and `/veland:close` through real `claude -p` runs against throwaway repos,
+`run.sh` drives `/veland:open`, `/veland:work`, `/veland:close`, `/veland:batch` and `/veland:roadmap` through real `claude -p` runs against throwaway repos,
 a github.com origin backed by a local bare repo, and a fake `gh`. Each scenario passes or fails on state alone: files
 under `.veland/`, git state (main checkout, worktree, branches), origin's heads, the fake `gh` call log, and the tool
 calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_background`) — never the model's text.
@@ -8,11 +8,11 @@ calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_
 ## Run
 
 ```bash
-bash tests/e2e/run.sh              # all 35 scenarios
+bash tests/e2e/run.sh              # all 40 scenarios
 bash tests/e2e/run.sh 7 O2 C3      # only these (ids are case-sensitive; an unknown id exits 2 before any claude run)
 ```
 
-It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, B1–B6, then `total <seconds>s`:
+It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, B1–B6, R1–R5, then `total <seconds>s`:
 
 ```
 pass  7  41s
@@ -54,6 +54,12 @@ model has to find out by itself because no command prints the answer:
   of the other flows. The conductor is answered with `go with your recommendations; approve every plan that can be
   approved` (at most 8 turns) until `veland-batch status` says `done`. Its scenarios read the conductor's tool log and the
   workers' `.veland/_batch/<id>/runs.tsv`; B3 checks the files rule against the plans the run produced.
+- **The roadmap flows.** `roadmap-files` (no origin, so `tickets: files`) types `/veland:roadmap <requirements>` and
+  approves the draft (R1: no `roadmap.md` before the approval, its shape and `git status` after), merges more
+  requirements (R2: every line of the first file still there), shows it with no arguments (R3: nothing written), then
+  types `/veland:roadmap tickets <first version>` and approves (R4: one ticket file per item, linked into the row), each
+  typed command in its own session. `roadmap-gh` starts from a prepared `roadmap.md` with one version of two items and
+  runs `tickets v1` against the fake `gh` (R5: two issues, their `gh-<n>` linked into the row).
 - **Close flows start from prepared state** (`prep_ticket`): the worktree, a committed fix, `ticket.md`, an approved
   `plan.md`, `review.md` and `evidence.md` — `/veland:work` is not run.
 - **Fake `gh`** (`bin/gh`) answers from `canned.json` and `state.json`, logs every call's argv to `calls.log`, and

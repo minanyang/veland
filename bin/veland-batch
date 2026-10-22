@@ -15,9 +15,12 @@
 // <nn>-landed (the base and sha a close run left) and `dropped`. A phase is never stored: every command derives it from these files and .veland/<id>/.
 //
 // `init` resolves every argument before writing anything (`<n>`, `#<n>`, `gh-<n>`, an issue URL of origin's repo,
-// `--search` once, or an id with .veland/<id>/ticket.md) and exits 2 naming each one that resolves to no ticket. A
-// previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused;
-// the approval records of the tickets it takes in are deleted.
+// `--search` once, or an id with .veland/<id>/ticket.md) and exits 2 naming each one that resolves to no ticket. An
+// argument that resolves to no ticket, is a valid id and not a number is tried as a version of .veland/roadmap.md
+// (scripts/roadmap.js): it resolves to the ticket ids of its row, each resolved as an argument, except a gh-<n> whose
+// issue is closed, which is left out; a row with no id exits 2. The version names go to `versions`, the closed ids to
+// `versions.closed`. A previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is
+// settled, else refused; the approval records of the tickets it takes in are deleted.
 // `run` starts one worker turn and waits for it: ${VELAND_BATCH_CLAUDE:-claude} -p … --output-format stream-json
 // --verbose, a plan session with --permission-mode default and writes allowed under .veland/<id>/ only, implement and close
 // with --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's latest
@@ -26,7 +29,9 @@
 // reply whose first line starts with `/`. SIGTERM and SIGINT are forwarded to the worker. It prints
 // `phase: <phase>` and `board: <path>`, exit 0 once the worker ran, whatever its exit code.
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
-// `answer <id>[ approvable]`, and `done` when every ticket is settled.
+// `answer <id>[ approvable]`, and `done` when every ticket is settled. `status` and `init` also set the State of each
+// recorded version whose ids are all landed or closed to `Done <YYYY-MM-DD>` (local date) in .veland/roadmap.md,
+// changing nothing else, once, and print `roadmap: <version> Done <date>` when they do.
 // `approve` records the user's approval of a draft plan that passes veland-plan-check: the sha256 of plan.md with its
 // Status line blanked, in <git common dir>/veland-batch/<id>.approved, printing the plan's path and short hash, out of a plan session's reach (it may write
 // only under .veland/<id>/, and Claude Code refuses edits under .git/); a worker of an approved ticket, which can run
@@ -47,6 +52,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const md = require(path.join(__dirname, '..', 'scripts', 'md-check.js'))
+const roadmap = require(path.join(__dirname, '..', 'scripts', 'roadmap.js'))
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -77,6 +83,9 @@ const VELAND = path.join(ROOT, '.veland')
 const BATCH = path.join(VELAND, '_batch')
 const TICKETS = path.join(BATCH, 'tickets')
 const BOARD = path.join(BATCH, 'board.md')
+const VERSIONS = path.join(BATCH, 'versions')
+const CLOSED = path.join(BATCH, 'versions.closed')
+const ROADMAP = path.join(VELAND, 'roadmap.md')
 for (const p of [VELAND, BATCH]) if (fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${p} is a symlink`)
 
 const tdir = (id) => path.join(VELAND, id)
@@ -150,12 +159,30 @@ function init(argv) {
   if (!items.length) die(USAGE)
   const ids = []
   const errors = []
+  const versions = []
+  const closed = []
   const add = (id) => ids.includes(id) || ids.push(id)
   for (const it of items) {
     if (it.search === undefined) {
       const r = resolve(it.arg)
+      const v = r.id || !ID.test(it.arg) || /^[0-9]+$/.test(it.arg) ? null : version(it.arg)
       if (r.id) add(r.id)
-      else errors.push(`no ticket: ${it.arg}${r.why ? ` (${flat(r.why)})` : ''}`)
+      else if (!v) errors.push(`no ticket: ${it.arg}${r.why ? ` (${flat(r.why)})` : ''}`)
+      else if (v.why) errors.push(v.why)
+      else {
+        versions.includes(it.arg) || versions.push(it.arg)
+        for (const id of v.ids) {
+          const m = roadmap.GH.test(id) ? id.slice(3) : null
+          const s = m ? issueState(m) : {}
+          if (s.why) errors.push(`no ticket: ${it.arg} → ${id} (${flat(s.why)})`)
+          else if (s.state === 'CLOSED') closed.includes(id) || closed.push(id)
+          else {
+            const t = resolve(id)
+            if (t.id) add(t.id)
+            else errors.push(`no ticket: ${it.arg} → ${id}${t.why ? ` (${flat(t.why)})` : ''}`)
+          }
+        }
+      }
       continue
     }
     const label = `--search ${JSON.stringify(it.search)}`
@@ -185,7 +212,36 @@ function init(argv) {
   for (const id of ids) fs.rmSync(approval(id), { force: true })
   fs.mkdirSync(BATCH, { recursive: true })
   put(TICKETS, ids.join('\n') + '\n')
+  if (versions.length) put(VERSIONS, versions.join('\n') + '\n')
+  if (closed.length) put(CLOSED, closed.join('\n') + '\n')
   report(deriveAll(ids))
+}
+
+// The ticket ids of roadmap version <v>, { why } for a version that cannot be batched, or null when the roadmap has no
+// such version.
+function version(v) {
+  const text = readOr(ROADMAP)
+  if (text === null) return null
+  const p = roadmap.parse(text, roadmap.ticketTest(VELAND))
+  const row = p.rows.find((r) => r.version === v)
+  if (!row) return null
+  if (p.faults.length) return { why: `no ticket: ${v} (${rel(ROADMAP)}:${p.faults[0].line}: ${p.faults[0].why})` }
+  if (!row.ids.length) return { why: `version ${v} has no ticket ids: run /veland:roadmap tickets ${v}` }
+  return { ids: row.ids }
+}
+
+// The state gh reports for issue <n> of origin's repo: { state } or { why }.
+function issueState(n) {
+  const o = originRepo()
+  if (o.why) return o
+  const r = spawnSync('gh', ['issue', 'view', n, '--repo', `github.com/${o.repo}`, '--json', 'state'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  if (r.error) return { why: r.error.code === 'ENOENT' ? '`gh` is not installed' : r.error.message }
+  if (r.status !== 0) return { why: (r.stderr || 'gh failed').trim() }
+  try {
+    return { state: String(JSON.parse(r.stdout).state) }
+  } catch {
+    return { why: `gh answered with something other than JSON: ${r.stdout.trim().slice(0, 200)}` }
+  }
 }
 
 function resolve(a) {
@@ -253,6 +309,8 @@ function originRepo() {
   if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) return { why: 'cannot derive OWNER/REPO from origin' }
   return { repo }
 }
+
+const today = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
 function archive() {
   const d = new Date()
@@ -550,10 +608,33 @@ function writeBoard(rows) {
   return text
 }
 
+// Not in writeBoard(): background `run`s call that concurrently, and roadmap.md has no lock.
 function report(rows) {
   const text = writeBoard(rows)
   const acts = actions(rows)
-  process.stdout.write(text + (acts.length ? '\n' + acts.join('\n') + '\n' : ''))
+  const done = markDone(rows)
+  process.stdout.write(text + (acts.length ? '\n' + acts.join('\n') + '\n' : '') + done.map((l) => l + '\n').join(''))
+}
+
+// Sets `Done <date>` on each recorded version whose ids have all landed or were closed at init; a version already done,
+// gone from the roadmap, or in a roadmap that fails its check is left as it is.
+function markDone(rows) {
+  const names = (readOr(VERSIONS) || '').split('\n').map((s) => s.trim()).filter((s) => ID.test(s))
+  if (!names.length || fs.lstatSync(ROADMAP, { throwIfNoEntry: false })?.isFile() !== true) return []
+  let text = readOr(ROADMAP)
+  const p = text === null ? null : roadmap.parse(text, roadmap.ticketTest(VELAND))
+  if (!p || p.faults.length) return []
+  const landed = new Set([...rows.filter((r) => r.phase === 'landed').map((r) => r.id), ...(readOr(CLOSED) || '').split('\n').map((s) => s.trim())])
+  const date = today()
+  const out = []
+  for (const v of names) {
+    const row = p.rows.find((r) => r.version === v)
+    if (!row || roadmap.isDone(row.state) || !row.ids.length || !row.ids.every((id) => landed.has(id))) continue
+    text = roadmap.setState(text, v, `Done ${date}`)
+    out.push(`roadmap: ${v} Done ${date}`)
+  }
+  if (out.length) put(ROADMAP, text)
+  return out
 }
 
 // ---------------------------------------------------------------- commands

@@ -503,6 +503,60 @@ place_memory() {
   printf -- '---\nname: e2e-note\n---\nA note an agent left in the main checkout.\n' >"$REPO/.claude/agent-memory/e2e-note/MEMORY.md"
 }
 
+has_roadmap_draft() { [ -f "$REPO/.veland/roadmap.draft.md" ]; }
+has_roadmap() { [ -f "$REPO/.veland/roadmap.md" ]; }
+# roadmap_rows — the version rows of .veland/roadmap.md, one JSON object each: {version, items: [{text, id}], why,
+# state}. Rows follow the header `| Version | Contents | Why this order | State |` and its separator, split on unescaped
+# |; Contents splits on "; " outside code spans; an item's id is its closing code span when that is gh-<n> or has
+# .veland/<id>/ticket.md, else null.
+# shellcheck disable=SC2016  # JavaScript, not shell
+roadmap_rows() {
+  [ -f "$REPO/.veland/roadmap.md" ] || return 0
+  node -e '
+const fs = require("fs"), path = require("path")
+const repo = process.argv[1]
+const cells = (line) => {
+  let t = line.trim().replace(/^\|/, "")
+  if (/[^\\]\|$/.test(t) || t === "|") t = t.slice(0, -1)
+  const out = [""]
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === "\\" && t[i + 1] === "|") { out[out.length - 1] += "|"; i++ }
+    else if (t[i] === "|") out.push("")
+    else out[out.length - 1] += t[i]
+  }
+  return out.map((c) => c.trim())
+}
+const items = (s) => {
+  const out = [""]
+  let tick = 0
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "`") {
+      let n = 0
+      while (s[i + n] === "`") n++
+      tick = tick === 0 ? n : tick === n ? 0 : tick
+      out[out.length - 1] += s.slice(i, i + n)
+      i += n - 1
+    } else if (!tick && s[i] === ";" && s[i + 1] === " ") { out.push(""); i++ }
+    else out[out.length - 1] += s[i]
+  }
+  return out.map((x) => x.trim()).filter(Boolean).map((text) => {
+    const m = /`+([^`]+?)`+$/.exec(text)
+    const id = m && (/^gh-[0-9]+$/.test(m[1]) || fs.existsSync(path.join(repo, ".veland", m[1], "ticket.md"))) ? m[1] : null
+    return { text, id }
+  })
+}
+const lines = fs.readFileSync(path.join(repo, ".veland/roadmap.md"), "utf8").split("\n")
+const at = lines.findIndex((l) => l.trim().startsWith("|") && cells(l).join("|") === "Version|Contents|Why this order|State")
+if (at === -1) process.exit(0)
+for (let k = at + 2; k < lines.length && lines[k].trim().startsWith("|"); k++) {
+  const [version = "", contents = "", why = "", state = ""] = cells(lines[k])
+  console.log(JSON.stringify({ version, items: items(contents), why, state }))
+}
+' "$REPO"
+}
+# roadmap_ids <version> — the ticket ids of that version's items, one per line, in item order.
+roadmap_ids() { roadmap_rows | jq -r --arg v "$1" 'select(.version == $v) | .items[] | .id // empty'; }
+
 # not <command...> — negation for ensure.
 not() { ! "$@"; }
 not_match() { ! [[ "$1" =~ $2 ]]; } # <string> <ERE>

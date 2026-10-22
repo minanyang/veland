@@ -35,7 +35,7 @@ line() {
   node -e '
     const fs = require("fs")
     const [file, id, kind, text] = process.argv.slice(1)
-    const typed = /^\s*\/veland:(open|work|close|batch)(?=\s|$)\s*([\s\S]*)$/.exec(text)
+    const typed = /^\s*\/veland:(open|work|close|batch|roadmap)(?=\s|$)\s*([\s\S]*)$/.exec(text)
     let l
     const expanded = typed
       ? `<command-message>veland:${typed[1]}</command-message>\n<command-name>/veland:${typed[1]}</command-name>\n<command-args>${typed[2]}</command-args>`
@@ -208,6 +208,22 @@ check "$T: not init, which only the typed turn runs" nothing "$(bash_ s40 "velan
 node -e 'const f = process.argv[1], r = JSON.parse(require("fs").readFileSync(f, "utf8")); for (const p of Object.values(r.skills.batch)) p.grants.push("veland-batch approve *", "veland-batch init *"); require("fs").writeFileSync(f, JSON.stringify(r))' "$CLAUDE_PLUGIN_DATA/sessions/s40.json"
 check "$T: not approve, even from a record an older SKILL.md wrote" nothing "$(bash_ s40 "veland-batch approve gh-5")"
 check "$T: nor init from such a record" nothing "$(bash_ s40 "veland-batch init gh-9")"
+
+T="roadmap: veland-land ticket is allowed for every slug, veland-land issue still asks"
+check "$T: nothing before" nothing "$(bash_ s41 "veland-land ticket add-a-flag")"
+prompt s41 "/veland:roadmap tickets v1" >/dev/null
+check "$T" allow "$(bash_ s41 "veland-land ticket add-a-flag")" "granted by /veland:roadmap"
+check "$T: a second slug" allow "$(bash_ s41 "veland-land ticket batch-by-version")" "granted by /veland:roadmap"
+check "$T: back to the first" allow "$(bash_ s41 "veland-land ticket add-a-flag")"
+check "$T: issue asks" nothing "$(bash_ s41 "veland-land issue add-a-flag")"
+check "$T: an invalid slug" nothing "$(bash_ s41 "veland-land ticket ../x")"
+check "$T: link" allow "$(bash_ s41 "veland-roadmap link v1 1 gh-5")" "granted by /veland:roadmap"
+prompt s41 "approve" >/dev/null
+check "$T: in the approval turn" allow "$(bash_ s41 "veland-roadmap apply")" "granted by /veland:roadmap"
+check "$T: not another skill's grant" nothing "$(bash_ s41 "veland-land merge gh-5")"
+prompt s42 "/veland:roadmap gh-5" >/dev/null
+check "$T: a lone word typed with it binds nothing" allow "$(bash_ s42 "veland-land ticket other-slug")"
+check "$T: nor a pending entry's first slug" allow "$(bash_ s42 "veland-land ticket third-slug")"
 
 T="does not allow a skill named by a scheduled prompt"
 scheduled s20 "/veland:close gh-5"
