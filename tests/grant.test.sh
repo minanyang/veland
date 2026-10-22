@@ -35,7 +35,7 @@ line() {
   node -e '
     const fs = require("fs")
     const [file, id, kind, text] = process.argv.slice(1)
-    const typed = /^\s*\/veland:(open|work|close)(?=\s|$)\s*([\s\S]*)$/.exec(text)
+    const typed = /^\s*\/veland:(open|work|close|batch)(?=\s|$)\s*([\s\S]*)$/.exec(text)
     let l
     const expanded = typed
       ? `<command-message>veland:${typed[1]}</command-message>\n<command-name>/veland:${typed[1]}</command-name>\n<command-args>${typed[2]}</command-args>`
@@ -191,6 +191,23 @@ prompt s1 "<task-notification>
 <summary>/veland:open</summary>
 </task-notification>" >/dev/null
 check "$T: a wake keeps the session's grants" allow "$(bash_ s1 "veland-land merge gh-5")"
+
+T="keeps /veland:batch's grants for its wake-up turns"
+check "$T: nothing before" nothing "$(bash_ s40 "veland-batch status")"
+prompt s40 "/veland:batch gh-5" >/dev/null
+check "$T" allow "$(bash_ s40 "veland-batch status")" "granted by /veland:batch"
+prompt s40 "<task-notification>
+<task-id>b1</task-id>
+<status>completed</status>
+<summary>Background command \"veland-batch run gh-5 plan\" completed (exit code 0)</summary>
+</task-notification>" >/dev/null
+check "$T: after a wake" allow "$(bash_ s40 "veland-batch run gh-5 reply")" "granted by /veland:batch"
+check "$T: a run on another ticket than the typed one" allow "$(bash_ s40 "veland-batch run gh-6 implement")" "granted by /veland:batch"
+check "$T: not another skill's grant" nothing "$(bash_ s40 "veland-land merge gh-5")"
+check "$T: not init, which only the typed turn runs" nothing "$(bash_ s40 "veland-batch init gh-9")"
+node -e 'const f = process.argv[1], r = JSON.parse(require("fs").readFileSync(f, "utf8")); for (const p of Object.values(r.skills.batch)) p.grants.push("veland-batch approve *", "veland-batch init *"); require("fs").writeFileSync(f, JSON.stringify(r))' "$CLAUDE_PLUGIN_DATA/sessions/s40.json"
+check "$T: not approve, even from a record an older SKILL.md wrote" nothing "$(bash_ s40 "veland-batch approve gh-5")"
+check "$T: nor init from such a record" nothing "$(bash_ s40 "veland-batch init gh-9")"
 
 T="does not allow a skill named by a scheduled prompt"
 scheduled s20 "/veland:close gh-5"

@@ -6,7 +6,7 @@
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
 # work and close must resolve .veland/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
-# open, work and close must each have a `## Replies` section.
+# open, work, close and batch must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
 SKILLS_DIR="${SKILLS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/skills}"
@@ -22,6 +22,7 @@ const userOwn = {
   close: [],
   work: ["git -C X add ", "git -C X commit ", "veland-land comment "],
   open: ["veland-land issue "],
+  batch: ["veland-land comment ", "veland-batch approve "],
 }
 const ownedBy = (skill, line) => userOwn[skill].some((p) => line === p.trimEnd() || line.startsWith(p))
 // Exact prose commands Claude Code runs without a grant (checked with `claude -p` in default mode). Granting
@@ -33,11 +34,14 @@ const notRun = {
   close: ["gh auth login", "glab auth login", "git rebase --skip", "git merge --ff-only"],
   work: [],
   open: ["gh auth login"],
+  batch: [],
 }
 const forbidden = ["git push", "git rebase", "git merge", "git log", "gh pr merge", "glab mr merge", "gh api",
   "gh issue create", "gh pr create", "gh pr edit", "glab mr create", "glab mr update"]
 const bareGrants = ["veland-worktree *", "veland-land *", "git *"]
-const publicWrites = ["veland-land issue", "veland-land comment"]
+// Commands that must always ask: the public writes, and a batch's plan approval, which text a worker wrote must
+// never be able to give.
+const publicWrites = ["veland-land issue", "veland-land comment", "veland-batch approve"]
 
 const norm = (s) => s.replace(/<[^>]*>/g, "X")
 
@@ -110,7 +114,7 @@ for (const skill of Object.keys(userOwn)) {
   }
 }
 
-// No skill may grant a public write, by any pattern that covers it: `*`, `veland-land *`, `veland-land i*`,
+// No skill may grant one of them, by any pattern that covers it: `*`, `veland-land *`, `veland-land i*`,
 // the legacy `veland-land issue:*`, or the command itself.
 for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}/SKILL.md`))) {
   const fm = (/^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8")) || ["", ""])[1]
@@ -122,8 +126,8 @@ for (const skill of fs.readdirSync(dir).filter((d) => fs.existsSync(`${dir}/${d}
   // A bare `Bash` (or `Bash()`) grants every command.
   const tools = (/^allowed-tools:(.*(?:\n  - .*)*)/m.exec(fm) || ["", ""])[1]
   hits.push(...[...tools.matchAll(/(?:^|[\s,-])(Bash(?:\(\s*\))?)(?=[\s,]|$)/g)].map((b) => [b[1]]))
-  hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants a public write, which must always prompt`))
-    : ok(`${skill}: grants no public write`)
+  hits.length ? hits.forEach((b) => bad(`${skill}: ${b[0]} grants ${b[1] ?? b[0]}, which must always prompt`))
+    : ok(`${skill}: grants no public write or batch approval`)
 }
 
 // open and work load the one shared grill rather than each carrying a copy. A Read of it would prompt (the plugin
@@ -169,7 +173,7 @@ for (const skill of ["open", "work"]) {
 
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +
   "Only when a check is impossible, say so, naming what was tried and why it cannot be checked."
-for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/code-review/SKILL.md",
+for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/SKILL.md", "skills/batch/SKILL.md", "skills/code-review/SKILL.md",
   "skills/code-review-branch/SKILL.md", "agents/code-reviewer.md", "agents/security-reviewer.md"]) {
   const file = `${dir}/../${f}`
   fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(rule)
@@ -242,7 +246,7 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     : bad("close: runs check first and resolves .veland paths against ticket dir:")
 }
 
-for (const skill of ["open", "work", "close"])
+for (const skill of ["open", "work", "close", "batch"])
   /^## Replies$/m.test(fs.readFileSync(`${dir}/${skill}/SKILL.md`, "utf8"))
     ? ok(`${skill}: has a ## Replies section`) : bad(`${skill}: lacks a ## Replies section`)
 process.exit(fail)

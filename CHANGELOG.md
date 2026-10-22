@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `/veland:batch <tickets>` works through many tickets from one terminal: each runs `/veland:work` and `/veland:close` in its own background `claude -p` worker, plans are collected and answered in rounds, and `veland-batch` schedules, records (`.veland/_batch/board.md`) and lands them one at a time. `batch.parallel` caps the implementation workers (default `1`).
 - A `tickets` setting in `.claude/veland.json`, independent of `close`: `"github"` files `/veland:open`'s tickets as GitHub issues, `"files"` writes them to `.veland/<slug>/ticket.md` with no `gh` and no `origin` (`veland-land ticket`). Without it, a github.com `origin` means `github`, anything else `files`.
 
 ## 0.1.0 — 2026-10-21

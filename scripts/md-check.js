@@ -1,4 +1,4 @@
-// Markdown matching shared by veland-land issue and ticket, veland-plan-check, veland-review-packet and hooks/stop-gate.js,
+// Markdown matching shared by veland-land issue and ticket, veland-plan-check, veland-review-packet, veland-batch and hooks/stop-gate.js,
 // so every check reads code, fences and the banned list the same way.
 
 const fs = require('node:fs')
@@ -63,4 +63,20 @@ function criteria(text) {
   return out
 }
 
-module.exports = { blank, bannedHits, phrases, sections, criteria }
+// The paths a plan binds: the first code span of each top-level bullet under `## Files`, read from the raw line,
+// with a leading `./` dropped; bullets without one are skipped. A path ending in `/` stands for a directory.
+function files(text) {
+  const lines = text.split('\n'), b = blank(lines)
+  const sec = sections(text).find((s) => s.name.toLowerCase() === 'files')
+  if (!sec) return []
+  const out = []
+  for (let k = sec.from; k < sec.to; k++) {
+    if (b[k] === null || !/^[-*+]\s/.test(b[k])) continue
+    const m = lines[k].match(/(`+)(.+?)\1/)
+    const p = m && m[2].trim().replace(/^(\.\/)+/, '')
+    if (p && !out.includes(p)) out.push(p)
+  }
+  return out
+}
+
+module.exports = { blank, bannedHits, phrases, sections, criteria, files }

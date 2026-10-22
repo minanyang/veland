@@ -29,12 +29,13 @@ veland turns each ticket into a loop that does not take the agent's word:
 - review by an agent that gets the diff and the plan, never the implementer's account;
 - a stop at every step, so you can intervene.
 
-## The three commands
+## The commands
 
 ```
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
+/veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
 ```
 
 **`/veland:open <idea>`** turns an idea, a bug or an improvement into a GitHub issue in the repo's own issue forms, labels and types — or, with `tickets: files`, into a ticket file under `.veland/` that stays on your machine. It asks you the product questions the idea leaves open, shows you the draft, and creates the ticket only when you approve.
@@ -68,6 +69,16 @@ Requires `git` and `node` (18+). GitHub issue tickets (`tickets: github`, which 
 
 Optional settings — base branch, gates, close mode, where tickets live — live in `.claude/veland.json`: see [docs/configuration.md](docs/configuration.md). `tickets` is `"github"` (GitHub issues) or `"files"` (`.veland/<slug>/ticket.md`, never pushed); without it, a repo whose `origin` is on github.com gets `github` and any other gets `files`. It is independent of `close`: a repo can keep its ticket files off GitHub and still land them by PR, though in `pr` and `pr-merge` modes the PR body carries the plan's goal and acceptance criteria.
 
+## Batch
+
+`/veland:batch gh-12 gh-13` or `--search "label:bug"` plans all tickets and asks in one round. `.veland/_batch/board.md` shows each ticket's phase, session and outcome.
+
+- `batch.parallel` caps implementation workers (default `1`); tickets land one at a time.
+- `claude --resume <session id>` opens a worker.
+- Planning writes only under `.veland/`. After approval, workers edit and run commands from the ticket unattended: batch only issues you trust.
+- Allow `Bash(git -C * add *)` and `Bash(git -C * commit *)` ([caveat](tests/e2e/README.md)); the board lists other denials.
+- In `pr` mode, tickets sharing files give overlapping PRs; above 1, agent memory lands on several branches.
+
 ## What's inside
 
 ### Agents
@@ -90,6 +101,7 @@ Invoke as `veland:<name>` (the Agent tool needs the prefix).
 | `/veland:open` | Draft a ticket — a GitHub issue, or with `tickets: files` a file under `.veland/` — and create it on approval |
 | `/veland:work` | Plan a ticket, then build, verify and review it in a worktree |
 | `/veland:close` | Rebase, verify, land and clean up |
+| `/veland:batch` | Work and close many tickets from one terminal, each in a background worker |
 | `/veland:commit` | Commit what this session changed — only those paths, in the repo's own message style. Commits straight away; stops to ask only on a likely secret, unclear scope or unrelated changes. Say "message only" for a draft |
 | `/veland:code-review` | Review pending (uncommitted) changes |
 | `/veland:code-review-branch` | Review the whole branch against its base |

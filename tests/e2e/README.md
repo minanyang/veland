@@ -8,11 +8,11 @@ calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_
 ## Run
 
 ```bash
-bash tests/e2e/run.sh              # all 29 scenarios
+bash tests/e2e/run.sh              # all 35 scenarios
 bash tests/e2e/run.sh 7 O2 C3      # only these (ids are case-sensitive; an unknown id exits 2 before any claude run)
 ```
 
-It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, then `total <seconds>s`:
+It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, B1–B6, then `total <seconds>s`:
 
 ```
 pass  7  41s
@@ -49,6 +49,11 @@ model has to find out by itself because no command prints the answer:
   bound to a flow and a checkpoint (`bindings` in `scenarios.sh`). Naming scenarios runs only the flows they need, up
   to the last checkpoint needed. Skills that grill the user are answered with `go with your recommendations` until
   the checkpoint state exists (a draft, `plan.md`, the memory commit, a PR), at most 6 turns per checkpoint.
+- **The batch flow** (`batch-two`, B1–B6) types `/veland:batch gh-5 gh-6` with `batch.parallel: 2` and `close: local`. The
+  workers `veland-batch` starts are `$RUN/claude-worker`, named by `VELAND_BATCH_CLAUDE`: the same `claude` with the flags
+  of the other flows. The conductor is answered with `go with your recommendations; approve every plan that can be
+  approved` (at most 8 turns) until `veland-batch status` says `done`. Its scenarios read the conductor's tool log and the
+  workers' `.veland/_batch/<id>/runs.tsv`; B3 checks the files rule against the plans the run produced.
 - **Close flows start from prepared state** (`prep_ticket`): the worktree, a committed fix, `ticket.md`, an approved
   `plan.md`, `review.md` and `evidence.md` — `/veland:work` is not run.
 - **Fake `gh`** (`bin/gh`) answers from `canned.json` and `state.json`, logs every call's argv to `calls.log`, and
@@ -58,7 +63,8 @@ model has to find out by itself because no command prints the answer:
   executables; the runner runs with an empty `GH_CONFIG_DIR` and without `GH_TOKEN`, `GITHUB_TOKEN`,
   `GH_ENTERPRISE_TOKEN`. A flow with the fake also fails when its tool log has more executed `gh <sub> <sub2>`
   commands than the fake's call log has entries.
-- **Permissions.** `claude -p` runs with `--permission-mode acceptEdits`, never `--dangerously-skip-permissions`. A
+- **Permissions.** `claude -p` runs with `--permission-mode acceptEdits`, never `--dangerously-skip-permissions` (a batch
+  worker's plan session: `default`, with writes allowed under `.veland/` only). A
   `permission_denials` entry in the stream-json `result` in the skills' scope — any tool but Bash, a `veland-`, `gh`
   or `glab` command, or one a skill's `allowed-tools` or the runner's grants cover — fails every scenario of the flow
   and names the command. Any other denial is the model's own look around (`git -C … log`, running a repo script, or a

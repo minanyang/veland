@@ -3,8 +3,8 @@
 // session in which the user typed it. Claude Code applies a skill's `allowed-tools` only to the turn
 // the skill was invoked in, not to a background wake-up, a later approval turn or a `--resume` turn.
 //
-// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work` or `/veland:close`
-// records that skill's `Bash(...)` grants, as its SKILL.md lists them now, as pending, in
+// UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`
+// records that skill's `Bash(...)` grants, as its SKILL.md lists them now (but TYPED_ONLY), as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
 //   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
 // outside the working directory, so the agent cannot write itself a record without being asked.
@@ -21,8 +21,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const SID = /^[A-Za-z0-9-]+$/
-const TYPED = /^\s*\/veland:(open|work|close)(?=\s|$)/
+const TYPED = /^\s*\/veland:(open|work|close|batch)(?=\s|$)/
 const META = /[;&|<>$`\n\r]/
+// Grants used only in the turn the skill was typed, where its allowed-tools apply anyway: kept out of the record so a
+// later turn cannot start a new batch the user never named.
+const TYPED_ONLY = new Set(['veland-batch init *'])
+// Commands that always ask, whatever a session's record holds — one saved by an older SKILL.md included: the public
+// writes, a batch's plan approval, and starting a batch.
+const ALWAYS_ASK = /^(veland-land (issue|comment)|veland-batch (approve|init))(\s|$)/
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // The word that carries the ticket id: `veland-land <sub> <id>`, `veland-verify <id>`, ….
 const ID_WORD = {
@@ -117,6 +123,7 @@ function allow(skill) {
 }
 
 function granting(part, command, ticket) {
+  if (ALWAYS_ASK.test(command)) return false
   if (!part || !Array.isArray(part.grants) || !part.grants.some((g) => typeof g === 'string' && matches(g, command))) return false
   if (ticket === undefined) return true
   return !!ticket && (part.id === undefined || part.id === ticket)
@@ -202,7 +209,7 @@ function skillGrants(skill) {
     .map((l) => /^Bash\((.*)\)$/.exec(l.replace(/^  - /, '').trim()))
     .filter(Boolean)
     .map((b) => b[1].trim())
-    .filter((g) => g && !g.startsWith('*'))
+    .filter((g) => g && !g.startsWith('*') && !TYPED_ONLY.has(g))
 }
 
 // Typing a skill again replaces only its pending entry: its confirmed grants stay until a new

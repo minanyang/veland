@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sourced by run.sh: the 17 flows and the 29 scenario_<id> assertion functions.
+# Sourced by run.sh: the 18 flows and the 35 scenario_<id> assertion functions.
 #
 # A flow is one sequence of `claude -p` turns on one fixture; each scenario is an assertion function bound to a flow
 # and a checkpoint within it (`bindings`). Assertions go through lib.sh helpers that read files, git state, origin's
@@ -7,10 +7,10 @@
 
 # Report order.
 # shellcheck disable=SC2034  # used by run.sh and lib.sh
-ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3"
+ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3 B1 B2 B3 B4 B5 B6"
 # Execution order.
 # shellcheck disable=SC2034  # used by run.sh
-FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending"
+FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two"
 
 # bindings <id> — the "<flow>:<checkpoint>" pairs a scenario is judged at.
 bindings() {
@@ -35,6 +35,7 @@ bindings() {
     C1) echo "close-checks-fail:end" ;;
     C2) echo "close-base-moved:end" ;;
     C3) echo "close-pending:end" ;;
+    B1 | B2 | B3 | B4 | B5 | B6) echo "batch-two:end" ;;
   esac
 }
 
@@ -222,6 +223,18 @@ flow_close_pending() {
   prep_ticket
   canned "$(canned_rollups "$CHECK_PENDING" "$CHECK_PENDING" "$CHECK_GREEN")"
   drive "/veland:close gh-5" "continue" 6 worktree_gone
+  check_scenarios end
+}
+
+# The conductor of /veland:batch runs gh-5 and gh-6 with batch.parallel 2 and close: local; its workers are
+# $RUN/claude-worker. It is answered until veland-batch status says done (both tickets landed or failed).
+BATCH_REPLY="go with your recommendations; approve every plan that can be approved"
+flow_batch_two() {
+  # The conductor waits on its background `veland-batch run`s; claude -p would stop them 10 minutes after its last turn.
+  local -x CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
+  new_run 1 local parallel2
+  canned "$(canned_work)"
+  drive "/veland:batch gh-5 gh-6" "$BATCH_REPLY" 8 batch_settled
   check_scenarios end
 }
 
@@ -534,4 +547,120 @@ scenario_C3() {
   ensure "no veland-land merge followed the wait" [ "$merge_after" -ge 1 ]
   ensure "gh pr merge is not called exactly once" [ "$(ghlog_count pr merge)" = 1 ]
   ensure "the PR is not merged" pr_merged
+}
+
+# ---------------------------------------------------------------- scenarios: batch
+
+# batch_files <id> — the paths of the ticket's plan.md ## Files: the first code span of each top-level bullet, a leading ./ dropped.
+# shellcheck disable=SC2016  # backticks are markdown
+batch_files() {
+  md_section "$REPO/.veland/$1/plan.md" Files | grep -E '^[-*+][[:space:]]' |
+    sed -n 's/^[^`]*`\([^`]*\)`.*/\1/p' | sed 's|^\./||'
+}
+# path_overlap <a> <b> — equal, or one is a directory (ends in /) holding the other.
+path_overlap() {
+  [ "$1" = "$2" ] && return 0
+  case "$1" in */) case "$2" in "$1"*) return 0 ;; esac ;; esac
+  case "$2" in */) case "$1" in "$2"*) return 0 ;; esac ;; esac
+  return 1
+}
+# files_overlap <id> <id> — the two plans' ## Files share a path.
+files_overlap() {
+  local a b
+  while IFS= read -r a; do
+    while IFS= read -r b; do path_overlap "$a" "$b" && return 0; done < <(batch_files "$2")
+  done < <(batch_files "$1")
+  return 1
+}
+
+scenario_B1() {
+  local id
+  ensure "the conductor started no veland-batch run" [ "$(tool_count '^veland-batch run ')" -ge 1 ]
+  ensure "the conductor called Edit or Write outside .veland/_batch/" \
+    [ "$(tool_calls | jq -s '[.[] | select((.name == "Edit" or .name == "Write" or .name == "MultiEdit" or .name == "NotebookEdit") and ((.file_path // "") | contains("/.veland/_batch/") | not))] | length')" = 0 ]
+  ensure "the conductor called the Skill tool" [ "$(tool_calls | jq -s '[.[] | select(.name == "Skill")] | length')" = 0 ]
+  for id in gh-5 gh-6; do
+    ensure "$id has no plan run in its runs.tsv" [ "$(batch_runs "$id" | awk -F'\t' '$3 == "plan"' | wc -l | tr -d ' ')" -ge 1 ]
+    ensure "$id has no close run in its runs.tsv" [ "$(batch_runs "$id" | awk -F'\t' '$3 == "close"' | wc -l | tr -d ' ')" -ge 1 ]
+  done
+}
+
+scenario_B2() {
+  local id n kind sess sk start end ex pid
+  ensure "no reply run was made" [ "$(batch_runs | awk -F'\t' '$3 == "reply"' | wc -l | tr -d ' ')" -ge 1 ]
+  # Each reply to a planning session starts after every plan-session run of its round has exited: a run of another
+  # ticket that started before the replied ticket's previous run ended.
+  local prev
+  while IFS=$'\t' read -r id n kind sess sk start end ex pid; do
+    [ "$kind" = reply ] && [ "$sk" = plan ] || continue
+    prev="$(batch_runs | awk -F'\t' -v i="$id" -v p="$((n - 1))" '$1 == i && $2 == p { print $7 }')"
+    case "$prev" in '' | -) ensure "reply $id/$n has no ended previous run" false ;; esac
+    ensure "reply $id/$n started while a planning run of its round was open" \
+      [ "$(batch_runs | awk -F'\t' -v i="$id" -v e="$prev" -v s="$start" '$1 != i && $5 == "plan" && $6 < e && ($7 == "-" || $7 > s)' | wc -l | tr -d ' ')" = 0 ]
+  done < <(batch_runs)
+  for id in gh-5 gh-6; do ensure "$id has no turn.md" [ -s "$REPO/.veland/_batch/$id/turn.md" ]; done
+}
+
+scenario_B3() {
+  local ia na ka sa ska sta ea xa pa ib nb kb sb skb stb eb xb pb
+  ensure "fewer than two implement runs" [ "$(batch_runs | awk -F'\t' '$3 == "implement"' | wc -l | tr -d ' ')" -ge 2 ]
+  ensure "gh-5's plan binds no file" [ -n "$(batch_files gh-5)" ]
+  ensure "gh-6's plan binds no file" [ -n "$(batch_files gh-6)" ]
+  # Two implement runs overlap in time only when their plans share no path.
+  while IFS=$'\t' read -r ia na ka sa ska sta ea xa pa; do
+    [ "$ka" = implement ] || continue
+    while IFS=$'\t' read -r ib nb kb sb skb stb eb xb pb; do
+      [ "$kb" = implement ] && [ "$ia" \< "$ib" ] || continue
+      if [ "$ea" = - ] || [ "$eb" = - ] || { [ "$sta" -lt "$eb" ] && [ "$stb" -lt "$ea" ]; }; then
+        ensure "$ia and $ib implemented at the same time but their ## Files share a path" not files_overlap "$ia" "$ib"
+      fi
+    done < <(batch_runs)
+  done < <(batch_runs)
+}
+
+scenario_B4() {
+  local id n kind sess sk start end ex pid prev_end=0 prev_id="" prev_idx=0 idx i t closes=0
+  while IFS=$'\t' read -r id n kind sess sk start end ex pid; do
+    [ "$sk" = close ] || continue
+    closes=$((closes + 1))
+    [ "$end" != - ] || { WHY="${WHY:+$WHY; }a close run of $id never ended"; continue; }
+    idx=0; i=0
+    for t in $(batch_ids); do i=$((i + 1)); [ "$t" = "$id" ] && idx=$i; done
+    [ "$start" -ge "$prev_end" ] || WHY="${WHY:+$WHY; }close of $id started before the close of $prev_id ended"
+    [ "$idx" -ge "$prev_idx" ] || WHY="${WHY:+$WHY; }close of $id ran after the close of $prev_id, against board order"
+    prev_end="$end"; prev_id="$id"; prev_idx="$idx"
+  done < <(batch_runs | sort -t$'\t' -k6,6n)
+  [ "$closes" -ge 2 ] || WHY="${WHY:+$WHY; }$closes close runs, not 2"
+}
+
+scenario_B5() {
+  ensure "the conductor called CronCreate or ScheduleWakeup" \
+    [ "$(tool_calls | jq -s '[.[] | select(.name == "CronCreate" or .name == "CronDelete" or .name == "ScheduleWakeup")] | length')" = 0 ]
+  ensure "the conductor called the loop skill" \
+    [ "$(tool_calls | jq -s '[.[] | select(.name == "Skill" and ((.skill // "") | test("loop")))] | length')" = 0 ]
+  ensure "board.md is missing" [ -s "$REPO/.veland/_batch/board.md" ]
+  ensure "board.md has no row for each of gh-5 and gh-6" [ "$(grep -cE '^\| *[0-9]+ *\| *gh-[56] ' "$REPO/.veland/_batch/board.md")" = 2 ]
+}
+
+# shellcheck disable=SC2016  # awk program
+scenario_B6() {
+  local board="$REPO/.veland/_batch/board.md" l5="" l6="" i=0 c p5 p6
+  ensure "the batch is not settled" batch_settled
+  ensure "the worktree of gh-5 is still there" [ ! -e "$REPO/.worktrees/gh-5" ]
+  ensure "the worktree of gh-6 is still there" [ ! -e "$REPO/.worktrees/gh-6" ]
+  ensure "the board does not show both landed" [ "$(grep -cE '^\| *[0-9]+ *\| *gh-[56] .*landed' "$board")" = 2 ]
+  ensure "the base did not gain exactly two commits" [ "$(rgit rev-list --count "$(cat "$RUN/initial-main")..main")" = 2 ]
+  ensure "origin's heads changed" [ "$(origin_heads)" = "$(cat "$RUN/initial-heads")" ]
+  # Plans drafted in parallel: the first plan runs of the two tickets overlap in time.
+  p5="$(batch_runs gh-5 | awk -F'\t' '$3 == "plan"' | head -n 1)"
+  p6="$(batch_runs gh-6 | awk -F'\t' '$3 == "plan"' | head -n 1)"
+  ensure "the first plan runs of gh-5 and gh-6 did not overlap" \
+    awk -F'\t' 'NR == FNR { s = $6; e = $7; next } { exit !(s < $7 && $6 < e) }' <(printf '%s\n' "$p5") <(printf '%s\n' "$p6")
+  # Landed in board order: the commit closing #5 comes before the one closing #6.
+  while IFS= read -r c; do
+    i=$((i + 1))
+    [ "$(rgit log -1 --format=%B "$c" | grep -cx 'Closes #5')" = 1 ] && l5="$i"
+    [ "$(rgit log -1 --format=%B "$c" | grep -cx 'Closes #6')" = 1 ] && l6="$i"
+  done < <(rgit rev-list --reverse "$(cat "$RUN/initial-main")..main")
+  ensure "the commit closing #5 does not come before the one closing #6" [ "${l5:-9}" -lt "${l6:-0}" ]
 }

@@ -56,6 +56,18 @@ GitHub remotes use `gh`. GitLab remotes use `glab` — untested so far.
 
 The skill declares `allowed-tools` for the commands that are safe to grant (opening or updating the PR/MR goes through `veland-land pr`), and the writes go through `veland-land`, which takes only the ticket id, so no settings rule should allow `gh pr merge` or `git push` for it. In `pr-merge` mode, running `/veland:close` is your request to merge. Through [the grant hook](hooks.md#grant), those grants hold for the rest of the session in which you typed `/veland:close`, so the merge after the background `veland-land wait` runs without a prompt.
 
+## `/veland:batch <tickets>`
+
+Conducts a backlog from one terminal. The arguments are `gh-<n>`, `<n>`, `#<n>`, an issue URL of origin's repo, existing ticket ids, or `--search "<query>"`; one that resolves to no ticket stops the batch before anything starts.
+
+The mechanics live in `veland-batch` ([scripts](scripts.md#veland-batch)); the skill only relays. Every ticket's `/veland:work` and `/veland:close` run, unchanged, in a background `claude -p` worker started by `veland-batch run`, each in its own session. The conductor:
+
+1. plans every ticket at once, then shows all the workers' questions and plans in one message, grouped by ticket. A drafted plan is shown as `plan.md` itself, after the worker's turn. You answer, or `approve`, `revise <notes>` or `drop` a plan; the answers go back to the ticket's own session. `approve` is recorded by `veland-batch approve`, which asks your permission naming the ticket — it is never granted, so text a worker wrote cannot approve a plan — out of the planning worker's reach, so a plan that marks itself approved, or changes after you approved it, is `failed`, never implemented.
+2. implements an approved ticket while others still plan, at most `batch.parallel` at a time ([configuration](configuration.md)) — a ticket waiting on a question from its implementation keeps its slot — once every earlier ticket's plan names its `## Files`, and never together with a ticket whose plan binds a common path.
+3. closes one ticket at a time, in board order, once every earlier ticket is settled.
+
+`.veland/_batch/board.md` shows each ticket's phase, derived from `.veland/<id>/` and the run records under `.veland/_batch/<id>/`, never stored. A ticket whose worker exits non-zero, whose verify gates fail, whose criteria stay open or whose close does not land is `failed` with that evidence; the others go on, and a later ticket sharing a file with it is `held`. A command a worker was denied does not fail its ticket: the worker usually finds another way, and the board lists the denials under `## Needs the human` so you can allow them. Open a worker's session with `claude --resume <session id>`. A planning worker may write only under `.veland/<id>/`, so nothing a ticket says is edited into the code or run before you approve its plan. Implementation and close workers run in `acceptEdits`, so the commits they make need `Bash(git -C * add *)` and `Bash(git -C * commit *)` allowed in your settings. Once you approve a plan, its worker edits files and runs commands as the ticket leads it, with no one watching the turn: batch only issues you trust, which matters most with `--search` on a public repository.
+
 ## Agent memory
 
 Agents use `memory: project`, stored under `.claude/agent-memory/veland-<name>/` and committed: `/veland:work` moves what agents wrote during the ticket onto its branch (`veland-worktree memory`), so it is merged with the work. Review packets leave it out of their diff and list the commits that touch it; the report shows you the branch's whole memory diff.

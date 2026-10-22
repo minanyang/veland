@@ -124,6 +124,9 @@ unchecked
 ```')"
 check "ignores a word containing a phrase" pass "$(stop s5 "The checker is unchecked_ok.")"
 check "ignores an unverified claim outside a flow" pass "$(stop s7 "The retry path is unverified.")"
+prompt s9 "/veland:batch gh-7 t1" >/dev/null
+check "/veland:batch is a flow" block "$(stop s9 "gh-7 landed; t1 is unverified.")" "Check it now"
+grep -qx '{"flow":true}' "$repo/.veland/.sessions/s9.json" && owner gh-7 s6 && owner t1 s1; assert "/veland:batch binds no ticket" $?
 prompt s7 "fix the bug, /veland:open later" >/dev/null
 check "does not take a mid-prompt /veland: as a flow" pass "$(stop s7 "The retry path is unverified.")"
 check "blocks a reviewer's unverified claim" block "$(send SubagentStop s7 agent_type veland:code-reviewer last_assistant_message "Finding 2 is unverified.")" "Check it now"
