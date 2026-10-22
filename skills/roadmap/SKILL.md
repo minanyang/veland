@@ -91,11 +91,11 @@ Then:
 veland-roadmap check
 ```
 
-On exit 1, each `<file>:<line>: <why>` names a fault: fix the draft and run it again until it exits 0. Exit 2 (`veland-roadmap: <why>`) stops the skill: relay it. On exit 0, each `not kept: <line>` is an existing row or entry the draft no longer has as it was. One the user did not ask to change is restored from `.veland/roadmap.md` and `check` run again.
+On exit 1, each `<file>:<line>: <why>` names a fault: fix the draft and run it again until it exits 0. Exit 2 (`veland-roadmap: <why>`) stops the skill: relay it. On exit 0, each `not kept: <line>` is an existing row or entry the draft no longer has as it was. One the user did not ask to change is restored from `.veland/roadmap.md` and `check` run again. Each `new id: <version> <id>` is a ticket id the draft adds to a row; add one only for a ticket the user named or approved in this session.
 
 ### Step 3 — Show and stop
 
-Show, in one message: the assumptions the grill left (omit when none); the draft's path; the draft verbatim as rendered markdown; then the `not kept:` lines `check` printed, verbatim — or, when it printed none, that every existing row and entry is kept. **Stop** until the user approves or asks for changes. Changes go into the draft, then `check` again and the draft shown again.
+Show, in one message: the assumptions the grill left (omit when none); the draft's path; the draft verbatim as rendered markdown; then the `not kept:` and `new id:` lines `check` printed, verbatim — or, when it printed no `not kept:` line, that every existing row and entry is kept. **Stop** until the user approves or asks for changes. Changes go into the draft, then `check` again and the draft shown again.
 
 ### Step 4 — Apply
 
@@ -105,7 +105,7 @@ Only after the user approves:
 veland-roadmap apply
 ```
 
-It checks the draft again and writes nothing on a fault: fix, show again and wait. Otherwise it renames the draft to `.veland/roadmap.md` and prints `roadmap: <path>` and the `not kept:` lines. Report those, and the next step: `/veland:roadmap tickets <next version>`.
+It checks the draft again and writes nothing on a fault: fix, show again and wait. Otherwise it renames the draft to `.veland/roadmap.md` and prints `roadmap: <path>` and the `not kept:` and `new id:` lines. Report those, and the next step: `/veland:roadmap tickets <next version>`.
 
 ## Tickets
 
@@ -211,7 +211,7 @@ Exit 2 (`veland-roadmap: <why>`) is relayed; never edit the roadmap to work arou
 
 Some things are exempt from these rules and are written in full: a security warning; a question to the user; and anything persisted — the draft roadmap, issue bodies, and the files under `.veland/`.
 
-The final reply is the path's last step: `show`'s output, `apply`'s `roadmap:` line and `not kept:` lines with the next step, or the ids linked with the next step.
+The final reply is the path's last step: `show`'s output, `apply`'s `roadmap:`, `not kept:` and `new id:` lines with the next step, or the ids linked with the next step.
 
 ## Never
 

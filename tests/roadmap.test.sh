@@ -67,7 +67,7 @@ EOF
 reset; roadmap >"$D"
 begin "check: a draft with the table and the three sections passes"
 need "exit 0" exits 0 check
-need "prints nothing with no roadmap.md yet" out_is ""
+need "with no roadmap.md yet, only its ids as new" out_is "new id: v1 gh-77"
 need "the draft stays" test -f "$D"
 need "no roadmap.md" test ! -e "$R"
 printf '| Version | Contents | Why this order | State |\n| :-- | --- | :-: | --: |\n\n## Decided against\n- x: y\n## Later\n## Not yet assigned\n## Other\n' >"$D"
@@ -133,12 +133,23 @@ cp "$tmp/twice" "$R"; roadmap >"$D"
 need "a duplicate counts" eval 'exits 0 check && out_is "not kept: - GitHub milestones — veland never creates them"'
 end
 
+reset; roadmap >"$R"
+begin "check: lists each ticket id the draft adds to a row as new id"
+mkdir .veland/local-one && echo '# Local one' >.veland/local-one/ticket.md
+{ roadmap | sed 's/| v2 | use `md-check.js` sections; a \\| pipe |/| v2 | use `md-check.js` sections `gh-9`; a \\| pipe `local-one` |/'; } >"$D"
+need "exit 0" exits 0 check
+need "the two added ids, after the not kept line" out_is "$(printf '%s\n' \
+  'not kept: | v2 | use `md-check.js` sections; a \| pipe | Needs v1'"'"'s parser | Planned |' \
+  'new id: v2 gh-9' 'new id: v2 local-one')"
+need "an id roadmap.md already has is not new" eval 'roadmap >"$D" && exits 0 check && out_is ""'
+end
+
 # ---------------------------------------------------------------- apply
 
 reset; roadmap >"$D"
 begin "apply: writes the draft to .veland/roadmap.md and deletes the draft"
 need "exit 0" exits 0 apply
-need "prints its absolute path" out_is "roadmap: $root/.veland/roadmap.md"
+need "prints its absolute path and the new id" out_is "$(printf '%s\n' "roadmap: $root/.veland/roadmap.md" "new id: v1 gh-77")"
 need "the draft, byte for byte" cmp -s "$R" <(roadmap)
 need "the draft is gone" test ! -e "$D"
 roadmap | sed 's/| Planned |/| Next |/' >"$D"
