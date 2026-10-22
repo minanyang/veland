@@ -19,7 +19,7 @@
 // previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused;
 // the approval records of the tickets it takes in are deleted.
 // `run` starts one worker turn and waits for it: ${VELAND_BATCH_CLAUDE:-claude} -p … --output-format stream-json
-// --verbose, a plan session with --permission-mode default and writes allowed under .veland/ only, implement and close
+// --verbose, a plan session with --permission-mode default and writes allowed under .veland/<id>/ only, implement and close
 // with --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's latest
 // session for reply, the prompt after `--`. It refuses a plan, implement or close that `status` does not list, a reply
 // to a planning session while a plan-session run that started before the ticket's latest run ended is open, and a
@@ -702,9 +702,10 @@ function approve(argv) {
   const r = rows[i]
   if (r.phase !== 'waiting' || !r.approvable) die(`approve ${id} refused: ${id} is ${r.phase}${r.phase === 'waiting' ? ' and its plan.md is not a draft that passes veland-plan-check' : ''}`)
   fs.mkdirSync(path.dirname(approval(id)), { recursive: true })
-  put(approval(id), planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8')) + '\n')
+  const hash = planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8'))
+  put(approval(id), hash + '\n')
   put(path.join(bdir(id), 'reply.md'), APPROVE_REPLY)
-  process.stdout.write(`approved: ${id}\nplan: ${rel(path.join(tdir(id), 'plan.md'))} sha256 ${planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8')).slice(0, 12)}\nreply: ${rel(path.join(bdir(id), 'reply.md'))}\n`)
+  process.stdout.write(`approved: ${id}\nplan: ${rel(path.join(tdir(id), 'plan.md'))} sha256 ${hash.slice(0, 12)}\nreply: ${rel(path.join(bdir(id), 'reply.md'))}\n`)
 }
 
 const [cmd, ...args] = process.argv.slice(2)

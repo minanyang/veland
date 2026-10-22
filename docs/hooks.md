@@ -32,4 +32,4 @@ A veland script run on a ticket (`veland-land`, `veland-worktree`, `veland-verif
 
 "Typed" means what the transcript records as your input: a prompt another program types into the session's terminal, or the opening prompt of a teammate session a model starts, counts as typed if Claude Code records it so.
 
-Records live in `${CLAUDE_PLUGIN_DATA}/sessions/`, outside the repo, so the agent cannot write itself one without asking. For the loop to finish unattended you need to allow nothing for the skills' grants; `veland-land issue` and `veland-land comment` still ask by design.
+Records live in `${CLAUDE_PLUGIN_DATA}/sessions/`, outside the repo, so the agent cannot write itself one without asking. For the loop to finish unattended you need to allow nothing for the skills' grants; `veland-land issue`, `veland-land comment` and `veland-batch approve` still ask by design.
