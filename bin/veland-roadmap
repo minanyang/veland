@@ -15,7 +15,7 @@
 // `## Decided against` entry with no reason, it prints `<file>:<line>: <why>` for each fault and exits 1. Else it
 // prints `not kept: <line>` for each table row and section entry of roadmap.md that the draft does not keep
 // byte-identical (a row anywhere in the table, an entry in its own section), then `new id: <version> <id>` for each
-// ticket id in the draft's rows that roadmap.md does not have, so an id the user never saw is shown before `apply`.
+// ticket id in a draft row that roadmap.md's row of that version does not have, so an id the user never saw is shown before `apply`.
 // `apply` runs `check`; on a fault it writes nothing. Else it renames the draft to roadmap.md and prints
 // `roadmap: <abs path>` and the `not kept:` and `new id:` lines, computed against roadmap.md as it was.
 // `link` appends `` `<id>` `` to item <n> of <version>, through a temp file and a rename; it refuses an item that has
@@ -96,8 +96,8 @@ function check() {
   const st2 = lstat(FILE)
   if (st2 && !st2.isFile()) die(`${rel(FILE)} is not a regular file`)
   const old = st2 ? fs.readFileSync(FILE, 'utf8') : ''
-  const had = new Set(rm.parse(old, isTicket).rows.flatMap((r) => r.ids))
-  const added = p.rows.flatMap((r) => r.ids.filter((id) => !had.has(id)).map((id) => `new id: ${r.version} ${id}`))
+  const had = new Set(rm.parse(old, isTicket).rows.flatMap((r) => r.ids.map((id) => `${r.version} ${id}`)))
+  const added = p.rows.flatMap((r) => r.ids.map((id) => `${r.version} ${id}`).filter((k) => !had.has(k)).map((k) => `new id: ${k}`))
   return [...(st2 ? rm.notKept(old, text).map((l) => `not kept: ${flat(l.text)}`) : []), ...added]
 }
 

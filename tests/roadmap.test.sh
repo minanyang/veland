@@ -142,6 +142,8 @@ need "the two added ids, after the not kept line" out_is "$(printf '%s\n' \
   'not kept: | v2 | use `md-check.js` sections; a \| pipe | Needs v1'"'"'s parser | Planned |' \
   'new id: v2 gh-9' 'new id: v2 local-one')"
 need "an id roadmap.md already has is not new" eval 'roadmap >"$D" && exits 0 check && out_is ""'
+{ roadmap | sed 's/| v2 | use `md-check.js` sections; a \\| pipe |/| v2 | use `md-check.js` sections; a \\| pipe `gh-77` |/'; } >"$D"
+need "an existing id added to another row is new there" eval 'exits 0 check && line "new id: v2 gh-77"'
 end
 
 # ---------------------------------------------------------------- apply
