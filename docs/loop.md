@@ -62,7 +62,7 @@ Conducts a backlog from one terminal. The arguments are `gh-<n>`, `<n>`, `#<n>`,
 
 The mechanics live in `veland-batch` ([scripts](scripts.md#veland-batch)); the skill only relays. Every ticket's `/veland:work` and `/veland:close` run, unchanged, in a background `claude -p` worker started by `veland-batch run`, each in its own session. The conductor:
 
-1. plans every ticket at once, then shows all the workers' questions and plans in one message, grouped by ticket. A drafted plan is shown as `plan.md` itself, after the worker's turn. You answer, or `approve`, `revise <notes>` or `drop` a plan; the answers go back to the ticket's own session. `approve` is recorded by `veland-batch approve` outside the worker's reach, so a plan that marks itself approved, or changes after you approved it, is `failed`, never implemented.
+1. plans every ticket at once, then shows all the workers' questions and plans in one message, grouped by ticket. A drafted plan is shown as `plan.md` itself, after the worker's turn. You answer, or `approve`, `revise <notes>` or `drop` a plan; the answers go back to the ticket's own session. `approve` is recorded by `veland-batch approve` out of the planning worker's reach, so a plan that marks itself approved, or changes after you approved it, is `failed`, never implemented.
 2. implements an approved ticket while others still plan, at most `batch.parallel` at a time ([configuration](configuration.md)) — a ticket waiting on a question from its implementation keeps its slot — once every earlier ticket's plan names its `## Files`, and never together with a ticket whose plan binds a common path.
 3. closes one ticket at a time, in board order, once every earlier ticket is settled.
 

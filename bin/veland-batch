@@ -27,8 +27,9 @@
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
 // `answer <id>[ approvable]`, and `done` when every ticket is settled.
 // `approve` records the user's approval of a draft plan that passes veland-plan-check: the sha256 of plan.md with its
-// Status line blanked, in <git common dir>/veland-batch/<id>.approved, where no worker can write (a plan session may
-// write only under .veland/<id>/, and Claude Code refuses edits under .git/). A plan session's ticket is `approved`
+// Status line blanked, in <git common dir>/veland-batch/<id>.approved, out of a plan session's reach (it may write
+// only under .veland/<id>/, and Claude Code refuses edits under .git/); a worker of an approved ticket, which can run
+// commands, could still write it. A plan session's ticket is `approved`
 // only when plan.md says so and that record matches it. It then writes the approve reply to reply.md.
 // `drop` sends SIGTERM to the ticket's open worker (a process whose command line holds the run's session), marks it
 // dropped and rewrites the board.

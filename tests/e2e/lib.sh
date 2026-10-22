@@ -189,7 +189,7 @@ run_logs() { # prints the run's turn logs, one per line
   local f
   for f in "$LOGD"/turn-*.jsonl; do if [ -e "$f" ]; then printf '%s\n' "$f"; fi; done
 }
-tool_calls() { # JSON lines: {turn, seq, name, command, subagent_type, run_in_background, file_path, denied}
+tool_calls() { # JSON lines: {turn, seq, name, command, skill, subagent_type, run_in_background, file_path, denied}
   local files=() f
   while IFS= read -r f; do files+=("$f"); done < <(run_logs)
   [ ${#files[@]} -gt 0 ] || return 0

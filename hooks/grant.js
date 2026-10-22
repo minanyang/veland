@@ -4,7 +4,7 @@
 // the skill was invoked in, not to a background wake-up, a later approval turn or a `--resume` turn.
 //
 // UserPromptSubmit: a prompt that starts with `/veland:open`, `/veland:work`, `/veland:close` or `/veland:batch`
-// records that skill's `Bash(...)` grants, as its SKILL.md lists them now, as pending, in
+// records that skill's `Bash(...)` grants, as its SKILL.md lists them now (but TYPED_ONLY), as pending, in
 //   ${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json
 //   { "skills": { "<skill>": { "confirmed": { "prompt_id", "grants", "id"? }, "pending": { "prompt_id", "grants", "id"? } } } }
 // outside the working directory, so the agent cannot write itself a record without being asked.
