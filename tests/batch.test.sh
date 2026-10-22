@@ -205,6 +205,10 @@ need "Needs the human: failed" grep -qxF -- "- t1 — failed: run 01 (plan) exit
 need "status prints the board" has "| 3 | t2 | queued | — | — | — |"
 rm "$B/board.md"; vb drop t2
 need "drop rewrites it" grep -qxF "| 3 | t2 | dropped | — | dropped | dropped by the user |" "$B/board.md"
+rm "$B/board.md"; echo "ok" >"$B/t3/reply.md"
+need "t3's reply runs in the background" run_bg t3 reply
+need "the board shows it running in its session at once" grep -qF "| 1 | t3 | planning | $s3 | — |" "$B/board.md"
+kill -TERM "$BG"; wait "$BG"
 rm "$B/board.md"; echo "ok" >"$B/t3/reply.md"; vb run t3 reply
 need "run rewrites it" test -f "$B/board.md"
 need "run prints the phase and the board" eval 'line "phase: waiting" && line "board: $root/.veland/_batch/board.md"'
@@ -263,6 +267,10 @@ need "t2's reply stays" test "$(cat "$B/t2/reply.md")" = "answer for t2"
 need "the record: reply, same session, session kind plan, exit 0" test "$(cut -f1-4,7 "$B/t1/runs.tsv" | sed -n 3p)" = "$(printf '2\treply\t%s\tplan\t0' "$s1")"
 need "the header" test "$(head -n 1 "$B/t1/runs.tsv")" = "$(printf 'n\tkind\tsession\tsession_kind\tstart\tend\texit\tpid')"
 need "a plan run starts a new session" test "$(sed -n 1p "$WORKER_LOG" | cut -f1,4)" = "$(printf -- '--session-id\t/veland:work t1')"
+sed -i.bak "s/$s1/--dangerously-skip-permissions/" "$B/t1/runs.tsv"; rm "$B/t1/runs.tsv.bak"
+echo "again" >"$B/t1/reply.md"
+need "a session that is not a uuid is refused" exits 2 run t1 reply
+need "names it" has "its latest session '--dangerously-skip-permissions' is not a session id"
 end
 
 reset; ticket t1
@@ -430,6 +438,18 @@ need "t2 refused" exits 2 run t2 implement
 need "names t1" has "implement t2 refused: t1 (waiting) has no plan with ## Files yet"
 plan_md t1 draft a
 need "t1's Files known: t2 implements" acts_are "plan t3,answer t1 approvable,implement t2"
+end
+
+reset; ticket t1 t2
+begin "schedule: an approved ticket sharing Files with a later one that implemented first is held until it lands"
+vb init t1 t2
+approved t1 a b
+implemented t2 b
+need "t1 held" phase_is t1 held
+need "with why" grep -qxF -- "- t1 — held: shares b with t2 (implemented), which implemented first" "$B/board.md"
+need "t2 closes; t1 does not implement" acts_are "close t2"
+row t2 close close 0; rmdir .worktrees/t2
+need "t1 implements once t2 landed" acts_are "implement t1"
 end
 
 # ---------------------------------------------------------------- failed and held

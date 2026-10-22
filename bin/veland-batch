@@ -42,6 +42,7 @@ const path = require('node:path')
 const md = require(path.join(__dirname, '..', 'scripts', 'md-check.js'))
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const KINDS = ['plan', 'reply', 'implement', 'close']
 const HEADER = ['n', 'kind', 'session', 'session_kind', 'start', 'end', 'exit', 'pid']
 const RUNNING = { plan: 'planning', implement: 'implementing', close: 'closing' }
@@ -290,7 +291,7 @@ function alive(pid) {
 // The run's worker, not a pid runs.tsv was made to name: a live process whose arguments hold the run's session uuid
 // right after --session-id or --resume.
 function ours(r) {
-  if (!alive(r.pid) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.session)) return false
+  if (!alive(r.pid) || !UUID.test(r.session)) return false
   const ps = spawnSync('ps', ['-o', 'command=', '-p', String(Number(r.pid))], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   const args = ps.status === 0 ? ps.stdout.trim().split(/\s+/) : []
   return args.some((a, k) => (a === '--session-id' || a === '--resume') && args[k + 1] === r.session)
@@ -324,6 +325,18 @@ function deriveAll(ids) {
     }
     rows.push(r)
   }
+  // An approved ticket whose files a later ticket already holds — implemented, not landed — waits for it to land.
+  rows.forEach((r, i) => {
+    if (r.phase !== 'approved' || r.implemented) return
+    for (const e of rows.slice(i + 1)) {
+      if (!e.implemented || ['landed', 'pr-open', 'dropped'].includes(e.phase)) continue
+      const p = overlap(r.files, e.files)
+      if (p) {
+        Object.assign(r, { phase: 'held', evidence: `shares ${p} with ${e.id} (${e.phase}), which implemented first` })
+        break
+      }
+    }
+  })
   return rows
 }
 
@@ -562,6 +575,7 @@ async function run(argv) {
     if (!prompt.trim()) die(`reply ${id} refused: ${rel(replyFile)} is empty`)
     // A worker would take it as a typed command, with that skill's grants.
     if (prompt.trimStart().startsWith('/')) die(`reply ${id} refused: ${rel(replyFile)} starts with '/'`)
+    if (!UUID.test(r.last.session)) die(`reply ${id} refused: its latest session '${flat(r.last.session)}' is not a session id`)
     ;[flag, session, sessionKind] = ['--resume', r.last.session, r.last.session_kind]
   } else {
     if (!actions(rows).includes(`${kind} ${id}`)) die(refusal(rows, i, kind))
@@ -598,6 +612,8 @@ async function run(argv) {
   })
   const row = { n: String(n), kind, session, session_kind: sessionKind, start: String(Date.now()), end: '', exit: '', pid: child.pid ? String(child.pid) : '' }
   writeRuns(id, [...prev, row])
+  // The board shows the running worker and its session for as long as it runs.
+  writeBoard(deriveAll(ids))
   if (kind === 'reply' && child.pid) fs.renameSync(replyFile, path.join(bdir(id), `${nn}-reply.md`))
   for (const s of ['SIGTERM', 'SIGINT'])
     process.on(s, () => {
