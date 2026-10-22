@@ -74,11 +74,12 @@ use_run() {
   E2E_PATH="$(cat "$RUN/path")"
 }
 
-# new_run <with-fake 1|0> <close mode> [pr-template] [issue-forms] — a fresh run: bare origin, fixture repo pushed to it.
+# new_run <with-fake 1|0> <close mode> [pr-template] [issue-forms] [no-origin] — a fresh run: bare origin, fixture repo
+# pushed to it. With no-origin the repo has no remote and nothing is pushed (origin.git stays empty).
 new_run() {
-  local fake="$1" mode="$2" tpl=0 forms=0 a
+  local fake="$1" mode="$2" tpl=0 forms=0 remote=1 a
   shift 2
-  for a in "$@"; do case "$a" in pr-template) tpl=1 ;; issue-forms) forms=1 ;; esac; done
+  for a in "$@"; do case "$a" in pr-template) tpl=1 ;; issue-forms) forms=1 ;; no-origin) remote=0 ;; esac; done
   local dir
   dir="$(mktemp -d "$FLOW_ROOT/run.XXXXXX")"
   dir="$(cd "$dir" && pwd -P)"
@@ -103,8 +104,10 @@ new_run() {
   renv git -C "$REPO" init -q --initial-branch=main
   rgit add -A
   rgit commit -q -m "chore: fixture"
-  rgit remote add origin "$ORIGIN_URL"
-  rgit push -q -u origin main
+  if [ "$remote" = 1 ]; then
+    rgit remote add origin "$ORIGIN_URL"
+    rgit push -q -u origin main
+  fi
   rgit rev-parse main >"$RUN/initial-main"
   origin_heads >"$RUN/initial-heads"
 }
@@ -455,6 +458,18 @@ snapshot_draft() {
 }
 no_drafts() { ! compgen -G "$REPO/.veland/drafts/*.md" >/dev/null; }
 issue_created() { [ "$(ghlog_count issue create)" -ge 1 ]; }
+# file_ticket — the slug of the one .veland/<slug>/ticket.md, drafts/ aside; nothing when there is none or several.
+file_ticket() {
+  local f slug="" n=0
+  for f in "$REPO"/.veland/*/ticket.md; do
+    [ -e "$f" ] || continue
+    f="${f%/ticket.md}"
+    [ "${f##*/}" != drafts ] || continue
+    slug="${f##*/}"; n=$((n + 1))
+  done
+  [ "$n" = 1 ] && printf '%s\n' "$slug"
+}
+has_file_ticket() { [ -n "$(file_ticket)" ]; }
 # has_plan — plan.md exists and, when it binds more than 3 files, so does its cold read.
 has_plan() {
   local plan="$REPO/.veland/$TICKET/plan.md"

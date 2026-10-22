@@ -8,11 +8,11 @@ calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_
 ## Run
 
 ```bash
-bash tests/e2e/run.sh              # all 27 scenarios
+bash tests/e2e/run.sh              # all 29 scenarios
 bash tests/e2e/run.sh 7 O2 C3      # only these (ids are case-sensitive; an unknown id exits 2 before any claude run)
 ```
 
-It prints one line per scenario, in the order 1–14, O1–O3, W1–W7, C1–C3, then `total <seconds>s`:
+It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, then `total <seconds>s`:
 
 ```
 pass  7  41s

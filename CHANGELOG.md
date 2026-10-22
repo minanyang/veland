@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A `tickets` setting in `.claude/veland.json`, independent of `close`: `"github"` files `/veland:open`'s tickets as GitHub issues, `"files"` writes them to `.veland/<slug>/ticket.md` with no `gh` and no `origin` (`veland-land ticket`). Without it, a github.com `origin` means `github`, anything else `files`.
+
 ## 0.1.0 — 2026-10-21
 
 Initial release.

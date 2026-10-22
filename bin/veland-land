@@ -11,11 +11,13 @@
 #   veland-land squash <id>
 #   veland-land pr     <id>
 #   veland-land issue  <slug>
+#   veland-land ticket <slug>
 #   veland-land comment <id>
 #
 # `check` first prints the configured close mode, `mode: <close>` (exit 2 on a value other than pr, pr-merge or local,
 # before looking for the worktree), then, still before the worktree lookup, `ticket dir: <abs .veland/<id>>`,
-# `base: <branch> (<ref>)`, and `review: <abs path>` or `review: missing`. In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
+# `base: <branch> (<ref>)`, `review: <abs path>` or `review: missing`, and `tickets: <github|files>` (exit 2 on any
+# other value; scripts/lib.sh tickets_mode has the default). In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
 # `pr: <STATE> <url>`, or `pr: none` when gh finds none, and in pr or pr-merge mode the PR/MR template the body must
 # follow, `pr template: <path>` relative to the worktree, or `pr template: none`. It exits 1 and lists the files when the
 # ticket's worktree has uncommitted changes.
@@ -49,13 +51,17 @@
 # naming the missing ones; headings match trimmed, in any case, without closing #s, fenced ones ignored. The repo is
 # pinned to origin; no auto-merge, push or fill flags.
 # `push`, `merge` and `pr` refuse when an origin push URL names a different repo than its fetch URL.
-# `issue` (github.com only) creates an issue from .veland/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
+# `issue` (github.com only, and refused unless tickets is github) creates an issue from .veland/drafts/<slug>.md (title, Labels:, Type:, Form:, body);
 # every label must already exist in the repo. When the main checkout has issue forms (.github/ISSUE_TEMPLATE/*.yml
 # besides config.yml) the draft's `Form: <file>` must name one, and every required field's `### <label>` section must
 # have content; without forms the body needs a `## Acceptance criteria` section. Either way each checkbox criterion
 # there needs `AC<n>` + a dash or colon, one per line, and no phrase of references/banned-phrases.txt may appear
 # outside code. Any refusal exits 2 before `gh issue create`. Once `gh issue create` succeeds the draft is deleted;
 # when it fails, the draft stays and the script exits with gh's code.
+# `ticket` (refused unless tickets is files) writes .veland/drafts/<slug>.md verbatim to .veland/<slug>/ticket.md
+# and deletes the draft, with no gh call and no origin. The draft is a title and a body: a Labels:, Type: or Form:
+# header line is refused, and the body gets `issue`'s checks for the `## Acceptance criteria` layout. It refuses an
+# existing .veland/<slug>/ and the slugs gh-<n> and drafts, and prints `ticket: <abs path>`.
 # `comment` (github.com only) posts .veland/<id>/comment.md as a comment on issue <n> of id gh-<n>, in origin's
 # repo, only when the url in .veland/<id>/ticket.md's header is that issue's, then renames it to comment.posted.md;
 # it needs no worktree, since /veland:work posts it while planning.
@@ -64,11 +70,15 @@ set -euo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-usage="usage: veland-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue <slug>"
+usage="usage: veland-land check|rebase|push|merge|wait|squash|pr|comment <id> | issue|ticket <slug>"
 cmd="${1:-}"; id="${2:-}"
 [ $# -eq 2 ] || die "$usage"
-if [ "$cmd" = issue ]; then
+if [ "$cmd" = issue ] || [ "$cmd" = ticket ]; then
   [[ "$id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "invalid draft slug '$id' (lowercase letters, digits, -)"
+  if [ "$cmd" = ticket ]; then
+    [[ ! "$id" =~ ^gh-[0-9]+$ ]] || die "slug '$id' is the id of a GitHub issue ticket; pick another"
+    [ "$id" != drafts ] || die "slug 'drafts' is reserved for .veland/drafts/"
+  fi
 elif [ "$cmd" = comment ]; then
   [[ "$id" =~ ^gh-([1-9][0-9]*)$ ]] || die "comment needs a GitHub issue ticket id gh-<n>, got '$id'"
   number="${BASH_REMATCH[1]}"
@@ -83,6 +93,7 @@ else
     ticket_lines "$id"
     review="$(task_dir "$id")/review.md"
     if [ -f "$review" ] && [ ! -L "$review" ]; then say "review: $(shown "$review")"; else say "review: missing"; fi
+    tickets_line
   fi
   path="$(wt_path "$id")"
   branch="$(git -C "$path" rev-parse --abbrev-ref HEAD)"
@@ -92,19 +103,6 @@ else
 fi
 has_origin() { git -C "$ROOT" remote get-url origin >/dev/null 2>&1; }
 
-# Sets o_host and o_path (the repo path, groups included) from a remote URL.
-url_parts() {
-  local u="$1"
-  u="${u%/}"; u="${u%.git}"
-  o_host=""
-  if [[ "$u" == *://* ]]; then
-    u="${u#*://}"; o_host="${u%%/*}"; o_host="${o_host##*@}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
-  elif [[ "$u" =~ ^([^/:]+@)?([^/:]+):(.+)$ ]]; then
-    o_host="${BASH_REMATCH[2]}"; o_path="${BASH_REMATCH[3]}"
-  else
-    o_path="${u#/}"
-  fi
-}
 origin_parts() { url_parts "$(git -C "$ROOT" remote get-url origin)"; }
 # Every URL origin pushes to must name the repo it fetches from, or the branch lands in one repo
 # while the PR/MR is opened or merged in another.
@@ -243,6 +241,100 @@ need_file() {
   [ ! -L "$1" ] && [ -f "$1" ] && [ -s "$1" ] || die "$1 is missing, empty or a symlink"
   [ ! -L "$ROOT/.veland" ] && [[ "$(readlink -f "$1")" == "$(readlink -f "$ROOT/.veland")/"* ]] || die "$1 resolves outside .veland/"
   [ -n "$(find "$1" -maxdepth 0 -links 1)" ] || die "$1 has more than one hard link"
+}
+# parse_draft <draft> — sets title, labels, itype, form and body_from (the first body line) from a draft's header,
+# and labels_line, type_line, form_line: the line of each header line, 0 when absent.
+parse_draft() {
+  { IFS= read -r first || true; } <"$1"
+  [[ "$first" == "# "* ]] || die "$1: line 1 must be '# <title>'"
+  title="${first#\# }"
+  [ -n "${title//[[:space:]]/}" ] || die "$1: empty title"
+  labels=(); itype=""; form=""; labels_line=0; type_line=0; form_line=0; body_from=2
+  while IFS= read -r line; do
+    case "$line" in
+      "Labels:"*) IFS=',' read -ra parts <<<"${line#Labels:}"; labels_line=$body_from
+                  for l in ${parts[@]+"${parts[@]}"}; do l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"; [ -n "$l" ] && labels+=("$l"); done ;;
+      "Form:"*)   form="${line#Form:}"; form="${form#"${form%%[![:space:]]*}"}"; form="${form%"${form##*[![:space:]]}"}"; form_line=$body_from ;;
+      "Type:"*)   itype="${line#Type:}"; itype="${itype#"${itype%%[![:space:]]*}"}"; itype="${itype%"${itype##*[![:space:]]}"}"; type_line=$body_from ;;
+      *) break ;;
+    esac
+    body_from=$((body_from + 1))
+  done < <(tail -n +2 "$1")
+}
+# check_body <draft> <body_from> <formfile> — dies unless the body has the form's required sections (no <formfile>:
+# a `## Acceptance criteria` section), AC-numbered checkbox criteria one per line, and no banned phrase outside code.
+check_body() {
+  local banned problem
+  banned="$(dirname "$(readlink -f "$0")")/../references/banned-phrases.txt"
+  [ -f "$banned" ] || die "$banned is missing"
+  # shellcheck disable=SC2016
+  problem="$(node -e '
+    const fs = require("fs")
+    const [draftPath, from, formPath, bannedPath, mdCheck, issueForm] = process.argv.slice(1)
+    const { blank, bannedHits } = require(mdCheck)
+    const fail = (m) => { console.log(m); process.exit(1) }
+    const dl = fs.readFileSync(draftPath, "utf8").split("\n")
+    const start = Number(from) - 1 // 0-based index of the first body line
+    const form = require(issueForm)
+    const parseForm = (text) => {
+      try { return form.parseForm(text).body } catch (e) { fail("cannot read " + formPath + ": " + e.message) }
+    }
+    const norm = (s) => s.trim().toLowerCase()
+    const text = blank(dl, start)
+    const head = (level, label) => {
+      for (let k = start; k < dl.length; k++) {
+        const m = text[k] !== null && text[k].match(/^(#+)\s+(.*?)\s*#*\s*$/)
+        if (m && m[1].length === level && norm(m[2]) === norm(label)) return k
+      }
+      return -1
+    }
+    const section = (k, level) => {
+      let e = k + 1
+      while (e < dl.length) {
+        const m = text[e] !== null && text[e].match(/^(#+)\s/)
+        if (m && m[1].length <= level) break
+        e++
+      }
+      return [k + 1, e]
+    }
+    const content = (a, b) => {
+      let s = ""
+      for (let k = a; k < b; k++) s += dl[k] + "\n"
+      s = s.trim()
+      return s === "" || /^_no response_$/i.test(s) ? "" : s
+    }
+    let crit = null, critHead = -1 // [from, to) of the criteria section, and its heading line
+    if (formPath) {
+      const fields = parseForm(fs.readFileSync(formPath, "utf8")).filter((f) => f && f.type !== "markdown")
+      for (const f of fields) {
+        const label = f.attributes && f.attributes.label
+        if (typeof label !== "string") fail(formPath + ": a " + f.type + " field has no attributes.label")
+        const k = head(3, label)
+        const req = f.validations && String(f.validations.required) === "true"
+        if (k < 0) { if (req) fail("required field \"" + label + "\": no \"### " + label + "\" section"); continue }
+        const [a, b] = section(k, 3)
+        if (norm(label) === "acceptance criteria") { crit = [a, b]; critHead = k }
+        if (req && content(a, b) === "") fail("line " + (k + 1) + ": required field \"" + label + "\" is empty")
+      }
+    } else {
+      const k = head(2, "Acceptance criteria")
+      if (k < 0) fail("no \"## Acceptance criteria\" section")
+      crit = section(k, 2); critHead = k
+    }
+    if (crit && !text.slice(crit[0], crit[1]).some((s) => s !== null && /^\s*[-*+]\s+\[[ xX]\]/.test(s)))
+      fail("line " + (critHead + 1) + ": \"Acceptance criteria\" has no checkbox criterion")
+    if (crit) for (let k = crit[0]; k < crit[1]; k++) {
+      const s = text[k]
+      if (s === null) continue
+      const m = s.match(/^\s*[-*+]\s+\[[ xX]\]\s*(.*)$/)
+      if (!m) continue
+      if (/\[[ xX]\]/.test(m[1])) fail("line " + (k + 1) + ": two checkboxes share a line")
+      if (!/^AC\d+\s*[\u2014\u2013:-]/.test(m[1])) fail("line " + (k + 1) + ": criterion lacks \"AC<n> —\" (AC number then a dash or colon)")
+    }
+    const hit = bannedHits(text, bannedPath)[0]
+    if (hit) fail("line " + hit.line + ": banned phrase \"" + hit.phrase + "\"")
+  ' "$1" "$2" "$3" "$banned" "$(dirname "$(readlink -f "$0")")/../scripts/md-check.js" \
+    "$(dirname "$(readlink -f "$0")")/../scripts/issue-form.js" 2>&1)" || die "$1: $problem"
 }
 
 case "$cmd" in
@@ -425,27 +517,14 @@ case "$cmd" in
     ;;
 
   issue)
+    tickets_need github issue
     has_origin || die "no origin"
     origin_parts
     [ "$o_host" = github.com ] || die "issue needs a github.com origin"
     draft="$ROOT/.veland/drafts/$id.md"
     need_file "$draft"
     repo="$(gh_repo)"
-    { IFS= read -r first || true; } <"$draft"
-    [[ "$first" == "# "* ]] || die "$draft: line 1 must be '# <title>'"
-    title="${first#\# }"
-    [ -n "${title//[[:space:]]/}" ] || die "$draft: empty title"
-    labels=(); itype=""; form=""; form_line=0; body_from=2
-    while IFS= read -r line; do
-      case "$line" in
-        "Labels:"*) IFS=',' read -ra parts <<<"${line#Labels:}"
-                    for l in ${parts[@]+"${parts[@]}"}; do l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"; [ -n "$l" ] && labels+=("$l"); done ;;
-        "Form:"*)   form="${line#Form:}"; form="${form#"${form%%[![:space:]]*}"}"; form="${form%"${form##*[![:space:]]}"}"; form_line=$body_from ;;
-        "Type:"*)   itype="${line#Type:}"; itype="${itype#"${itype%%[![:space:]]*}"}"; itype="${itype%"${itype##*[![:space:]]}"}" ;;
-        *) break ;;
-      esac
-      body_from=$((body_from + 1))
-    done < <(tail -n +2 "$draft")
+    parse_draft "$draft"
     [ -z "$itype" ] || [[ "$itype" =~ ^[A-Za-z0-9][A-Za-z0-9\ _-]*$ ]] || die "invalid issue type '$itype'"
     if [ ${#labels[@]} -gt 0 ]; then
       existing="$(gh label list --repo "$repo" --limit 1000 --json name --jq '.[].name')" || die "could not list labels"
@@ -466,76 +545,7 @@ case "$cmd" in
       formfile="$ROOT/.github/ISSUE_TEMPLATE/$form"
       [ ! -L "$formfile" ] && [ -f "$formfile" ] || die "$draft: line $form_line: Form '$form' is not a file in .github/ISSUE_TEMPLATE/"
     fi
-    banned="$(dirname "$(readlink -f "$0")")/../references/banned-phrases.txt"
-    [ -f "$banned" ] || die "$banned is missing"
-    # shellcheck disable=SC2016
-    problem="$(node -e '
-      const fs = require("fs")
-      const [draftPath, from, formPath, bannedPath, mdCheck, issueForm] = process.argv.slice(1)
-      const { blank, bannedHits } = require(mdCheck)
-      const fail = (m) => { console.log(m); process.exit(1) }
-      const dl = fs.readFileSync(draftPath, "utf8").split("\n")
-      const start = Number(from) - 1 // 0-based index of the first body line
-      const form = require(issueForm)
-      const parseForm = (text) => {
-        try { return form.parseForm(text).body } catch (e) { fail("cannot read " + formPath + ": " + e.message) }
-      }
-      const norm = (s) => s.trim().toLowerCase()
-      const text = blank(dl, start)
-      const head = (level, label) => {
-        for (let k = start; k < dl.length; k++) {
-          const m = text[k] !== null && text[k].match(/^(#+)\s+(.*?)\s*#*\s*$/)
-          if (m && m[1].length === level && norm(m[2]) === norm(label)) return k
-        }
-        return -1
-      }
-      const section = (k, level) => {
-        let e = k + 1
-        while (e < dl.length) {
-          const m = text[e] !== null && text[e].match(/^(#+)\s/)
-          if (m && m[1].length <= level) break
-          e++
-        }
-        return [k + 1, e]
-      }
-      const content = (a, b) => {
-        let s = ""
-        for (let k = a; k < b; k++) s += dl[k] + "\n"
-        s = s.trim()
-        return s === "" || /^_no response_$/i.test(s) ? "" : s
-      }
-      let crit = null, critHead = -1 // [from, to) of the criteria section, and its heading line
-      if (formPath) {
-        const fields = parseForm(fs.readFileSync(formPath, "utf8")).filter((f) => f && f.type !== "markdown")
-        for (const f of fields) {
-          const label = f.attributes && f.attributes.label
-          if (typeof label !== "string") fail(formPath + ": a " + f.type + " field has no attributes.label")
-          const k = head(3, label)
-          const req = f.validations && String(f.validations.required) === "true"
-          if (k < 0) { if (req) fail("required field \"" + label + "\": no \"### " + label + "\" section"); continue }
-          const [a, b] = section(k, 3)
-          if (norm(label) === "acceptance criteria") { crit = [a, b]; critHead = k }
-          if (req && content(a, b) === "") fail("line " + (k + 1) + ": required field \"" + label + "\" is empty")
-        }
-      } else {
-        const k = head(2, "Acceptance criteria")
-        if (k < 0) fail("no \"## Acceptance criteria\" section")
-        crit = section(k, 2); critHead = k
-      }
-      if (crit && !text.slice(crit[0], crit[1]).some((s) => s !== null && /^\s*[-*+]\s+\[[ xX]\]/.test(s)))
-        fail("line " + (critHead + 1) + ": \"Acceptance criteria\" has no checkbox criterion")
-      if (crit) for (let k = crit[0]; k < crit[1]; k++) {
-        const s = text[k]
-        if (s === null) continue
-        const m = s.match(/^\s*[-*+]\s+\[[ xX]\]\s*(.*)$/)
-        if (!m) continue
-        if (/\[[ xX]\]/.test(m[1])) fail("line " + (k + 1) + ": two checkboxes share a line")
-        if (!/^AC\d+\s*[\u2014\u2013:-]/.test(m[1])) fail("line " + (k + 1) + ": criterion lacks \"AC<n> —\" (AC number then a dash or colon)")
-      }
-      const hit = bannedHits(text, bannedPath)[0]
-      if (hit) fail("line " + hit.line + ": banned phrase \"" + hit.phrase + "\"")
-    ' "$draft" "$body_from" "$formfile" "$banned" "$(dirname "$(readlink -f "$0")")/../scripts/md-check.js" \
-      "$(dirname "$(readlink -f "$0")")/../scripts/issue-form.js" 2>&1)" || die "$draft: $problem"
+    check_body "$draft" "$body_from" "$formfile"
     bodyfile="$(mktemp)"; trap 'rm -f "$bodyfile"' EXIT
     tail -n +"$body_from" "$draft" | sed '1{/^[[:space:]]*$/d;}' >"$bodyfile"
     args=(issue create --repo "$repo" --title "$title" --body-file "$bodyfile")
@@ -544,6 +554,24 @@ case "$cmd" in
     gh "${args[@]}"
     need_file "$draft"
     rm -f "$draft"
+    ;;
+
+  ticket)
+    tickets_need files ticket
+    draft="$ROOT/.veland/drafts/$id.md"
+    need_file "$draft"
+    parse_draft "$draft"
+    for n in "$labels_line" "$type_line" "$form_line"; do
+      [ "$n" -eq 0 ] || die "$draft: line $n: '$(shown "$(sed -n "${n}p" "$draft")")' is a GitHub header line; tickets: files drafts have only a title and a body"
+    done
+    check_body "$draft" "$body_from" ""
+    ensure_excluded
+    td="$(task_dir "$id")"
+    mkdir "$td" 2>/dev/null || die ".veland/$id/ already exists"
+    cp "$draft" "$td/ticket.md" || { rm -f "$td/ticket.md"; rmdir "$td"; die "could not write $td/ticket.md; the draft is kept"; }
+    need_file "$draft"
+    rm -f "$draft"
+    say "ticket: $(shown "$td/ticket.md")"
     ;;
 
   comment)

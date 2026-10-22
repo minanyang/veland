@@ -32,12 +32,12 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 ## 三個指令
 
 ```
-/veland:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
+/veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
 ```
 
-**`/veland:open <idea>`** 把一個想法、bug 或改進變成 GitHub issue，套用 repo 自己的 issue form、label 和 issue type。它會先問清楚這個想法沒交代的產品問題，把草稿給你看，你核准後才建立 issue。
+**`/veland:open <idea>`** 把一個想法、bug 或改進變成 GitHub issue，套用 repo 自己的 issue form、label 和 issue type；設定 `tickets: files` 時，則變成 `.veland/` 底下的 ticket 檔案，只留在你的電腦上。它會先問清楚這個想法沒交代的產品問題，把草稿給你看，你核准後才建立 ticket。
 
 **`/veland:work <ticket>`** 可以接一個 issue，或一段文字描述的任務。它先規劃：問技術問題，寫出計畫，包含驗收條件、會動到的檔案、證明每個條件的測試，然後停下來等你核准。接著在 worktree 裡實作：寫程式、commit、證明新測試在拿掉改動後會失敗、同時跑 gates 和冷審查、修正審查找到的問題，最後回報。
 
@@ -52,7 +52,7 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 /plugin install veland@minanyang
 ```
 
-需要 `git` 和 `node`（18 以上）。`/veland:open`、GitHub issue 形式的 ticket，以及 `pr` / `pr-merge` 兩種 close 模式，還需要已登入的 [`gh`](https://cli.github.com)（`gh auth login`），GitLab 則用 [`glab`](https://gitlab.com/gitlab-org/cli)；沒有的話，`close: local` 一樣能用。veland 在 push 之前會先檢查，缺什麼會告訴你。
+需要 `git` 和 `node`（18 以上）。GitHub issue 形式的 ticket（`tickets: github`，`/veland:open` 會建立這種 ticket），以及 `pr` / `pr-merge` 兩種 close 模式，還需要已登入的 [`gh`](https://cli.github.com)（`gh auth login`），GitLab 則用 [`glab`](https://gitlab.com/gitlab-org/cli)；沒有的話，`tickets: files` 和 `close: local` 一樣能用。veland 在 push 之前會先檢查，缺什麼會告訴你。
 
 ### 快速開始
 
@@ -66,7 +66,7 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 2. `/veland:work 12` 為 ticket `gh-12` 寫計畫，然後停下來。看完計畫、回答問題或核准後，再執行一次 `/veland:work gh-12`（或直接說「go」）開始實作。
 3. `/veland:close gh-12` 把它落地。預設會開 PR；你合併之後，再執行一次 `/veland:close gh-12` 清理。
 
-base branch、gates、close 模式等選用設定放在 `.claude/veland.json`，見 [docs/configuration.md](docs/configuration.md)（英文）。
+base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.claude/veland.json`，見 [docs/configuration.md](docs/configuration.md)（英文）。`tickets` 可以是 `"github"`（GitHub issue）或 `"files"`（`.veland/<slug>/ticket.md`，不會被 push）；沒設定時，`origin` 在 github.com 的 repo 用 `github`，其他一律用 `files`。它和 `close` 互不相干：repo 可以把 ticket 檔案留在本機，照樣用 PR 落地；不過在 `pr` 和 `pr-merge` 模式下，PR 內文仍會帶出計畫的目標和驗收條件。
 
 ## 內容
 
@@ -87,7 +87,7 @@ base branch、gates、close 模式等選用設定放在 `.claude/veland.json`，
 
 | Skill | 用途 |
 |---|---|
-| `/veland:open` | 起草 GitHub issue，核准後建立 |
+| `/veland:open` | 起草 ticket（GitHub issue，或設定 `tickets: files` 時 `.veland/` 底下的檔案），核准後建立 |
 | `/veland:work` | 規劃 ticket，再到 worktree 裡實作、驗證、審查 |
 | `/veland:close` | rebase、驗證、落地、清理 |
 | `/veland:commit` | 只 commit 這個 session 改過的路徑，訊息照 repo 自己的風格。會直接 commit，只有疑似 secret、範圍不清楚或有不相關的改動時才停下來問。說「message only」就只給草稿 |
