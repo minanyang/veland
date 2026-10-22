@@ -506,6 +506,8 @@ need "failed while the worktree stays" phase_is t1 failed
 rmdir .worktrees/t1
 need "landed once it is gone" phase_is t1 landed
 need "landed on the base at its sha" grep -qF "| landed | landed on main at $(git rev-parse --short main) |" "$B/board.md"
+echo "landed on main at abc1234" >"$B/t1/03-landed"
+need "where its close run left it, not the base's tip" eval 'phase_is t1 landed && grep -qF "| landed | landed on main at abc1234 |" "$B/board.md"'
 touch "$B/t1/dropped"
 need "dropped" phase_is t1 dropped
 end

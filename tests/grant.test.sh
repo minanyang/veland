@@ -204,6 +204,7 @@ prompt s40 "<task-notification>
 check "$T: after a wake" allow "$(bash_ s40 "veland-batch run gh-5 reply")" "granted by /veland:batch"
 check "$T: a run on another ticket than the typed one" allow "$(bash_ s40 "veland-batch run gh-6 implement")" "granted by /veland:batch"
 check "$T: not another skill's grant" nothing "$(bash_ s40 "veland-land merge gh-5")"
+check "$T: not init, which only the typed turn runs" nothing "$(bash_ s40 "veland-batch init gh-9")"
 
 T="does not allow a skill named by a scheduled prompt"
 scheduled s20 "/veland:close gh-5"

@@ -23,6 +23,9 @@ const path = require('node:path')
 const SID = /^[A-Za-z0-9-]+$/
 const TYPED = /^\s*\/veland:(open|work|close|batch)(?=\s|$)/
 const META = /[;&|<>$`\n\r]/
+// Grants used only in the turn the skill was typed, where its allowed-tools apply anyway: kept out of the record so a
+// later turn cannot start a new batch the user never named.
+const TYPED_ONLY = new Set(['veland-batch init *'])
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // The word that carries the ticket id: `veland-land <sub> <id>`, `veland-verify <id>`, ….
 const ID_WORD = {
@@ -202,7 +205,7 @@ function skillGrants(skill) {
     .map((l) => /^Bash\((.*)\)$/.exec(l.replace(/^  - /, '').trim()))
     .filter(Boolean)
     .map((b) => b[1].trim())
-    .filter((g) => g && !g.startsWith('*'))
+    .filter((g) => g && !g.startsWith('*') && !TYPED_ONLY.has(g))
 }
 
 // Typing a skill again replaces only its pending entry: its confirmed grants stay until a new
