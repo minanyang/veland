@@ -27,12 +27,24 @@ echo 'export const add = (a, b) => a + b' >src/math.mjs
 git add -A && git commit -qm "init"
 git remote add origin "$tmp/origin.git" && git push -q -u origin main
 
+# init: an invalid tickets value is refused before .veland/ or the exclude entries exist
+mkdir -p .claude && echo '{"tickets":"gitlab"}' >.claude/veland.json
+init_bad=0
+for args in T0 ""; do
+  # shellcheck disable=SC2086  # "" runs init without an id
+  veland-worktree init $args >"$tmp/out" 2>&1; rc=$?
+  { [ "$rc" -eq 2 ] && [ "$(head -n 1 "$tmp/out")" = "tickets: gitlab" ] && grep -qF "want github or files" "$tmp/out" &&
+    [ ! -e .veland ] && ! grep -qxF '/.veland/' .git/info/exclude 2>/dev/null; } || { init_bad=1; cat "$tmp/out"; }
+done
+rm -r .claude
+[ "$init_bad" = 0 ] && ok "init refuses an unknown tickets value and creates nothing" || bad "init refuses an unknown tickets value and creates nothing"
 # init: .veland/ is excluded before anything is written there
 expect "init with an id" 0 veland-worktree init T0
+head -n 1 "$tmp/out" >"$tmp/init-id.first"
 # out_is <expected> <real-path expected> — the output is one of the two forms of a path under $tmp (macOS: /var vs /private/var).
 out_is() { [ "$(cat "$tmp/out")" = "$1" ] || [ "$(cat "$tmp/out")" = "$2" ]; }
 rp="$(cd "$tmp/repo" && pwd -P)"
-out_is "$(printf 'ticket dir: %s\nbase: main (origin/main)' "$tmp/repo/.veland/T0")" "$(printf 'ticket dir: %s\nbase: main (origin/main)' "$rp/.veland/T0")" \
+out_is "$(printf 'tickets: files\nticket dir: %s\nbase: main (origin/main)' "$tmp/repo/.veland/T0")" "$(printf 'tickets: files\nticket dir: %s\nbase: main (origin/main)' "$rp/.veland/T0")" \
   && ok "init prints the ticket dir and the base" || { bad "init prints the ticket dir and the base"; cat "$tmp/out"; }
 echo plan >.veland/T0/plan.md
 [ -z "$(git status --porcelain)" ] && ok "ticket files stay out of git before any worktree" || bad "ticket files stay out of git before any worktree"
@@ -42,7 +54,9 @@ expect "init without an id" 0 veland-worktree init
 ! grep -q '^ticket dir: \|^base: ' "$tmp/out" && ok "init without an id prints no ticket dir or base" || bad "init without an id prints no ticket dir or base"
 grep -qxF 'forms: none' "$tmp/out" && ! grep -q '^form: ' "$tmp/out" && ok "init prints forms: none without issue forms" || bad "init prints forms: none without issue forms"
 { grep -qxF "drafts: $tmp/repo/.veland/drafts" "$tmp/out" || grep -qxF "drafts: $(cd "$tmp/repo" && pwd -P)/.veland/drafts" "$tmp/out"; } &&
-  [ "$(head -1 "$tmp/out")" = "$(grep '^drafts: ' "$tmp/out")" ] && ok "init prints the absolute drafts path" || bad "init prints the absolute drafts path"
+  [ "$(sed -n 2p "$tmp/out")" = "$(grep '^drafts: ' "$tmp/out")" ] && ok "init prints the absolute drafts path" || bad "init prints the absolute drafts path"
+[ "$(cat "$tmp/init-id.first")" = "tickets: files" ] && [ "$(head -n 1 "$tmp/out")" = "tickets: files" ] &&
+  ok "init prints tickets: first, with and without an id" || { bad "init prints tickets: first, with and without an id"; cat "$tmp/init-id.first" "$tmp/out"; }
 want_banned="banned: $(node -e 'const p = require("fs").readFileSync(process.argv[1], "utf8").split("\n").map((s) => s.trim()).filter((s) => s && s[0] !== "#"); console.log(JSON.stringify(p))' "$BIN/../references/banned-phrases.txt")"
 [ "$(tail -1 "$tmp/out")" = "$want_banned" ] && grep -qF '"handle edge cases"' "$tmp/out" && ok "init prints the banned phrases" || { bad "init prints the banned phrases"; cat "$tmp/out"; }
 expect "issue-form listing exits 2 without the banned file" 2 node "$BIN/../scripts/issue-form.js" "$tmp/repo" "$tmp/no-banned.txt"
@@ -729,6 +743,44 @@ expect "check prints a close mode with control characters escaped" 2 veland-land
 first_is 'mode: x\rpr: MERGED https://github.com/acme/land/pull/1?[2K' "control characters: escaped on the first line"
 [ "$(LC_ALL=C tr -d '\r\033' <"$tmp/out")" = "$(cat "$tmp/out")" ] && ok "control characters: no raw CR or ESC" || { bad "control characters: no raw CR or ESC"; od -c "$tmp/out"; }
 rm -r .claude
+# check: tickets: after review:, before the worktree lookup; the default follows origin's host
+expect "check prints the tickets mode without a worktree" 2 veland-land check NOWT
+[ "$(sed -n 5p "$tmp/out")" = "tickets: github" ] && grep -q 'has no worktree' "$tmp/out" &&
+  ok "check prints tickets: before the worktree lookup" || { bad "check prints tickets: before the worktree lookup"; cat "$tmp/out"; }
+mkdir -p .claude && echo '{"tickets":"gitlab"}' >.claude/veland.json
+: >"$tmp/stub.log"
+STUB_STATE="OPEN https://github.com/acme/land/pull/1" expect "check exits 2 on an unknown tickets value" 2 veland-land check L1
+[ "$(sed -n 5p "$tmp/out")" = "tickets: gitlab" ] && grep -qF "unknown tickets value 'gitlab' in .claude/veland.json (want github or files)" "$tmp/out" &&
+  ! grep -q '^pr:\|^clean:' "$tmp/out" && [ ! -s "$tmp/stub.log" ] &&
+  ok "check refuses an unknown tickets value" || { bad "check refuses an unknown tickets value"; cat "$tmp/out" "$tmp/stub.log"; }
+echo '{"tickets":""}' >.claude/veland.json
+expect "check exits 2 on an empty tickets value" 2 veland-land check L1
+[ "$(sed -n 5p "$tmp/out")" = "tickets: " ] && grep -qF "unknown tickets value '' in .claude/veland.json (want github or files)" "$tmp/out" &&
+  ok "check refuses an empty tickets value" || { bad "check refuses an empty tickets value"; cat "$tmp/out"; }
+rm -r .claude
+tickets_is() { # <want> <case> — check L1 prints tickets: <want> as its fifth line
+  STUB_STATE="OPEN https://github.com/acme/land/pull/1" veland-land check L1 >"$tmp/out" 2>&1
+  [ "$(sed -n 5p "$tmp/out")" = "tickets: $1" ] && ok "$2" || { bad "$2"; cat "$tmp/out"; }
+}
+tickets_is github "tickets defaults to github on a github.com origin"
+git remote set-url origin https://gitlab.example.com/acme/land.git
+tickets_is files "tickets defaults to files on another host"
+git remote set-url origin "$tmp/github.com/land.git"
+tickets_is files "tickets defaults to files on a local-path origin"
+git remote rename origin keep
+tickets_is files "tickets defaults to files without an origin"
+git remote rename keep origin; git remote set-url origin git@github.com:acme/land.git
+combo_bad=0
+mkdir -p .claude
+for t in github files; do
+  for c in pr pr-merge local; do
+    printf '{"tickets":"%s","close":"%s"}\n' "$t" "$c" >.claude/veland.json
+    STUB_STATE="OPEN https://github.com/acme/land/pull/1" veland-land check L1 >"$tmp/out" 2>&1 &&
+      [ "$(sed -n 1p "$tmp/out")" = "mode: $c" ] && [ "$(sed -n 5p "$tmp/out")" = "tickets: $t" ] || { combo_bad=1; echo "      tickets $t, close $c:"; cat "$tmp/out"; }
+  done
+done
+rm -r .claude
+[ "$combo_bad" = 0 ] && ok "check accepts every tickets and close combination" || bad "check accepts every tickets and close combination"
 : >"$tmp/stub.log"
 STUB_VIEW="develop OPEN false" expect "merge refuses a PR into another base" 2 veland-land merge L1
 ! grep -q 'pr merge' "$tmp/stub.log" && ok "no merge call for a wrong base" || bad "no merge call for a wrong base"
@@ -1049,6 +1101,57 @@ printf '# T\n\n`handle edge cases` and\n```\netc.\n```\n\n## Acceptance criteria
 expect "issue ignores banned phrases in code and accepts every dash" 0 veland-land issue code
 printf '# T\n\nappropriately, inappropriate, /etc/hosts and TBDs\n\n## Acceptance criteria\n- [ ] AC1: ok\n' >"$dr/word.md"
 expect "issue matches banned phrases on word boundaries" 0 veland-land issue word
+# ticket: tickets: files writes the draft under .veland/<slug>/ with no gh call; issue refuses that mode
+mkdir -p .claude && echo '{"tickets":"files"}' >.claude/veland.json
+: >"$tmp/stub.log"
+expect "issue exits 2 in files mode" 2 veland-land issue thing
+grep -qF "issue needs tickets: github, but this repo's tickets are files" "$tmp/out" && [ ! -s "$tmp/stub.log" ] && [ -f "$dr/thing.md" ] &&
+  ok "issue refuses files mode before any gh call" || { bad "issue refuses files mode before any gh call"; cat "$tmp/out" "$tmp/stub.log"; }
+printf '# Keep it local\n\n## Context\nbody\n\n## Acceptance criteria\n- [ ] AC1 — it exists\n' >"$dr/filed.md"
+cp "$dr/filed.md" "$tmp/filed.want"
+git remote rename origin keep
+expect "ticket filed" 0 veland-land ticket filed
+git remote rename keep origin
+ftd="$(cd "$tmp/land/.veland" && pwd -P)/filed"
+cmp -s "$ftd/ticket.md" "$tmp/filed.want" && [ ! -e "$dr/filed.md" ] && [ ! -s "$tmp/stub.log" ] &&
+  { grep -qxF "ticket: $ftd/ticket.md" "$tmp/out" || grep -qxF "ticket: $tmp/land/.veland/filed/ticket.md" "$tmp/out"; } &&
+  ok "ticket writes the draft to .veland/<slug>/ticket.md and deletes it" || { bad "ticket writes the draft to .veland/<slug>/ticket.md and deletes it"; cat "$tmp/out" "$tmp/stub.log"; }
+printf '# Another\n\n## Acceptance criteria\n- [ ] AC1 — other\n' >"$dr/filed.md"
+mkdir "$tmp/land/.veland/empty"; cp "$dr/filed.md" "$dr/empty.md"
+expect "ticket exits 2 on an existing ticket dir" 2 veland-land ticket filed
+grep -qF ".veland/filed/ already exists" "$tmp/out" && cmp -s "$ftd/ticket.md" "$tmp/filed.want" && [ -f "$dr/filed.md" ] &&
+  ! veland-land ticket empty >/dev/null 2>&1 && [ ! -e "$tmp/land/.veland/empty/ticket.md" ] && [ -f "$dr/empty.md" ] &&
+  ok "ticket refuses an existing ticket dir" || { bad "ticket refuses an existing ticket dir"; cat "$tmp/out"; }
+rm "$dr/filed.md" "$dr/empty.md"; rmdir "$tmp/land/.veland/empty"
+checks_bad=0
+for s in nocrit:'Acceptance criteria' nobox:'no checkbox criterion' noac:'line 5' nodash:'line 4' two:'two checkboxes' banned:'banned phrase'; do
+  slug="${s%%:*}"; msg="${s#*:}"
+  veland-land ticket "$slug" >"$tmp/out" 2>&1; rc=$?
+  { [ "$rc" -eq 2 ] && grep -qF -- "$msg" "$tmp/out" && [ ! -e "$tmp/land/.veland/$slug" ] && [ -f "$dr/$slug.md" ]; } || { checks_bad=1; echo "      $slug:"; cat "$tmp/out"; }
+done
+[ ! -s "$tmp/stub.log" ] || checks_bad=1
+[ "$checks_bad" = 0 ] && ok "ticket applies the checks of issue" || bad "ticket applies the checks of issue"
+header_bad=0
+for h in 'Labels: bug' 'Labels:' 'Type: Bug' 'Form: bug.yml'; do
+  printf '# T\n%s\n\n## Acceptance criteria\n- [ ] AC1 — ok\n' "$h" >"$dr/hdr.md"
+  veland-land ticket hdr >"$tmp/out" 2>&1; rc=$?
+  { [ "$rc" -eq 2 ] && grep -qF "line 2: '$h' is a GitHub header line" "$tmp/out" && [ ! -e "$tmp/land/.veland/hdr" ]; } || { header_bad=1; echo "      $h:"; cat "$tmp/out"; }
+done
+rm "$dr/hdr.md"
+[ "$header_bad" = 0 ] && ok "ticket refuses a GitHub header line" || bad "ticket refuses a GitHub header line"
+printf '# T\n\n## Acceptance criteria\n- [ ] AC1 — ok\n' >"$dr/gh-7.md"; cp "$dr/gh-7.md" "$dr/drafts.md"
+expect "ticket exits 2 on a gh-<n> slug" 2 veland-land ticket gh-7
+grep -qF "slug 'gh-7' is the id of a GitHub issue ticket" "$tmp/out" && [ ! -e "$tmp/land/.veland/gh-7" ] && reserved=ok || reserved=bad
+expect "ticket exits 2 on the drafts slug" 2 veland-land ticket drafts
+grep -qF "slug 'drafts' is reserved" "$tmp/out" && [ -f "$dr/drafts.md" ] && [ "$reserved" = ok ] &&
+  ok "ticket refuses a gh-<n> or drafts slug" || { bad "ticket refuses a gh-<n> or drafts slug"; cat "$tmp/out"; }
+rm "$dr/gh-7.md" "$dr/drafts.md"
+rm -r .claude
+printf '# T\n\n## Acceptance criteria\n- [ ] AC1 — ok\n' >"$dr/ongh.md"
+expect "ticket exits 2 in github mode" 2 veland-land ticket ongh
+grep -qF "ticket needs tickets: files, but this repo's tickets are github" "$tmp/out" && [ -f "$dr/ongh.md" ] && [ ! -e "$tmp/land/.veland/ongh" ] &&
+  ok "ticket refuses github mode" || { bad "ticket refuses github mode"; cat "$tmp/out"; }
+rm "$dr/ongh.md"
 
 # grill: prints the shared grill verbatim, takes no argument
 veland-grill >"$tmp/grill.out" 2>&1 && cmp -s "$tmp/grill.out" "$BIN/../references/grill.md" \
@@ -1356,7 +1459,10 @@ git remote set-url origin git@github.com:acme/land.git
 git remote set-url origin https://notgithub.com/acme/land.git
 : >"$tmp/stub.log"
 expect "pr refuses a host that only contains github.com" 2 veland-land pr L1
+mkdir -p .claude && echo '{"tickets":"github"}' >.claude/veland.json
 expect "issue refuses a host that only contains github.com" 2 veland-land issue thing
+grep -qF "issue needs a github.com origin" "$tmp/out" && ok "issue: the look-alike host fails the host check" || { bad "issue: the look-alike host fails the host check"; cat "$tmp/out"; }
+rm -r .claude
 expect "comment refuses a host that only contains github.com" 2 veland-land comment gh-7
 [ ! -s "$tmp/stub.log" ] && ok "no gh call for a look-alike host" || bad "no gh call for a look-alike host"
 unset STUB_LABELS

@@ -8,7 +8,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 
 `veland-worktree init|add|list|path|rm <id>|sync-base` — one worktree per ticket.
 
-- `init` keeps `.veland/` out of git before anything is written there.
+- `init` first prints where tickets live, `tickets: github` or `tickets: files` (the `tickets` setting; any other value exits 2 before anything is created), then keeps `.veland/` out of git before anything is written there.
 - `init <id>` and `add` print `ticket dir: <path>` and `base: <branch> (<ref>)`, the lines the skills resolve `.veland/<id>/` paths and the base from.
 - Without an id, `init` prints what `/veland:open` drafts from: the drafts directory, each issue form (`form: <file> name: … labels: … title: … required: … fields: …`, values JSON, or `forms: none`), Markdown templates and the banned phrases.
 - `rm` deletes the branch only if git sees it merged.
@@ -16,16 +16,17 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 
 ## veland-land
 
-`veland-land check|rebase|push|merge|wait|squash|pr|comment <id>`, `veland-land issue <slug>` — the writes `/veland:close`, `/veland:open` and `/veland:work` need, each built from the ticket id or draft slug alone.
+`veland-land check|rebase|push|merge|wait|squash|pr|comment <id>`, `veland-land issue|ticket <slug>` — the writes `/veland:close`, `/veland:open` and `/veland:work` need, each built from the ticket id or draft slug alone.
 
-- `check` prints the configured close mode (`mode: <close>`, refusing any value but `pr`, `pr-merge`, `local`), then, before looking for the worktree, `ticket dir: <path>`, `base: <branch> (<ref>)` and `review: <path>` or `review: missing`, and lists uncommitted changes. In `pr`/`pr-merge` mode on GitHub it prints the branch's PR state (`pr: MERGED <url>` sends `/veland:close` to cleanup), and in `pr`/`pr-merge` mode the repo's PR/MR template in the worktree (`pr template: <path>`, or `none`).
+- `check` prints the configured close mode (`mode: <close>`, refusing any value but `pr`, `pr-merge`, `local`), then, before looking for the worktree, `ticket dir: <path>`, `base: <branch> (<ref>)`, `review: <path>` or `review: missing` and `tickets: <github|files>` (refusing any other value), and lists uncommitted changes. In `pr`/`pr-merge` mode on GitHub it prints the branch's PR state (`pr: MERGED <url>` sends `/veland:close` to cleanup), and in `pr`/`pr-merge` mode the repo's PR/MR template in the worktree (`pr template: <path>`, or `none`).
 - `rebase` rebases onto the base (conflicts left for you).
 - `push` pushes the ticket branch (lease only if origin has it).
 - `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, and on GitHub only when the PR's head is the worktree's HEAD, the branch contains `origin/<base>` (exit 4 if it moved) and its checks are green (exit 3 when they are only still running).
 - `wait` polls the PR's checks by the same rule until green, failed or 30 minutes.
 - `squash` lands the branch on the base as one commit from `.veland/<id>/commit-msg` in `local` mode; for a `gh-<n>` ticket it adds `Closes #<n>` as its own paragraph (before a closing trailer block) unless `commit-msg` has that line, so pushing the base closes the issue.
 - `pr` opens the PR/MR from `.veland/<id>/pr-title` + `pr-body.md` or updates only its body, refuses a body that lacks any `##` heading of the template `check` names, and refuses a branch whose PR is already merged.
-- `issue` creates an issue from `.veland/drafts/<slug>.md` (existing labels only), then deletes the draft.
+- `issue` creates an issue from `.veland/drafts/<slug>.md` (existing labels only), then deletes the draft; it refuses `tickets: files` before any `gh` call.
+- `ticket` (`tickets: files` only) writes `.veland/drafts/<slug>.md` verbatim to `.veland/<slug>/ticket.md` and deletes the draft, with the checks of `issue` for a draft without forms and no `gh` call or `origin`; it refuses `Labels:`, `Type:` and `Form:` header lines, an existing `.veland/<slug>/`, and the slugs `gh-<n>` and `drafts`.
 - `comment` posts `.veland/gh-<n>/comment.md` on issue `<n>` of origin's repo, only when the url in `.veland/gh-<n>/ticket.md`'s header is that issue's, then renames it to `comment.posted.md` so it is posted once.
 - `push`, `merge` and `pr` refuse when origin's push URL names another repo than its fetch URL.
 

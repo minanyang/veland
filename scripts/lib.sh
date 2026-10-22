@@ -58,6 +58,47 @@ check_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid ticket id '$1' (letters, digits, . _ -)"
 }
 
+# Sets o_host and o_path (the repo path, groups included) from a remote URL.
+url_parts() {
+  local u="$1"
+  u="${u%/}"; u="${u%.git}"
+  o_host=""
+  if [[ "$u" == *://* ]]; then
+    u="${u#*://}"; o_host="${u%%/*}"; o_host="${o_host##*@}"; o_host="${o_host%%:*}"; o_path="${u#*/}"
+  elif [[ "$u" =~ ^([^/:]+@)?([^/:]+):(.+)$ ]]; then
+    o_host="${BASH_REMATCH[2]}"; o_path="${BASH_REMATCH[3]}"
+  else
+    o_path="${u#/}"
+  fi
+}
+
+# The configured `tickets` value, unchecked; absent or null: github for a github.com origin, else files.
+tickets_mode() {
+  # shellcheck disable=SC2034  # o_path is set by url_parts; local so a caller's o_host/o_path are not clobbered
+  local o_host o_path url dflt=files
+  if url="$(git -C "$ROOT" remote get-url origin 2>/dev/null)"; then
+    url_parts "$url"
+    [ "$o_host" = github.com ] && dflt=github
+  fi
+  cfg tickets "$dflt"
+}
+
+# Prints `tickets: <mode>`, then dies on a value other than github or files.
+tickets_line() {
+  local v
+  v="$(tickets_mode)"
+  say "tickets: $(shown "$v")"
+  case "$v" in github|files) ;; *) die "unknown tickets value '$(shown "$v")' in .claude/veland.json (want github or files)" ;; esac
+}
+
+# tickets_need <want> <subcommand> — dies, printing nothing, unless the tickets mode is <want>.
+tickets_need() {
+  local v
+  v="$(tickets_mode)"
+  case "$v" in github|files) ;; *) die "unknown tickets value '$(shown "$v")' in .claude/veland.json (want github or files)" ;; esac
+  [ "$v" = "$1" ] || die "$2 needs tickets: $1, but this repo's tickets are $v"
+}
+
 worktree_dir() { printf '%s/%s\n' "$ROOT" "$(cfg worktreeDir .worktrees)"; }
 task_dir() { printf '%s/.veland/%s\n' "$ROOT" "$1"; }
 

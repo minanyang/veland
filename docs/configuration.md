@@ -8,6 +8,7 @@ Optional `.claude/veland.json`, committed with the project:
   "gates": ["pnpm lint", "pnpm typecheck", "pnpm test"],
   "setup": "pnpm install --frozen-lockfile",
   "close": "pr",
+  "tickets": "files",
   "worktreeDir": ".worktrees",
   "generated": ["src/api/generated"],
   "redProof": { "command": "pytest {file}", "tests": ["tests/test_*.py"] },
@@ -22,6 +23,7 @@ Optional `.claude/veland.json`, committed with the project:
 | `gates` | package.json `verify`, else whichever of `lint`, `typecheck`, `test` exist |
 | `setup` | install dependencies from the lockfile (`pnpm` / `yarn` / `bun` / `npm ci`) |
 | `close` | `pr` |
+| `tickets` | `github` when `origin`'s host is exactly `github.com`, else `files` (another host, a local-path `origin`, or none). `github`: `/veland:open` files GitHub issues. `files`: it writes the approved draft to `.veland/<slug>/ticket.md` and runs no `gh` command. Any other value, an empty string included, is refused |
 | `worktreeDir` | `.worktrees` |
 | `generated` | paths left out of the review diff (lockfiles always are) |
 | `redProof.command` | JavaScript runners (jest, vitest, `node --test`) are detected. For any other stack, a shell command containing `{file}`, run once per changed test file in the worktree root with the shell-quoted path substituted; the file's exit code is the result |
@@ -29,7 +31,7 @@ Optional `.claude/veland.json`, committed with the project:
 | `preReviewGates` | none. Shell commands (quick gates: lint, typecheck) that `veland-review-packet` runs first; a failure exits 1 and no packet is built |
 | `contextGate.maxTokens` | `200000`; `0` turns the gate off. A file that does not parse, or a `maxTokens` that is not a number, gets the default and a warning |
 
-The close modes are described in [the loop](loop.md#velandclose-id).
+The close modes are described in [the loop](loop.md#velandclose-id). `tickets` and `close` are read independently: where tickets live does not decide how they land, so a repo on GitHub can keep its tickets private with `"tickets": "files"` and still land each one by PR, and every combination of the two is valid.
 
 ## Where each key is read from
 

@@ -1,8 +1,9 @@
 ---
 name: open
-description: Open a ticket — turn an idea, a bug or an improvement into a GitHub issue grounded in the codebase, classified with the repo's own labels or issue types, ready for /veland:work. Use when the user runs /veland:open with something to file.
+description: Open a ticket — turn an idea, a bug or an improvement into a GitHub issue, or with `tickets: files` a ticket file under `.veland/`, grounded in the codebase, classified with the repo's own labels or issue types, ready for /veland:work. Use when the user runs /veland:open with something to file.
 disable-model-invocation: true
 allowed-tools:
+  - Bash(veland-worktree init)
   - Bash(git remote get-url origin)
   - Bash(gh auth status)
   - Bash(gh issue list *)
@@ -10,14 +11,22 @@ allowed-tools:
   - Bash(veland-grill)
   - Bash(gh label list *)
   - Bash(veland-ticket issue-types)
-  - Bash(veland-worktree init)
+  - Bash(veland-land ticket *)
 ---
 
 # Open a ticket
 
-`/veland:open <what>` files one GitHub issue for later work with `/veland:work gh-<n>`. It does not plan or implement. Opening an issue is visible to everyone who can see the repo, so it **shows the draft and waits for the user's go** before creating anything.
+`/veland:open <what>` files one ticket for later work: a GitHub issue, worked with `/veland:work gh-<n>`, or, with `tickets: files`, a ticket file `.veland/<slug>/ticket.md`, worked with `/veland:work <slug>`. It does not plan or implement. Opening an issue is visible to everyone who can see the repo, so it **shows the draft and waits for the user's go** before creating anything.
 
-GitHub only. Run one command per Bash call — no `&&`, `;` or `|`. Check before anything else:
+Run one command per Bash call — no `&&`, `;` or `|`. Before anything else:
+
+```bash
+veland-worktree init
+```
+
+A non-zero exit stops the skill: relay its message. Its first line, `tickets: github` or `tickets: files`, picks the path for the rest of this skill. The lines after it are what the draft is built from: `drafts: <path>`, one `form: <file> name: … labels: … title: … required: … fields: …` line per issue form in `.github/ISSUE_TEMPLATE/` (or `forms: none`), one `template: <file>` line per Markdown template, and `banned: […]`. Values are JSON. Steps 2 and 3 use them.
+
+With `tickets: github`, check:
 
 ```bash
 git remote get-url origin
@@ -26,13 +35,15 @@ gh auth status
 
 Stop, saying which and how to fix it, when `origin` is not on github.com, `gh` is not installed (command not found → https://cli.github.com), or not logged in (non-zero exit → `gh auth login`). Do not fall back to the web API or a browser.
 
+With `tickets: files`, no `origin` and no `gh` are needed: run no `gh` command and no git remote command anywhere in this skill.
+
 ## Step 1 — Ground it
 
 Read just enough of the codebase to make the ticket concrete: which module, route, component or file it is about, and what happens there today. Search before claiming something is missing.
 
 Every file, route or current behaviour the draft's Context names carries its evidence: `path:line`, or the command run and its output. A claim with none is looked up before the draft is shown — never shown as a guess.
 
-Look for an existing issue first:
+Look for an existing ticket first. With `tickets: github`:
 
 ```bash
 gh issue list --state open --search "<key words>" --limit 10
@@ -40,17 +51,17 @@ gh issue list --state open --search "<key words>" --limit 10
 
 If one already covers it, show it (`gh issue view <number>`) and ask whether to add to it instead.
 
+With `tickets: files`, search the titles — line 1 — of every `.veland/*/ticket.md` with the Grep tool, `gh-<n>` copies of issues included. If one already covers it, show it and ask whether to add to it instead; on yes, show the edit and apply it with the Edit tool only once the user approves it. A ticket that has a `plan.md`, or a worktree (`.worktrees/<id>`, or `<worktreeDir>/<id>` when `.claude/veland.json` sets `worktreeDir`), is already being worked: do not edit it — say so and suggest a new ticket.
+
 Then grill: run `veland-grill`, which prints the plugin's shared `references/grill.md`, and follow it. The questions here are product questions — what changes for the user, the edge cases, what counts as done.
 
 ## Step 2 — Classify
 
-```bash
-veland-worktree init
-```
+Decide the kind: `feature`, `bug`, `improvement`, `docs` or `chore`.
 
-It prints what the draft is built from: `drafts: <path>`, one `form: <file> name: … labels: … title: … required: … fields: …` line per issue form in `.github/ISSUE_TEMPLATE/` (or `forms: none`), one `template: <file>` line per Markdown template, and `banned: […]`. Values are JSON. A non-zero exit stops the skill: relay its message.
+With `tickets: files`, that is all: no labels, issue types, forms or templates — the `form:` and `template:` lines `init` printed are ignored. Go to Step 3.
 
-Decide the kind: `feature`, `bug`, `improvement`, `docs` or `chore`. Then map it to what the repo already has — never create labels or types:
+With `tickets: github`, map the kind to what the repo already has — never create labels or types:
 
 ```bash
 gh label list --limit 100 --json name,description
@@ -66,7 +77,7 @@ If `init` printed `form:` lines, pick the form by the kind: a bug takes the form
 
 ## Step 3 — Draft and stop
 
-Write the draft to `<drafts>/<short-slug>.md`, `<drafts>` being the path on Step 2's `drafts:` line (slug: lowercase letters, digits and `-`). Line 1 is `# <title>`; optional `Labels: a, b` (existing labels only), `Type: <name>` and `Form: <file name>` lines follow directly; then a blank line and the body:
+Write the draft to `<drafts>/<short-slug>.md`, `<drafts>` being the path on `init`'s `drafts:` line (slug: lowercase letters, digits and `-`; with `tickets: files` it becomes the ticket id, so never `gh-<n>` or `drafts`). Line 1 is `# <title>`; with `tickets: github`, optional `Labels: a, b` (existing labels only), `Type: <name>` and `Form: <file name>` lines follow directly — a `tickets: files` draft has none of them; then a blank line and the body:
 
 ```markdown
 # <title>
@@ -92,11 +103,21 @@ Decisions the grill did not settle with the user, each with the answer taken. Om
 
 Title: a bug by the problem observed (`Close reports a merged PR as open`), a feature by the need (`A way to file issues that follow the repo's forms`), in the repo's language — never a `scope:` prefix unless the form's `title` sets one, even when existing issues have one.
 
-Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases on Step 2's `banned:` line — `veland-land issue` refuses them outside code, as it refuses an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
+Every criterion is checkable: no `TBD`, `handle edge cases`, `as needed` or the other phrases on `init`'s `banned:` line — `veland-land issue` and `veland-land ticket` refuse them outside code, as they refuse an unnumbered criterion, two checkboxes on one line and an empty or missing required form section.
 
-Show the draft once: one line `Kind: <kind> → <label, type or form file name>` (the kind is not in the file), the draft's path on one line, then the file verbatim as rendered markdown — never summarised again in the same reply. **Stop** until the user approves or edits it.
+Show the draft once: one line `Kind: <kind> → <label, type or form file name>`, or `Kind: <kind> → ticket file` with `tickets: files` (the kind is not in the file), the draft's path on one line, then the file verbatim as rendered markdown — never summarised again in the same reply. **Stop** until the user approves or edits it.
 
 ## Step 4 — Create
+
+With `tickets: files`:
+
+```bash
+veland-land ticket <short-slug>
+```
+
+It reads only that draft and refuses a `Labels:`, `Type:` or `Form:` line, a draft that fails the checks above, or a slug that already has a `.veland/<slug>/` directory, naming the line or the directory — fix the draft, or rename it to a new slug, and run it again. Otherwise it writes the draft verbatim to `.veland/<short-slug>/ticket.md`, deletes the draft and prints `ticket: <path>`. Report that path and the next step, `/veland:work <short-slug>`.
+
+With `tickets: github`:
 
 ```bash
 veland-land issue <short-slug>
@@ -118,11 +139,11 @@ When one request yields several tickets, first show a table of the request's goa
 
 Some things are exempt from these rules and are written in full: a security warning; an irreversible action, both its warning and the statement made before acting on it, such as `/veland:close` stating the PR URL before it merges; a question to the user; and anything persisted — code, commits, issue and PR bodies, and the files under `.veland/`.
 
-The final reply is Step 4's: the issue URL and the next step.
+The final reply is Step 4's: the issue URL or the `ticket:` path, and the next step.
 
 ## Never
 
-- Never create an issue before the user has seen and approved the draft.
+- Never create an issue or a ticket file before the user has seen and approved the draft.
 - Never create labels, issue types, milestones or projects.
 - Never assign people, set milestones or add to projects unless asked.
 - Never put secrets, tokens, internal URLs or customer data in an issue body — it may be public.

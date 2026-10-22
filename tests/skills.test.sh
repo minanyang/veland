@@ -147,18 +147,24 @@ for (const skill of ["open", "work"]) {
     : bad("open: does not look up issue types through a granted veland-ticket issue-types")
 }
 
-// open drafts from veland-worktree init's listing, not from reading the forms or the banned file itself.
+// open runs veland-worktree init before anything else: its tickets: line decides whether origin and gh are checked at
+// all, and its listing — not reading the forms or the banned file itself — is what the draft is built from.
 {
   const text = fs.readFileSync(`${dir}/open/SKILL.md`, "utf8")
   // Up to the next step: Step 3's draft layout has `## ` headings of its own.
   const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
-  const runsInit = (s) => [...s.matchAll(/```bash\n([\s\S]*?)```/g)].some((b) => b[1].split("\n").some((l) => l.trim() === "veland-worktree init"))
+  const blocks = (s) => [...s.matchAll(/```bash\n([\s\S]*?)```/g)].map((b) => b[1].split("\n").map((l) => l.trim()))
+  const s1 = text.search(/^## Step 1\b/m)
+  const pre = s1 === -1 ? "" : text.slice(0, s1), steps = s1 === -1 ? text : text.slice(s1)
+  const initAt = blocks(pre).findIndex((b) => b.includes("veland-worktree init"))
+  const originAt = blocks(pre).findIndex((b) => b.includes("git remote get-url origin"))
   const s2 = step(2), s3 = step(3)
-  runsInit(s2) && !runsInit(s3) && !s3.includes("Run `veland-worktree init`") &&
+  initAt !== -1 && originAt > initAt && !blocks(steps).some((b) => b.includes("veland-worktree init")) &&
+    pre.includes("`tickets: github`") && pre.includes("`tickets: files`") &&
     ["`form:`", "`drafts:`", "`banned:`"].every((l) => (s2 + s3).includes(l)) &&
     s3.includes("`<drafts>/<short-slug>.md`") && !text.includes("Read it whole") && !text.includes("`references/banned-phrases.txt`")
-    ? ok("open: drafts from veland-worktree init's form, drafts and banned lines")
-    : bad("open: drafts from veland-worktree init's form, drafts and banned lines")
+    ? ok("open: reads the tickets mode from veland-worktree init before checking origin")
+    : bad("open: reads the tickets mode from veland-worktree init before checking origin")
 }
 
 const rule = "Never reply that something is unverified, unchecked or not yet confirmed: check it first. " +

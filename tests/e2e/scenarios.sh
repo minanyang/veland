@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sourced by run.sh: the 16 flows and the 27 scenario_<id> assertion functions.
+# Sourced by run.sh: the 17 flows and the 29 scenario_<id> assertion functions.
 #
 # A flow is one sequence of `claude -p` turns on one fixture; each scenario is an assertion function bound to a flow
 # and a checkpoint within it (`bindings`). Assertions go through lib.sh helpers that read files, git state, origin's
@@ -7,10 +7,10 @@
 
 # Report order.
 # shellcheck disable=SC2034  # used by run.sh and lib.sh
-ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3"
+ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3"
 # Execution order.
 # shellcheck disable=SC2034  # used by run.sh
-FLOWS="open-bug open-type open-dup open-nogh open-forms work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending"
+FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending"
 
 # bindings <id> — the "<flow>:<checkpoint>" pairs a scenario is judged at.
 bindings() {
@@ -20,6 +20,8 @@ bindings() {
     3) echo "open-dup:end" ;;
     4) echo "open-nogh:end" ;;
     O1) echo "open-forms:end" ;;
+    F1) echo "open-files:opened" ;;
+    F2) echo "open-files:plan" ;;
     5 | W1) echo "work-bug:plan" ;;
     W3) echo "work-bug:plan work-wide:plan" ;;
     6 | W2 | W4 | W5 | W6 | W7) echo "work-bug:end" ;;
@@ -106,6 +108,22 @@ flow_open_forms() {
   snapshot_draft
   drive "approve" "approve" 6 issue_created
   check_scenarios end
+}
+
+# No origin and no tickets key: the mode defaults to files. /veland:work then plans from the ticket file open wrote.
+flow_open_files() {
+  new_run 1 local no-origin
+  drive "$OPEN_PROMPT" "$REPLY" 6 has_draft
+  snapshot_draft
+  drive "approve" "approve" 6 has_file_ticket
+  check_scenarios opened || return 0
+  flow_wants open-files plan || return 0
+  TICKET="$(file_ticket)"
+  if [ -n "$TICKET" ]; then
+    new_session
+    drive "/veland:work $TICKET" "$REPLY" 6 has_plan
+  fi
+  check_scenarios plan
 }
 
 flow_work_bug() {
@@ -300,6 +318,25 @@ scenario_O3() {
     if [ "$n" -ge "$from" ] && [ "$n" -le "$to" ]; then hit=1; fi
   done
   ensure "the draft's Context has no scripts/lib.sh:<n> inside lines $from-$to" [ -n "$hit" ]
+}
+
+scenario_F1() {
+  local snap="$RUN/draft-snapshot.md" t
+  t="$(file_ticket)"
+  ensure "no draft was written" [ -s "$snap" ]
+  ensure "there is not exactly one .veland/<slug>/ticket.md" [ -n "$t" ]
+  ensure "ticket.md is not the approved draft" cmp -s "$snap" "$REPO/.veland/$t/ticket.md"
+  ensure "the draft was not deleted" no_drafts
+  ensure "veland-land ticket was not run" [ "$(tool_count '^veland-land ticket ')" -ge 1 ]
+  ensure "gh was called" [ ! -s "$GHD/calls.log" ]
+  ensure "a gh or git remote command ran" [ "$(tool_count '^(gh|git remote)( |$)')" = 0 ]
+}
+
+scenario_F2() {
+  ensure "open wrote no ticket file to work from" [ -n "$TICKET" ]
+  ensure "plan.md is missing" [ -s "$REPO/.veland/$TICKET/plan.md" ]
+  ensure "ticket.md is no longer the approved draft" cmp -s "$RUN/draft-snapshot.md" "$REPO/.veland/$TICKET/ticket.md"
+  ensure "veland-ticket was run" [ "$(tool_count '^veland-ticket( |$)')" = 0 ]
 }
 
 # ---------------------------------------------------------------- scenarios: work

@@ -32,12 +32,12 @@ veland turns each ticket into a loop that does not take the agent's word:
 ## The three commands
 
 ```
-/veland:open <idea>     →  draft a GitHub issue ─(you approve)→ gh-<n>
+/veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
 /veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
 ```
 
-**`/veland:open <idea>`** turns an idea, a bug or an improvement into a GitHub issue in the repo's own issue forms, labels and types. It asks you the product questions the idea leaves open, shows you the draft, and creates the issue only when you approve.
+**`/veland:open <idea>`** turns an idea, a bug or an improvement into a GitHub issue in the repo's own issue forms, labels and types — or, with `tickets: files`, into a ticket file under `.veland/` that stays on your machine. It asks you the product questions the idea leaves open, shows you the draft, and creates the ticket only when you approve.
 
 **`/veland:work <ticket>`** takes an issue or a task in words. First it plans: it asks the technical questions, writes a plan with acceptance criteria, the files it binds and the test proving each criterion, and stops for your approval. Then it builds in a worktree: implement, commit, prove the new tests go red without the change, run the gates and a cold review together, fix what the review finds, and report.
 
@@ -52,7 +52,7 @@ Every step in detail: [docs/loop.md](docs/loop.md).
 /plugin install veland@minanyang
 ```
 
-Requires `git` and `node` (18+). `/veland:open`, GitHub issue tickets and the `pr` / `pr-merge` close modes also need [`gh`](https://cli.github.com) logged in (`gh auth login`), or [`glab`](https://gitlab.com/gitlab-org/cli) for GitLab; without it, `close: local` still works. veland checks before it pushes and tells you what is missing.
+Requires `git` and `node` (18+). GitHub issue tickets (`tickets: github`, which `/veland:open` then files) and the `pr` / `pr-merge` close modes also need [`gh`](https://cli.github.com) logged in (`gh auth login`), or [`glab`](https://gitlab.com/gitlab-org/cli) for GitLab; without it, `tickets: files` and `close: local` still work. veland checks before it pushes and tells you what is missing.
 
 ### Quick start
 
@@ -66,7 +66,7 @@ Requires `git` and `node` (18+). `/veland:open`, GitHub issue tickets and the `p
 2. `/veland:work 12` plans ticket `gh-12` and stops. Read the plan, answer or approve, then run `/veland:work gh-12` again (or say "go") to build it.
 3. `/veland:close gh-12` lands it. By default it opens a PR; once you merge it, run `/veland:close gh-12` again to clean up.
 
-Optional settings — base branch, gates, close mode — live in `.claude/veland.json`: see [docs/configuration.md](docs/configuration.md).
+Optional settings — base branch, gates, close mode, where tickets live — live in `.claude/veland.json`: see [docs/configuration.md](docs/configuration.md). `tickets` is `"github"` (GitHub issues) or `"files"` (`.veland/<slug>/ticket.md`, never pushed); without it, a repo whose `origin` is on github.com gets `github` and any other gets `files`. It is independent of `close`: a repo can keep its tickets private and still land them by PR.
 
 ## What's inside
 
@@ -87,7 +87,7 @@ Invoke as `veland:<name>` (the Agent tool needs the prefix).
 
 | Skill | Does |
 |---|---|
-| `/veland:open` | Draft a GitHub issue and create it on approval |
+| `/veland:open` | Draft a ticket — a GitHub issue, or with `tickets: files` a file under `.veland/` — and create it on approval |
 | `/veland:work` | Plan a ticket, then build, verify and review it in a worktree |
 | `/veland:close` | Rebase, verify, land and clean up |
 | `/veland:commit` | Commit what this session changed — only those paths, in the repo's own message style. Commits straight away; stops to ask only on a likely secret, unclear scope or unrelated changes. Say "message only" for a draft |
