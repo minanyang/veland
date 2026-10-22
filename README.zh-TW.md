@@ -44,8 +44,6 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 
 **`/veland:close <id>`** rebase、再驗證一次，然後把整個 branch 壓成一個 squash commit 落地：開 PR 讓你合併、開 PR 並在 checks 通過後自己合併，或在本機合併，最後清理現場。
 
-**`/veland:batch <tickets>`** 在同一個 terminal 處理一整串 ticket：可以給 id、issue 編號，或 `--search "<query>"`。每張 ticket 在自己的背景 `claude -p` worker 裡跑不變的 `/veland:work` 和 `/veland:close`；你分批回答 grill、核准計畫，由 script 一次一張地落地。
-
 每一步的細節見 [docs/loop.md](docs/loop.md)（英文）。
 
 ## 安裝
@@ -73,12 +71,13 @@ base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.
 
 ## 批次處理
 
-`/veland:batch gh-12 gh-13` 或 `/veland:batch --search "label:bug"` 會同時規劃所有 ticket，把問題和計畫一次給你，核准的 ticket 在其他 ticket 還在規劃時就開始實作。`.veland/_batch/board.md` 列出每張 ticket 的階段、worker session、結果與證據，以及需要你處理的事。
+`/veland:batch gh-12 gh-13` 或 `--search "label:bug"` 會同時規劃所有 ticket，並在同一輪裡問你。`.veland/_batch/board.md` 列出每張 ticket 的階段、session、結果與證據。
 
-- `.claude/veland.json` 的 `batch.parallel` 限制同時實作的 worker 數（預設 `1`）；計畫綁定相同檔案的 ticket 不會同時跑，落地一律一次一張、依 board 順序。
-- 想進入某個 worker，用 board 上的 session id 執行 `claude --resume <session id>`。
-- worker 以 `acceptEdits` 執行，你的設定要允許 `Bash(git -C * add *)` 和 `Bash(git -C * commit *)`（注意事項見 [e2e README](tests/e2e/README.md)）。
-- `pr` 模式下，檔案重疊的 ticket 會產生重疊的 PR；`batch.parallel` 大於 1 時，多張 ticket 的 agent memory 會落在多個 branch。
+- `batch.parallel` 限制同時實作的 worker 數（預設 `1`）；ticket 一次落地一張。
+- `claude --resume <session id>` 可以進入某個 worker。
+- worker 以 `acceptEdits` 執行：要允許 `Bash(git -C * add *)` 和 `Bash(git -C * commit *)`（[注意事項](tests/e2e/README.md)）。其他被拒絕的指令會列在 board 上。
+- worker 會在無人看守下依 ticket 內文行事，所以 `--search` 只拉你信任的 issue。
+- `pr` 模式下，檔案重疊的 ticket 會產生重疊的 PR；大於 1 時，agent memory 會落在多個 branch。
 
 ## 內容
 

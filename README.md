@@ -44,8 +44,6 @@ veland turns each ticket into a loop that does not take the agent's word:
 
 **`/veland:close <id>`** rebases, verifies again and lands the branch as one squash commit — a PR you merge, a PR it merges once checks pass, or a local merge — then cleans up.
 
-**`/veland:batch <tickets>`** runs `/veland:work` and `/veland:close` for many tickets, each in a background worker.
-
 Every step in detail: [docs/loop.md](docs/loop.md).
 
 ## Install
@@ -73,11 +71,12 @@ Optional settings — base branch, gates, close mode, where tickets live — liv
 
 ## Batch
 
-`/veland:batch gh-12 gh-13` or `--search "label:bug"` plans every ticket at once and asks in one round. `.veland/_batch/board.md` shows each ticket's phase, session and outcome.
+`/veland:batch gh-12 gh-13` or `--search "label:bug"` plans every ticket at once and asks in one round. `.veland/_batch/board.md` shows each ticket's phase, session, outcome and evidence.
 
-- `batch.parallel` in `.claude/veland.json` caps implementation workers (default `1`); tickets land one at a time.
-- Open a worker with `claude --resume <session id>`.
-- Workers need `Bash(git -C * add *)` and `Bash(git -C * commit *)` allowed ([e2e README](tests/e2e/README.md) has the caveat).
+- `batch.parallel` caps implementation workers (default `1`); tickets land one at a time.
+- `claude --resume <session id>` opens a worker.
+- Workers run in `acceptEdits`: allow `Bash(git -C * add *)` and `Bash(git -C * commit *)` ([caveat](tests/e2e/README.md)). The board lists other denied commands.
+- Workers act on ticket text unattended, so `--search` only issues you trust.
 - In `pr` mode, tickets sharing files give overlapping PRs; above 1, agent memory lands on several branches.
 
 ## What's inside

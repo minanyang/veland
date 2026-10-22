@@ -18,12 +18,16 @@
 // previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused.
 // `run` starts one worker turn and waits for it: ${VELAND_BATCH_CLAUDE:-claude} -p … --output-format stream-json
 // --verbose --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's
-// latest session for reply. It refuses a plan, implement or close that `status` does not list, and a reply to a
-// planning session while any planning run is open. SIGTERM and SIGINT are forwarded to the worker. It prints
+// latest session for reply, the prompt after `--`. It refuses a plan, implement or close that `status` does not list, a
+// reply to a planning session while any planning run is open, and a reply whose first line starts with `/`. SIGTERM and SIGINT are forwarded to the worker. It prints
 // `phase: <phase>` and `board: <path>`, exit 0 once the worker ran, whatever its exit code.
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
 // `answer <id>[ approvable]`, and `done` when every ticket is settled.
-// `drop` sends SIGTERM to the ticket's open worker, marks it dropped and rewrites the board.
+// `drop` sends SIGTERM to the ticket's open worker (a process whose command line holds the run's session), marks it
+// dropped and rewrites the board.
+//
+// A permission denial does not decide a phase: a run that exits 0 is judged by the ticket's files, and its denials are
+// added to the evidence and listed under `## Needs the human`.
 //
 // Config (.claude/veland.json): `close`, `worktreeDir`, `batch.parallel` (implement runs at once, an integer ≥ 1,
 // default 1). Refusals print `veland-batch: <why>` and exit 2.
@@ -65,7 +69,11 @@ const BOARD = path.join(BATCH, 'board.md')
 for (const p of [VELAND, BATCH]) if (fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${p} is a symlink`)
 
 const tdir = (id) => path.join(VELAND, id)
-const bdir = (id) => path.join(BATCH, id)
+const bdir = (id) => {
+  const d = path.join(BATCH, id)
+  if (fs.lstatSync(d, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${d} is a symlink`)
+  return d
+}
 const rel = (p) => path.relative(ROOT, p)
 const pad = (n) => String(n).padStart(2, '0')
 const flat = (s) => String(s).replace(/[\r\n]+/g, ' ')
@@ -97,10 +105,10 @@ function parallel() {
   return v
 }
 
-// A fresh file renamed into place, so a concurrent reader never sees half of it.
+// A fresh file renamed into place, so a concurrent reader never sees half of it; `wx` never follows a planted path.
 function put(file, text) {
   const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, text)
+  fs.writeFileSync(tmp, text, { flag: 'wx' })
   fs.renameSync(tmp, file)
 }
 
@@ -272,9 +280,16 @@ function alive(pid) {
   try {
     process.kill(n, 0)
     return true
-  } catch (e) {
-    return e.code === 'EPERM'
+  } catch {
+    return false
   }
+}
+
+// The run's worker, not a pid runs.tsv was made to name: a live process whose command line holds the run's session.
+function ours(r) {
+  if (!alive(r.pid) || !r.session) return false
+  const ps = spawnSync('ps', ['-o', 'command=', '-p', String(Number(r.pid))], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  return ps.status === 0 && ps.stdout.includes(r.session)
 }
 
 const isOpen = (r) => r.end === '' && r.exit === ''
@@ -321,16 +336,17 @@ function derive(id) {
     implemented: rs.some((r) => r.session_kind === 'implement'),
     approvable: false,
   }
-  const set = (phase, evidence = fs.existsSync(turn) ? rel(turn) : '') => Object.assign(row, { phase, evidence })
+  const set = (phase, evidence = fs.existsSync(turn) ? rel(turn) : '') =>
+    Object.assign(row, { phase, evidence: row.denied ? [evidence, row.denied].filter(Boolean).join('; ') : evidence })
   if (fs.existsSync(path.join(bdir(id), 'dropped'))) return set('dropped', 'dropped by the user')
   if (!last) return set('queued', '')
   const open = isOpen(last)
   if (open && alive(last.pid)) return set(RUNNING[last.session_kind] || 'planning')
   const exit = open ? '?' : last.exit
   const tag = `run ${pad(last.n)} (${last.kind})`
+  const denied = (readOr(path.join(bdir(id), `${pad(last.n)}-denials.tsv`)) || '').split('\n').filter(Boolean)
+  if (denied.length) row.denied = `${tag} denied: ${denied.map((d) => d.split('\t').pop()).join('; ')}`
   if (exit !== '0') return set('failed', exit === '?' ? `${tag} ended without an exit code` : `${tag} exited ${exit}`)
-  const denial = (readOr(path.join(bdir(id), `${pad(last.n)}-denials.tsv`)) || '').split('\n').find(Boolean)
-  if (denial) return set('failed', `${tag} denied: ${denial.split('\t').pop()}`)
 
   if (last.session_kind === 'plan') {
     if (planText && /^Status:\s*approved\s*$/m.test(planText)) return set('approved')
@@ -412,9 +428,12 @@ function prOpen(id) {
 
 // ---------------------------------------------------------------- schedule
 
-// Why ticket <i> cannot implement now, or null.
+// Why ticket <i> cannot implement now, or null: an earlier unsettled ticket whose `## Files` are not known yet, or a
+// shared path with a running ticket or an earlier one that has not landed.
 function implementBlock(rows, i) {
   const r = rows[i]
+  const unknown = rows.slice(0, i).find((e) => !SETTLED.has(e.phase) && !e.files.length)
+  if (unknown) return `${unknown.id} (${unknown.phase}) has no plan with ## Files yet`
   for (const [j, e] of rows.entries()) {
     if (j === i) continue
     const busy = Object.values(RUNNING).includes(e.phase) || (j < i && !['landed', 'pr-open', 'dropped'].includes(e.phase))
@@ -430,7 +449,7 @@ function actions(rows) {
   for (const r of rows) if (r.phase === 'queued') out.push(`plan ${r.id}`)
   for (const r of rows)
     if (r.phase === 'waiting' && (r.last.session_kind !== 'plan' || !planning)) out.push(`answer ${r.id}${r.approvable ? ' approvable' : ''}`)
-  let slots = PARALLEL - rows.filter((r) => r.phase === 'implementing').length
+  let slots = PARALLEL - implementing(rows).length
   rows.forEach((r, i) => {
     if (r.phase !== 'approved' || slots <= 0 || implementBlock(rows, i)) return
     out.push(`implement ${r.id}`)
@@ -441,6 +460,9 @@ function actions(rows) {
   if (rows.every((r) => SETTLED.has(r.phase))) out.push('done')
   return out
 }
+
+// The tickets holding a batch.parallel slot: implementing, or waiting on a question of their implement session.
+const implementing = (rows) => rows.filter((r) => r.phase === 'implementing' || (r.phase === 'waiting' && r.last.session_kind === 'implement'))
 
 function closeCandidate(rows) {
   if (rows.some((r) => r.phase === 'closing')) return null
@@ -454,8 +476,8 @@ function refusal(rows, i, kind) {
   const want = { plan: 'queued', implement: 'approved', close: 'implemented' }[kind]
   if (r.phase !== want) return `${kind} ${r.id} refused: ${r.id} is ${r.phase}, not ${want}`
   if (kind === 'implement') {
-    const open = rows.filter((e) => e.phase === 'implementing').map((e) => e.id)
-    if (open.length >= PARALLEL) return `implement ${r.id} refused: batch.parallel is ${PARALLEL} and ${open.join(', ')} ${open.length > 1 ? 'are' : 'is'} implementing`
+    const open = implementing(rows).map((e) => `${e.id} (${e.phase})`)
+    if (open.length >= PARALLEL) return `implement ${r.id} refused: batch.parallel is ${PARALLEL} and ${open.join(', ')} ${open.length > 1 ? 'hold' : 'holds'} the slots`
     const why = implementBlock(rows, i)
     if (why) return `implement ${r.id} refused: ${why}`
     return `implement ${r.id} refused: earlier approved tickets take the batch.parallel (${PARALLEL}) slots`
@@ -482,6 +504,7 @@ function board(rows) {
     if (r.phase === 'waiting') need.push(`- ${r.id} — waiting${r.approvable ? ', plan approvable' : ''}: ${r.evidence ? flat(r.evidence) : 'no turn recorded'}`)
     else if (r.phase === 'failed' || r.phase === 'held') need.push(`- ${r.id} — ${r.phase}: ${flat(r.evidence)}`)
     else if (r.phase === 'pr-open') need.push(`- ${r.id} — merge ${flat(r.evidence)}`)
+    else if (r.denied) need.push(`- ${r.id} — ${r.phase}: ${flat(r.denied)}`)
   }
   lines.push('', '## Needs the human', ...(need.length ? need : ['- none']))
   return lines.join('\n') + '\n'
@@ -530,6 +553,8 @@ async function run(argv) {
     if (fs.lstatSync(replyFile, { throwIfNoEntry: false })?.isFile() !== true) die(`reply ${id} refused: no reply at ${rel(replyFile)}`)
     prompt = fs.readFileSync(replyFile, 'utf8')
     if (!prompt.trim()) die(`reply ${id} refused: ${rel(replyFile)} is empty`)
+    // A worker would take it as a typed command, with that skill's grants.
+    if (prompt.trimStart().startsWith('/')) die(`reply ${id} refused: ${rel(replyFile)} starts with '/'`)
     ;[flag, session, sessionKind] = ['--resume', r.last.session, r.last.session_kind]
   } else {
     if (!actions(rows).includes(`${kind} ${id}`)) die(refusal(rows, i, kind))
@@ -544,9 +569,10 @@ async function run(argv) {
   const log = path.join(bdir(id), `${nn}-${kind}.jsonl`)
   const turn = path.join(bdir(id), 'turn.md')
   put(turn, '')
-  const out = fs.openSync(log, 'w')
+  const out = fs.openSync(log, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW)
   const bin = process.env.VELAND_BATCH_CLAUDE || 'claude'
-  const child = spawn(bin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', flag, session], {
+  // The prompt after `--`, so a reply starting with `-` is never read as an option.
+  const child = spawn(bin, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', flag, session, '--', prompt], {
     cwd: ROOT,
     stdio: ['ignore', out, 'inherit'],
     // `claude -p` stops background tasks 10 minutes after the last turn unless this is 0, which would kill
@@ -616,7 +642,7 @@ function drop(argv) {
   fs.mkdirSync(bdir(id), { recursive: true })
   put(path.join(bdir(id), 'dropped'), `${new Date().toISOString()}\n`)
   const last = runs(id).at(-1)
-  if (last && isOpen(last) && alive(last.pid)) {
+  if (last && isOpen(last) && ours(last)) {
     try {
       process.kill(Number(last.pid), 'SIGTERM')
     } catch {}

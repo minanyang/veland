@@ -104,8 +104,9 @@ new_run() {
   mkdir -p "$REPO/.claude"
   jq -n --arg close "$mode" --argjson par "$par" \
     '{base: "main", gates: ["node --test"], close: $close} + (if $par > 0 then {batch: {parallel: $par}} else {} end)' >"$REPO/.claude/veland.json"
-  # The worker: the same flags as turn(); veland-batch adds -p, the output format, the permission mode and the session.
-  printf '#!/bin/bash\nexec %q "$@" --model sonnet --plugin-dir %q --setting-sources project --settings %q\n' \
+  # The worker: the same flags as turn(), before veland-batch's -p, output format, permission mode, session and
+  # `-- <prompt>`.
+  printf '#!/bin/bash\nexec %q --model sonnet --plugin-dir %q --setting-sources project --settings %q "$@"\n' \
     "$CLAUDE_BIN" "$PLUGIN" "$E2E_SETTINGS" >"$RUN/claude-worker"
   chmod +x "$RUN/claude-worker"
   renv git -C "$REPO" init -q --initial-branch=main

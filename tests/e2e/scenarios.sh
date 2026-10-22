@@ -230,6 +230,8 @@ flow_close_pending() {
 # $RUN/claude-worker. It is answered until veland-batch status says done (both tickets landed or failed).
 BATCH_REPLY="go with your recommendations; approve every plan that can be approved"
 flow_batch_two() {
+  # The conductor waits on its background `veland-batch run`s; claude -p would stop them 10 minutes after its last turn.
+  local -x CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
   new_run 1 local parallel2
   canned "$(canned_work)"
   drive "/veland:batch gh-5 gh-6" "$BATCH_REPLY" 8 batch_settled

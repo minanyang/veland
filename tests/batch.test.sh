@@ -34,14 +34,15 @@ case "$1 $2" in
 esac
 exit 0
 STUB
-# The worker: logs <flag> TAB <session> TAB <cwd> TAB <prompt> (and its background-task ceiling) and prints $WORKER_OUT (else one text turn), then
-# sleeps $WORKER_SLEEP seconds as the same process, or exits $WORKER_EXIT.
+# The worker: logs <flag> TAB <session> TAB <cwd> TAB <prompt after --> (and its background-task ceiling) and prints
+# $WORKER_OUT (else one text turn), then waits $WORKER_SLEEP seconds as the same process (exit 143 on SIGTERM), or exits
+# $WORKER_EXIT.
 cat >"$tmp/stub/worker" <<'STUB'
 #!/bin/bash
 prompt="" flag="" session=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -p) prompt="$2"; shift 2 ;;
+    --) prompt="$2"; shift 2 ;;
     --session-id|--resume) flag="$1"; session="$2"; shift 2 ;;
     *) shift ;;
   esac
@@ -54,7 +55,11 @@ else
     '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"done"}]}}' \
     '{"type":"result","result":"done"}'
 fi
-[ -z "${WORKER_SLEEP:-}" ] || exec sleep "$WORKER_SLEEP"
+if [ -n "${WORKER_SLEEP:-}" ]; then
+  trap 'kill "$s" 2>/dev/null; exit 143' TERM INT
+  sleep "$WORKER_SLEEP" & s=$!
+  wait "$s"
+fi
 exit "${WORKER_EXIT:-0}"
 STUB
 chmod +x "$tmp/stub/gh" "$tmp/stub/worker"
@@ -247,6 +252,19 @@ need "the header" test "$(head -n 1 "$B/t1/runs.tsv")" = "$(printf 'n\tkind\tses
 need "a plan run starts a new session" test "$(sed -n 1p "$WORKER_LOG" | cut -f1,4)" = "$(printf -- '--session-id\t/veland:work t1')"
 end
 
+reset; ticket t1
+begin "run reply: the reply is passed after --, and one starting with / is refused"
+vb init t1
+vb run t1 plan
+printf -- '- go with A\n' >"$B/t1/reply.md"
+need "a reply starting with - runs" exits 0 run t1 reply
+need "the worker got it as the prompt" test "$(tail -n 1 "$WORKER_LOG" | cut -f4)" = "- go with A "
+printf '  /veland:close t1\n' >"$B/t1/reply.md"
+need "a reply starting with / is refused" exits 2 run t1 reply
+need "names why" has "reply t1 refused: .veland/_batch/t1/reply.md starts with '/'"
+need "no worker started for it" test "$(wc -l <"$WORKER_LOG" | tr -d ' ')" = 2
+end
+
 reset; ticket t1 t2 t3
 begin "run reply: refused for a planning session while a planning run is open"
 vb init t1 t2 t3
@@ -265,7 +283,7 @@ end
 
 reset; ticket t1 t2 t3 t4
 begin "status: approvable only for a draft that passes plan-check"
-vb init t1 t2 t3 t4
+vb init t4 t1 t2 t3
 for t in t1 t2 t3 t4; do row "$t" plan plan 0; done
 plan_md t1 draft
 plan_md t2 draft; sed -i.bak '/^## Overlap/,/^- none/d' .veland/t2/plan.md
@@ -299,6 +317,10 @@ need "its run is recorded as killed" test "$(field t1 2 7)" = 143
 need "the marker" test -f "$B/t1/dropped"
 need "the row is dropped" phase_is t1 dropped
 need "t1 is never scheduled" acts_are "plan t2"
+sleeper; row t2 plan plan "open:$SLEEPER"
+need "drop of a run whose pid is not its worker" exits 0 drop t2
+need "leaves that process alone" kill -0 "$SLEEPER"
+kill "$SLEEPER"; wait "$SLEEPER" 2>/dev/null; rm "$B/t2/runs.tsv" "$B/t2/dropped"
 need "run plan refused" exits 2 run t1 plan
 need "run implement refused" exits 2 run t1 implement
 need "drop of a queued ticket" exits 0 drop t2
@@ -327,7 +349,7 @@ need "t3 refused" exits 2 run t3 implement
 echo '{"close":"local","batch":{"parallel":1}}' >.claude/veland.json
 need "parallel 1 with one open" acts_are ""
 need "t2 refused while t1 implements" exits 2 run t2 implement
-need "names the cap" has "batch.parallel is 1 and t1 is implementing"
+need "names the cap" has "batch.parallel is 1 and t1 (implementing) holds the slots"
 for v in 0 '"2"' 1.5 -1; do
   echo "{\"batch\":{\"parallel\":$v}}" >.claude/veland.json
   need "parallel $v is refused" exits 2 status
@@ -369,19 +391,39 @@ need "t2 closes once nothing closes" exits 0 run t2 close
 need "with /veland:close" test "$(tail -n 1 "$WORKER_LOG" | cut -f1,4)" = "$(printf -- '--session-id\t/veland:close t2')"
 end
 
+reset; ticket t1 t2
+begin "schedule: a waiting implement session keeps its batch.parallel slot"
+vb init t1 t2
+approved t1 a; row t1 implement implement 0; evidence t1 "- AC1 — asked: Which flag name?"; mkdir -p .worktrees/t1
+approved t2 b
+need "t1 waits on a question, t2 does not implement" acts_are "answer t1"
+need "t2 refused" exits 2 run t2 implement
+need "names t1's slot" has "batch.parallel is 1 and t1 (waiting) holds the slots"
+echo '{"close":"local","batch":{"parallel":2}}' >.claude/veland.json
+need "a second slot lets t2 implement" acts_are "answer t1,implement t2"
+end
+
+reset; ticket t1 t2 t3
+begin "schedule: implement waits until every earlier unsettled ticket has its Files"
+echo '{"close":"local","batch":{"parallel":3}}' >.claude/veland.json
+vb init t1 t2 t3
+row t1 plan plan 0
+approved t2 b
+need "t1 has no plan: t2 waits" acts_are "plan t3,answer t1"
+need "t2 refused" exits 2 run t2 implement
+need "names t1" has "implement t2 refused: t1 (waiting) has no plan with ## Files yet"
+plan_md t1 draft a
+need "t1's Files known: t2 implements" acts_are "plan t3,answer t1 approvable,implement t2"
+end
+
 # ---------------------------------------------------------------- failed and held
 
 reset; ticket t1 t2 t3 t4 t5 t6 t7
-begin "failed: non-zero exit, a denial, a FAIL gate, an open criterion or a close that did not land"
+begin "failed: non-zero exit, a FAIL gate, an open criterion or a close that did not land"
 vb init t1 t2 t3 t4 t5 t6 t7
 WORKER_EXIT=3 vb run t1 plan
 need "exit 0 whatever the worker's exit" test $? -eq 0
-cat >"$tmp/denied.jsonl" <<'EOF'
-{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Pushing."}]}}
-{"type":"result","result":"Pushing.","permission_denials":[{"tool_name":"Bash","tool_use_id":"u1","tool_input":{"command":"git push"}}]}
-EOF
-WORKER_OUT="$tmp/denied.jsonl" vb run t2 plan
-need "the denial is recorded" test "$(cat "$B/t2/01-denials.tsv")" = "$(printf 'Bash\tgit push')"
+vb drop t2
 approved t3 x; row t3 implement implement 0; evidence t3 "- AC1 — met: x"; mkdir -p .worktrees/t3 .veland/t3/verify
 { printf '%-28s %-6s %6s  %s\n' gate result secs log "node --check x" pass 0 a.log "npm test" FAIL 3 b.log
   printf '  │ FAIL in the log tail\n'; } >.veland/t3/verify/summary.txt
@@ -390,13 +432,32 @@ implemented t5 x; row t5 close close 0
 sleeper; row t7 plan plan "open:$SLEEPER"; kill "$SLEEPER"; wait "$SLEEPER" 2>/dev/null
 vb status
 need "exit" grep -qF "| 1 | t1 | failed | $(field t1 1 3) | failed | run 01 (plan) exited 3 |" "$B/board.md"
-need "denial" grep -qF "| t2 | failed | $(field t2 1 3) | failed | run 01 (plan) denied: git push |" "$B/board.md"
 need "FAIL gate" grep -qF "| t3 | failed | s-t3-2 | failed | gate FAIL: npm test |" "$B/board.md"
 need "open criterion" grep -qF "| t4 | failed | s-t4-2 | failed | open criterion: AC1 — pending |" "$B/board.md"
 need "close did not land" grep -qF "| t5 | failed | s-t5-3 | failed | close did not land |" "$B/board.md"
 need "a run whose pid is gone" grep -qF "| t7 | failed | s-t7-1 | failed | run 01 (plan) ended without an exit code |" "$B/board.md"
-need "each under Needs the human" test "$(grep -c '^- t[1-7] — failed: ' "$B/board.md")" = 6
+need "each under Needs the human" test "$(grep -c '^- t[1-7] — failed: ' "$B/board.md")" = 5
 need "the others stay schedulable" acts_are "plan t6"
+end
+
+reset; ticket t1 t2
+begin "denial: a run that exits 0 is judged by its files, its denials shown as evidence"
+vb init t1 t2
+cat >"$tmp/denied.jsonl" <<'EOF'
+{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Drafted."}]}}
+{"type":"result","result":"Drafted.","permission_denials":[{"tool_name":"Bash","tool_use_id":"u1","tool_input":{"command":"git fetch"}},{"tool_name":"Bash","tool_use_id":"u2","tool_input":{"command":"node --test"}}]}
+EOF
+WORKER_OUT="$tmp/denied.jsonl" vb run t1 plan
+need "the denials are recorded" test "$(cat "$B/t1/01-denials.tsv")" = "$(printf 'Bash\tgit fetch\nBash\tnode --test')"
+plan_md t1 draft a
+need "not failed: waiting on its draft" phase_is t1 waiting
+need "approvable" acts_are "plan t2,answer t1 approvable"
+need "the denials in the evidence" grep -qxF "| 1 | t1 | waiting | $(field t1 1 3) | — | .veland/_batch/t1/turn.md; run 01 (plan) denied: git fetch; node --test |" "$B/board.md"
+need "and under Needs the human" grep -qxF -- "- t1 — waiting, plan approvable: .veland/_batch/t1/turn.md; run 01 (plan) denied: git fetch; node --test" "$B/board.md"
+row t2 plan plan 0; plan_md t2 approved b; row t2 implement implement 0; evidence t2 "- AC1 — met: x"; mkdir -p .worktrees/t2
+printf 'Bash\tgit push\n' >"$B/t2/02-denials.tsv"
+need "an implemented ticket with a denial stays implemented" phase_is t2 implemented
+need "its denial is listed for the human" grep -qxF -- "- t2 — implemented: run 02 (implement) denied: git push" "$B/board.md"
 end
 
 reset; ticket t1 t2 t3 t4
