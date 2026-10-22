@@ -71,12 +71,12 @@ Optional settings — base branch, gates, close mode, where tickets live — liv
 
 ## Batch
 
-`/veland:batch gh-12 gh-13` or `--search "label:bug"` plans every ticket at once and asks in one round. `.veland/_batch/board.md` shows each ticket's phase, session, outcome and evidence.
+`/veland:batch gh-12 gh-13` or `--search "label:bug"` plans all tickets and asks in one round. `.veland/_batch/board.md` shows each ticket's phase, session and outcome.
 
 - `batch.parallel` caps implementation workers (default `1`); tickets land one at a time.
 - `claude --resume <session id>` opens a worker.
-- Workers run in `acceptEdits`: allow `Bash(git -C * add *)` and `Bash(git -C * commit *)` ([caveat](tests/e2e/README.md)). The board lists other denied commands.
-- Workers act on ticket text unattended, so `--search` only issues you trust.
+- Planning writes only under `.veland/`. After approval, workers edit and run commands from the ticket unattended: batch only issues you trust.
+- Allow `Bash(git -C * add *)` and `Bash(git -C * commit *)` ([caveat](tests/e2e/README.md)); the board lists other denials.
 - In `pr` mode, tickets sharing files give overlapping PRs; above 1, agent memory lands on several branches.
 
 ## What's inside

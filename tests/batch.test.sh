@@ -34,12 +34,13 @@ case "$1 $2" in
 esac
 exit 0
 STUB
-# The worker: logs <flag> TAB <session> TAB <cwd> TAB <prompt after --> (and its background-task ceiling) and prints
+# The worker: logs <flag> TAB <session> TAB <cwd> TAB <prompt after --> (and its background-task ceiling and its
+# permission flags) and prints
 # $WORKER_OUT (else one text turn), then waits $WORKER_SLEEP seconds as the same process (exit 143 on SIGTERM), or exits
 # $WORKER_EXIT.
 cat >"$tmp/stub/worker" <<'STUB'
 #!/bin/bash
-prompt="" flag="" session=""
+prompt="" flag="" session="" all=" $* "
 while [ $# -gt 0 ]; do
   case "$1" in
     --) prompt="$2"; shift 2 ;;
@@ -49,6 +50,7 @@ while [ $# -gt 0 ]; do
 done
 printf '%s\t%s\t%s\t%s\n' "$flag" "$session" "$PWD" "${prompt//$'\n'/ }" >>"$WORKER_LOG"
 printf '%s\n' "${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS-unset}" >>"$WORKER_LOG.ceiling"
+a="${all%% --session-id *}"; a="${a%% --resume *}"; printf '%s\n' "${a#* --verbose }" >>"$WORKER_LOG.perm"
 if [ -n "${WORKER_OUT:-}" ]; then cat "$WORKER_OUT"
 else
   printf '%s\n' '{"type":"system","subtype":"init"}' \
@@ -87,7 +89,7 @@ reset() {
   for p in ${sleepers[@]+"${sleepers[@]}"} ${bgs[@]+"${bgs[@]}"}; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
   sleepers=(); bgs=()
   rm -rf .veland .worktrees
-  : >"$WORKER_LOG"; : >"$STUB_LOG"
+  : >"$WORKER_LOG"; : >"$WORKER_LOG.perm"; : >"$STUB_LOG"
   echo '{"close":"local"}' >.claude/veland.json
 }
 begin() { CASE="$1"; cfail=0; }
@@ -211,6 +213,17 @@ end
 # ---------------------------------------------------------------- run, reply and rounds
 
 reset; ticket t1 t2
+begin "run: plan sessions write only under .veland, implement and close run in acceptEdits"
+vb init t1 t2
+vb run t1 plan
+echo "go" >"$B/t1/reply.md"; vb run t1 reply
+plan_md t1 approved a; vb run t1 implement
+need "plan" test "$(sed -n 1p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/**) Edit(.veland/**)"
+need "a reply to a plan session" test "$(sed -n 2p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/**) Edit(.veland/**)"
+need "implement" test "$(sed -n 3p "$WORKER_LOG.perm")" = "--permission-mode acceptEdits"
+end
+
+reset; ticket t1 t2
 begin "run: turn.md holds every assistant text of the run"
 vb init t1 t2
 cat >"$tmp/turn.jsonl" <<'EOF'
@@ -266,19 +279,22 @@ need "no worker started for it" test "$(wc -l <"$WORKER_LOG" | tr -d ' ')" = 2
 end
 
 reset; ticket t1 t2 t3
-begin "run reply: refused for a planning session while a planning run is open"
+begin "run reply: refused while a plan run of its round is open; one round's replies run together"
 vb init t1 t2 t3
-vb run t1 plan
 approved t3 x; row t3 implement implement 0; evidence t3 "- AC1 — asked: Which flag name?"; mkdir -p .worktrees/t3
 need "t2 plans in the background" run_bg t2 plan
+vb run t1 plan
 echo "answer" >"$B/t1/reply.md"
-need "the reply is refused" exits 2 run t1 reply
+need "the reply is refused while t2, started before t1's run ended, plans" exits 2 run t1 reply
 need "names the open planning run" has "t2 still planning"
 need "the reply stays" test -f "$B/t1/reply.md"
 need "no answer for t1 yet; an implement question at once" acts_are "answer t3"
 kill -TERM "$BG"; wait "$BG"
 need "the killed run forwards the signal and records it" test "$(field t2 1 7)" = 143
-need "the reply runs once no planning run is open" exits 0 run t1 reply
+echo "answer for t2" >"$B/t2/reply.md"
+need "t1's reply runs in the background once the round has ended" run_bg t1 reply
+need "t2's reply of the same round runs while it does" exits 0 run t2 reply
+need "the next round waits for both" acts_are "answer t3"
 end
 
 reset; ticket t1 t2 t3 t4

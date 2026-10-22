@@ -17,9 +17,11 @@
 // `--search` once, or an id with .veland/<id>/ticket.md) and exits 2 naming each one that resolves to no ticket. A
 // previous batch is archived to .veland/_batch.<YYYYMMDD-HHMMSS>/ when every ticket of it is settled, else refused.
 // `run` starts one worker turn and waits for it: ${VELAND_BATCH_CLAUDE:-claude} -p … --output-format stream-json
-// --verbose --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's
-// latest session for reply, the prompt after `--`. It refuses a plan, implement or close that `status` does not list, a
-// reply to a planning session while any planning run is open, and a reply whose first line starts with `/`. SIGTERM and SIGINT are forwarded to the worker. It prints
+// --verbose, a plan session with --permission-mode default and writes allowed under .veland/ only, implement and close
+// with --permission-mode acceptEdits, a new --session-id for plan, implement and close, --resume of the ticket's latest
+// session for reply, the prompt after `--`. It refuses a plan, implement or close that `status` does not list, a reply
+// to a planning session while a plan-session run that started before the ticket's latest run ended is open, and a
+// reply whose first line starts with `/`. SIGTERM and SIGINT are forwarded to the worker. It prints
 // `phase: <phase>` and `board: <path>`, exit 0 once the worker ran, whatever its exit code.
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
 // `answer <id>[ approvable]`, and `done` when every ticket is settled.
@@ -549,9 +551,12 @@ async function run(argv) {
   if (kind === 'reply') {
     if (!r.last) die(`reply ${id} refused: ${id} has no session to reply to`)
     if (Object.values(RUNNING).includes(r.phase)) die(`reply ${id} refused: ${id} is ${r.phase}; its run must end first`)
-    const planning = rows.filter((e) => e.phase === 'planning').map((e) => e.id)
+    // The round this ticket's question came from: plan-session runs that started before its latest run ended. Replies of
+    // one round run together; `status` holds the next round until they have all ended.
+    const ended = Number(r.last.end) || Infinity
+    const planning = rows.filter((e) => e.phase === 'planning' && Number(e.last.start) < ended).map((e) => e.id)
     if (r.last.session_kind === 'plan' && planning.length)
-      die(`reply ${id} refused: a planning round is answered once every planning run has ended (${planning.join(', ')} still planning)`)
+      die(`reply ${id} refused: a planning round is answered once every planning run of it has ended (${planning.join(', ')} still planning)`)
     if (fs.lstatSync(replyFile, { throwIfNoEntry: false })?.isFile() !== true) die(`reply ${id} refused: no reply at ${rel(replyFile)}`)
     prompt = fs.readFileSync(replyFile, 'utf8')
     if (!prompt.trim()) die(`reply ${id} refused: ${rel(replyFile)} is empty`)
@@ -573,8 +578,10 @@ async function run(argv) {
   put(turn, '')
   const out = fs.openSync(log, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW)
   const bin = process.env.VELAND_BATCH_CLAUDE || 'claude'
-  // The prompt after `--`, so a reply starting with `-` is never read as an option.
-  const child = spawn(bin, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', flag, session, '--', prompt], {
+  // A plan session writes only under .veland/, so nothing a ticket says is edited and run before its plan is approved;
+  // implement and close run in acceptEdits. The prompt goes after `--`, so a reply starting with `-` is never an option.
+  const perm = sessionKind === 'plan' ? ['--permission-mode', 'default', '--allowedTools', 'Write(.veland/**)', 'Edit(.veland/**)'] : ['--permission-mode', 'acceptEdits']
+  const child = spawn(bin, ['-p', '--output-format', 'stream-json', '--verbose', ...perm, flag, session, '--', prompt], {
     cwd: ROOT,
     stdio: ['ignore', out, 'inherit'],
     // `claude -p` stops background tasks 10 minutes after the last turn unless this is 0, which would kill

@@ -71,12 +71,12 @@ base branch、gates、close 模式、ticket 放在哪裡等選用設定放在 `.
 
 ## 批次處理
 
-`/veland:batch gh-12 gh-13` 或 `--search "label:bug"` 會同時規劃所有 ticket，並在同一輪裡問你。`.veland/_batch/board.md` 列出每張 ticket 的階段、session、結果與證據。
+`/veland:batch gh-12 gh-13` 或 `--search "label:bug"` 會規劃所有 ticket，並在同一輪裡問你。`.veland/_batch/board.md` 列出每張 ticket 的階段、session 和結果。
 
 - `batch.parallel` 限制同時實作的 worker 數（預設 `1`）；ticket 一次落地一張。
 - `claude --resume <session id>` 可以進入某個 worker。
-- worker 以 `acceptEdits` 執行：要允許 `Bash(git -C * add *)` 和 `Bash(git -C * commit *)`（[注意事項](tests/e2e/README.md)）。其他被拒絕的指令會列在 board 上。
-- worker 會在無人看守下依 ticket 內文行事，所以 `--search` 只拉你信任的 issue。
+- 規劃階段只會寫入 `.veland/`。核准之後，worker 會在無人看守下依 ticket 內容改檔、執行指令：只批次處理你信任的 issue。
+- 要允許 `Bash(git -C * add *)` 和 `Bash(git -C * commit *)`（[注意事項](tests/e2e/README.md)）；其他被拒絕的指令會列在 board 上。
 - `pr` 模式下，檔案重疊的 ticket 會產生重疊的 PR；大於 1 時，agent memory 會落在多個 branch。
 
 ## 內容

@@ -588,11 +588,15 @@ scenario_B1() {
 scenario_B2() {
   local id n kind sess sk start end ex pid
   ensure "no reply run was made" [ "$(batch_runs | awk -F'\t' '$3 == "reply"' | wc -l | tr -d ' ')" -ge 1 ]
-  # Each reply to a planning session starts after every earlier plan-session run has exited.
+  # Each reply to a planning session starts after every plan-session run of its round has exited: a run of another
+  # ticket that started before the replied ticket's previous run ended.
+  local prev
   while IFS=$'\t' read -r id n kind sess sk start end ex pid; do
     [ "$kind" = reply ] && [ "$sk" = plan ] || continue
-    ensure "reply $id/$n started while a planning run was open" \
-      [ "$(batch_runs | awk -F'\t' -v s="$start" '$5 == "plan" && $6 < s && ($7 == "-" || $7 > s)' | wc -l | tr -d ' ')" = 0 ]
+    prev="$(batch_runs | awk -F'\t' -v i="$id" -v p="$((n - 1))" '$1 == i && $2 == p { print $7 }')"
+    case "$prev" in '' | -) ensure "reply $id/$n has no ended previous run" false ;; esac
+    ensure "reply $id/$n started while a planning run of its round was open" \
+      [ "$(batch_runs | awk -F'\t' -v i="$id" -v e="$prev" -v s="$start" '$1 != i && $5 == "plan" && $6 < e && ($7 == "-" || $7 > s)' | wc -l | tr -d ' ')" = 0 ]
   done < <(batch_runs)
   for id in gh-5 gh-6; do ensure "$id has no turn.md" [ -s "$REPO/.veland/_batch/$id/turn.md" ]; done
 }
