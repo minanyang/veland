@@ -1378,7 +1378,7 @@ before="$(git rev-parse main)"
 expect "squash lands the branch" 0 veland-land squash L1
 [ "$(git rev-parse main^)" = "$before" ] && ok "one commit on the base" || bad "one commit on the base"
 [ "$(git rev-parse 'main^{tree}')" = "$(git rev-parse 'feat/L1^{tree}')" ] && ok "base has the branch's tree" || bad "base has the branch's tree"
-[ "$(git log -1 --format=%B main)" = "$(printf 'feat: land L1\n\nBody line.')" ] && ok "squash commit uses commit-msg" || bad "squash commit uses commit-msg"
+git cat-file commit main | sed '1,/^$/d' | cmp -s - "$td/commit-msg" && ok "non-gh ticket: squash commit is commit-msg unchanged" || bad "non-gh ticket: squash commit is commit-msg unchanged"
 [ -z "$(git status --porcelain)" ] && ok "main checkout updated with the base" || bad "main checkout updated with the base"
 expect "squash refuses a branch not rebased onto the base" 2 veland-land squash L1
 expect "rm after a local squash" 0 veland-worktree rm L1
@@ -1437,6 +1437,22 @@ expect "squash with unrelated uncommitted changes" 0 veland-land squash L7
 [ "$(git rev-parse main^)" = "$before" ] && [ -f seven.txt ] && ok "dirty checkout: squash applied" || bad "dirty checkout: squash applied"
 [ "$(git diff --name-only)" = f.txt ] && [ "$(git diff --cached --name-only)" = s.txt ] && ok "dirty checkout: unrelated changes kept" || bad "dirty checkout: unrelated changes kept"
 git checkout -q -- f.txt; git rm -q --cached s.txt; rm s.txt
+# a gh-<n> ticket: the squash commit carries Closes #<n>, before a closing trailer block
+: >"$tmp/stub.log"
+gh_squash() { # <id> <commit-msg contents>
+  veland-worktree add "$1" --no-setup >/dev/null
+  echo "$1" >"$tmp/land/.worktrees/$1/$1.txt"; git -C "$tmp/land/.worktrees/$1" add -A; git -C "$tmp/land/.worktrees/$1" commit -qm "feat: $1"
+  mkdir -p ".veland/$1" && printf '%s' "$2" >".veland/$1/commit-msg"
+  veland-land rebase "$1" >/dev/null && veland-land squash "$1" >/dev/null && veland-worktree rm "$1" >/dev/null
+}
+gh_squash gh-9 $'fix: nine\n  \n'
+git cat-file commit main | sed '1,/^$/d' | cmp -s - <(printf 'fix: nine\n\nCloses #9\n') && ok "gh ticket: Closes #9 appended after a subject-only message" || bad "gh ticket: Closes #9 appended after a subject-only message"
+gh_squash gh-10 $'feat: ten\n\nBody.\n\nCo-Authored-By: A <a@b>\n'
+git cat-file commit main | sed '1,/^$/d' | cmp -s - <(printf 'feat: ten\n\nBody.\n\nCloses #10\n\nCo-Authored-By: A <a@b>\n') && ok "gh ticket: Closes #10 goes before the trailer block" || bad "gh ticket: Closes #10 goes before the trailer block"
+[ "$(git log -1 --format=%B main | git interpret-trailers --parse)" = "Co-Authored-By: A <a@b>" ] && ok "gh ticket: trailers still parse after Closes #10" || bad "gh ticket: trailers still parse after Closes #10"
+gh_squash gh-11 $'feat: eleven\n\nCloses #11 \nMore text.\n'
+git cat-file commit main | sed '1,/^$/d' | cmp -s - .veland/gh-11/commit-msg && ok "gh ticket: a Closes line already present leaves commit-msg unchanged" || bad "gh ticket: a Closes line already present leaves commit-msg unchanged"
+[ ! -s "$tmp/stub.log" ] && ok "no gh call from local squashes" || bad "no gh call from local squashes"
 echo upstream2 >"$tmp/land-other/up.txt"
 git -C "$tmp/land-other" pull -q && git -C "$tmp/land-other" -c user.email=t@t -c user.name=t commit -qam "feat: upstream again" && git -C "$tmp/land-other" push -q origin main
 git fetch -q origin

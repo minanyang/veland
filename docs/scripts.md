@@ -23,7 +23,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 - `push` pushes the ticket branch (lease only if origin has it).
 - `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, and on GitHub only when the PR's head is the worktree's HEAD, the branch contains `origin/<base>` (exit 4 if it moved) and its checks are green (exit 3 when they are only still running).
 - `wait` polls the PR's checks by the same rule until green, failed or 30 minutes.
-- `squash` lands the branch on the base as one commit from `.veland/<id>/commit-msg` in `local` mode.
+- `squash` lands the branch on the base as one commit from `.veland/<id>/commit-msg` in `local` mode; for a `gh-<n>` ticket it adds `Closes #<n>` as its own paragraph (before a closing trailer block) unless `commit-msg` has that line, so pushing the base closes the issue.
 - `pr` opens the PR/MR from `.veland/<id>/pr-title` + `pr-body.md` or updates only its body, refuses a body that lacks any `##` heading of the template `check` names, and refuses a branch whose PR is already merged.
 - `issue` creates an issue from `.veland/drafts/<slug>.md` (existing labels only), then deletes the draft.
 - `comment` posts `.veland/gh-<n>/comment.md` on issue `<n>` of origin's repo, only when the url in `.veland/gh-<n>/ticket.md`'s header is that issue's, then renames it to `comment.posted.md` so it is posted once.
