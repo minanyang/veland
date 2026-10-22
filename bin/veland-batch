@@ -6,6 +6,7 @@
 //   veland-batch run <id> plan|reply|implement|close
 //   veland-batch status
 //   veland-batch drop <id>
+//   veland-batch approve <id>
 //
 // State lives in the main checkout's .veland/_batch/: `tickets` (one id per line, board order), `board.md`, and per
 // ticket <id>/: runs.tsv (`n kind session session_kind start end exit pid`, times in epoch ms, end and exit empty
@@ -25,6 +26,10 @@
 // `phase: <phase>` and `board: <path>`, exit 0 once the worker ran, whatever its exit code.
 // `status` writes and prints the board, then the actions allowed now: `plan <id>`, `implement <id>`, `close <id>`,
 // `answer <id>[ approvable]`, and `done` when every ticket is settled.
+// `approve` records the user's approval of a draft plan that passes veland-plan-check: the sha256 of plan.md with its
+// Status line blanked, in <git common dir>/veland-batch/<id>.approved, where no worker can write (a plan session may
+// write only under .veland/<id>/, and Claude Code refuses edits under .git/). A plan session's ticket is `approved`
+// only when plan.md says so and that record matches it. It then writes the approve reply to reply.md.
 // `drop` sends SIGTERM to the ticket's open worker (a process whose command line holds the run's session), marks it
 // dropped and rewrites the board.
 //
@@ -35,7 +40,7 @@
 // default 1). Refusals print `veland-batch: <why>` and exit 2.
 
 const { execFileSync, spawn, spawnSync } = require('node:child_process')
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -47,7 +52,8 @@ const KINDS = ['plan', 'reply', 'implement', 'close']
 const HEADER = ['n', 'kind', 'session', 'session_kind', 'start', 'end', 'exit', 'pid']
 const RUNNING = { plan: 'planning', implement: 'implementing', close: 'closing' }
 const SETTLED = new Set(['landed', 'pr-open', 'failed', 'held', 'dropped'])
-const USAGE = 'usage: veland-batch init <ticket>... [--search "<query>"] | run <id> plan|reply|implement|close | status | drop <id>'
+const USAGE = 'usage: veland-batch init <ticket>... [--search "<query>"] | run <id> plan|reply|implement|close | status | drop <id> | approve <id>'
+const APPROVE_REPLY = 'Approved. Set `Status: approved` in plan.md and stop; the implementation runs in a new session.\n'
 
 const die = (msg) => {
   process.stderr.write(`veland-batch: ${msg}\n`)
@@ -72,6 +78,9 @@ const BOARD = path.join(BATCH, 'board.md')
 for (const p of [VELAND, BATCH]) if (fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${p} is a symlink`)
 
 const tdir = (id) => path.join(VELAND, id)
+const approval = (id) => path.join(common, 'veland-batch', `${id}.approved`)
+// What the user approved: plan.md with its Status line blanked, so the worker's `Status: approved` keeps the hash.
+const planHash = (text) => createHash('sha256').update(text.replace(/^Status:.*$/m, 'Status:')).digest('hex')
 const bdir = (id) => {
   const d = path.join(BATCH, id)
   if (fs.lstatSync(d, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${d} is a symlink`)
@@ -366,7 +375,10 @@ function derive(id) {
   if (exit !== '0') return set('failed', exit === '?' ? `${tag} ended without an exit code` : `${tag} exited ${exit}`)
 
   if (last.session_kind === 'plan') {
-    if (planText && /^Status:\s*approved\s*$/m.test(planText)) return set('approved')
+    if (planText && /^Status:\s*approved\s*$/m.test(planText)) {
+      if ((readOr(approval(id)) || '').trim() === planHash(planText)) return set('approved')
+      return set('failed', `plan.md says approved, but no approval of yours matches it (veland-batch approve ${id})`)
+    }
     row.approvable = !!planText && /^Status:\s*draft\s*$/m.test(planText) && planCheck(id)
     return set('waiting')
   }
@@ -592,9 +604,10 @@ async function run(argv) {
   put(turn, '')
   const out = fs.openSync(log, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW)
   const bin = process.env.VELAND_BATCH_CLAUDE || 'claude'
-  // A plan session writes only under .veland/, so nothing a ticket says is edited and run before its plan is approved;
+  // A plan session writes only under .veland/<id>/, so nothing a ticket says is edited and run before its plan is approved;
   // implement and close run in acceptEdits. The prompt goes after `--`, so a reply starting with `-` is never an option.
-  const perm = sessionKind === 'plan' ? ['--permission-mode', 'default', '--allowedTools', 'Write(.veland/**)', 'Edit(.veland/**)'] : ['--permission-mode', 'acceptEdits']
+  const own = `.veland/${id}/**`
+  const perm = sessionKind === 'plan' ? ['--permission-mode', 'default', '--allowedTools', `Write(${own})`, `Edit(${own})`] : ['--permission-mode', 'acceptEdits']
   const child = spawn(bin, ['-p', '--output-format', 'stream-json', '--verbose', ...perm, flag, session, '--', prompt], {
     cwd: ROOT,
     stdio: ['ignore', out, 'inherit'],
@@ -678,9 +691,22 @@ function drop(argv) {
   process.stdout.write(`dropped: ${id}\nboard: ${BOARD}\n`)
 }
 
+function approve(argv) {
+  if (argv.length !== 1) die(USAGE)
+  const [id] = argv
+  const { rows, i } = ticketRows(id)
+  const r = rows[i]
+  if (r.phase !== 'waiting' || !r.approvable) die(`approve ${id} refused: ${id} is ${r.phase}${r.phase === 'waiting' ? ' and its plan.md is not a draft that passes veland-plan-check' : ''}`)
+  fs.mkdirSync(path.dirname(approval(id)), { recursive: true })
+  put(approval(id), planHash(fs.readFileSync(path.join(tdir(id), 'plan.md'), 'utf8')) + '\n')
+  put(path.join(bdir(id), 'reply.md'), APPROVE_REPLY)
+  process.stdout.write(`approved: ${id}\nreply: ${rel(path.join(bdir(id), 'reply.md'))}\n`)
+}
+
 const [cmd, ...args] = process.argv.slice(2)
 if (cmd === 'init') init(args)
 else if (cmd === 'run') run(args)
 else if (cmd === 'status' && !args.length) status()
 else if (cmd === 'drop') drop(args)
+else if (cmd === 'approve') approve(args)
 else die(USAGE)

@@ -88,7 +88,7 @@ reset() {
   local p
   for p in ${sleepers[@]+"${sleepers[@]}"} ${bgs[@]+"${bgs[@]}"}; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
   sleepers=(); bgs=()
-  rm -rf .veland .worktrees
+  rm -rf .veland .worktrees .git/veland-batch
   : >"$WORKER_LOG"; : >"$WORKER_LOG.perm"; : >"$STUB_LOG"
   echo '{"close":"local"}' >.claude/veland.json
 }
@@ -131,7 +131,13 @@ row() {
   else printf '%s\t%s\ts-%s-%s\t%s\t1\t2\t%s\t1\n' "$n" "$2" "$1" "$n" "$3" "$4" >>"$f"; fi
 }
 evidence() { local id=$1; shift; printf '%s\n' "$@" >".veland/$id/evidence.md"; }
-approved() { local id=$1; shift; row "$id" plan plan 0; plan_md "$id" approved "$@"; }
+# approve_plan <id> [<file>...] — the user approves a draft (veland-batch approve), then the worker marks it approved.
+approve_plan() {
+  local id=$1; shift
+  plan_md "$id" draft "$@"; veland-batch approve "$id" >/dev/null; rm -f "$B/$id/reply.md"
+  plan_md "$id" approved "$@"
+}
+approved() { local id=$1; shift; row "$id" plan plan 0; approve_plan "$id" "$@"; }
 implemented() { approved "$@"; row "$1" implement implement 0; evidence "$1" "- AC1 — met: \`bash tests/x.sh\`"; mkdir -p ".worktrees/$1"; }
 sleeper() { sleep 300 >/dev/null 2>&1 & sleepers+=($!); SLEEPER=$!; }
 # run_bg <id> <kind> — veland-batch run in the background with a worker that sleeps; waits until its row is open.
@@ -217,13 +223,13 @@ end
 # ---------------------------------------------------------------- run, reply and rounds
 
 reset; ticket t1 t2
-begin "run: plan sessions write only under .veland, implement and close run in acceptEdits"
+begin "run: plan sessions write only under .veland/<id>, implement and close run in acceptEdits"
 vb init t1 t2
 vb run t1 plan
 echo "go" >"$B/t1/reply.md"; vb run t1 reply
-plan_md t1 approved a; vb run t1 implement
-need "plan" test "$(sed -n 1p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/**) Edit(.veland/**)"
-need "a reply to a plan session" test "$(sed -n 2p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/**) Edit(.veland/**)"
+approve_plan t1 a; vb run t1 implement
+need "plan" test "$(sed -n 1p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/t1/**) Edit(.veland/t1/**)"
+need "a reply to a plan session" test "$(sed -n 2p "$WORKER_LOG.perm")" = "--permission-mode default --allowedTools Write(.veland/t1/**) Edit(.veland/t1/**)"
 need "implement" test "$(sed -n 3p "$WORKER_LOG.perm")" = "--permission-mode acceptEdits"
 end
 
@@ -311,14 +317,14 @@ vb init t4 t1 t2 t3
 for t in t1 t2 t3 t4; do row "$t" plan plan 0; done
 plan_md t1 draft
 plan_md t2 draft; sed -i.bak '/^## Overlap/,/^- none/d' .veland/t2/plan.md
-plan_md t4 approved
+approve_plan t4
 need "t1 approvable, t2 and t3 answers, t4 implements" acts_are "answer t1 approvable,answer t2,answer t3,implement t4"
 end
 
 reset; ticket t1 t2
 begin "status: an approved ticket implements while another is still planning"
 vb init t1 t2
-vb run t1 plan; plan_md t1 approved
+vb run t1 plan; approve_plan t1
 need "t2 plans in the background" run_bg t2 plan
 need "t1 can implement" acts_are "implement t1"
 need "run implement starts" exits 0 run t1 implement
@@ -355,6 +361,25 @@ approved t2 a
 need "t2 implements in the background" run_bg t2 implement
 need "init refuses an unsettled batch" exits 2 init t1
 need "naming its tickets" has "has unsettled tickets: t2 (implementing)"
+end
+
+reset; ticket t1 t2
+begin "approve: records the plan's hash under the git dir, and approved needs a matching record"
+vb init t1 t2
+row t1 plan plan 0; plan_md t1 draft a; row t2 plan plan 0
+need "a ticket with no approvable plan is refused" exits 2 approve t2
+need "names why" has "approve t2 refused: t2 is waiting and its plan.md is not a draft that passes veland-plan-check"
+need "approve exits 0" exits 0 approve t1
+need "the record is under the git dir, outside .veland" test -s .git/veland-batch/t1.approved
+need "it writes the approve reply" grep -qF 'Approved. Set `Status: approved` in plan.md and stop' "$B/t1/reply.md"
+plan_md t1 approved a
+need "approved once the worker marks it" phase_is t1 approved
+plan_md t2 approved b
+need "a plan that approves itself fails" phase_is t2 failed
+need "naming it" grep -qF "| t2 | failed | s-t2-1 | failed | plan.md says approved, but no approval of yours matches it (veland-batch approve t2) |" "$B/board.md"
+plan_md t1 approved a c
+need "a plan changed after approval fails" phase_is t1 failed
+need "neither implements" acts_are "done"
 end
 
 # ---------------------------------------------------------------- schedule
@@ -463,8 +488,8 @@ vb drop t2
 approved t3 x; row t3 implement implement 0; evidence t3 "- AC1 — met: x"; mkdir -p .worktrees/t3 .veland/t3/verify
 { printf '%-28s %-6s %6s  %s\n' gate result secs log "node --check x" pass 0 a.log "npm test" FAIL 3 b.log
   printf '  │ FAIL in the log tail\n'; } >.veland/t3/verify/summary.txt
-approved t4 x; row t4 implement implement 0; evidence t4 "- AC1 — pending"; mkdir -p .worktrees/t4
-implemented t5 x; row t5 close close 0
+approved t4 y; row t4 implement implement 0; evidence t4 "- AC1 — pending"; mkdir -p .worktrees/t4
+implemented t5 z; row t5 close close 0
 sleeper; row t7 plan plan "open:$SLEEPER"; kill "$SLEEPER"; wait "$SLEEPER" 2>/dev/null
 vb status
 need "exit" grep -qF "| 1 | t1 | failed | $(field t1 1 3) | failed | run 01 (plan) exited 3 |" "$B/board.md"
@@ -490,7 +515,7 @@ need "not failed: waiting on its draft" phase_is t1 waiting
 need "approvable" acts_are "plan t2,answer t1 approvable"
 need "the denials in the evidence" grep -qxF "| 1 | t1 | waiting | $(field t1 1 3) | — | .veland/_batch/t1/turn.md; run 01 (plan) denied: git fetch; node --test |" "$B/board.md"
 need "and under Needs the human" grep -qxF -- "- t1 — waiting, plan approvable: .veland/_batch/t1/turn.md; run 01 (plan) denied: git fetch; node --test" "$B/board.md"
-row t2 plan plan 0; plan_md t2 approved b; row t2 implement implement 0; evidence t2 "- AC1 — met: x"; mkdir -p .worktrees/t2
+row t2 plan plan 0; approve_plan t2 b; row t2 implement implement 0; evidence t2 "- AC1 — met: x"; mkdir -p .worktrees/t2
 printf 'Bash\tgit push\n' >"$B/t2/02-denials.tsv"
 need "an implemented ticket with a denial stays implemented" phase_is t2 implemented
 need "its denial is listed for the human" grep -qxF -- "- t2 — implemented: run 02 (implement) denied: git push" "$B/board.md"
@@ -499,10 +524,10 @@ end
 reset; ticket t1 t2 t3 t4
 begin "held: a later ticket sharing a Files path with a failed one"
 vb init t1 t2 t3 t4
-approved t1 src/a.js; row t1 implement implement 1
 approved t2 src/a.js lib/b.js
 approved t3 lib/
 approved t4 docs/
+approved t1 src/a.js; row t1 implement implement 1
 need "t2 held" phase_is t2 held
 need "t3 held behind the held t2" phase_is t3 held
 need "with why" grep -qxF -- "- t2 — held: shares src/a.js with t1 (failed)" "$B/board.md"
@@ -525,6 +550,8 @@ need "waiting with no plan" phase_is t1 waiting
 plan_md t1 draft
 need "waiting with a draft" phase_is t1 waiting
 plan_md t1 approved docs/
+need "failed while plan.md says approved without your approval" phase_is t1 failed
+approve_plan t1 docs/
 need "approved" phase_is t1 approved
 row t1 implement implement 0; mkdir -p .worktrees/t1
 need "failed without evidence" phase_is t1 failed

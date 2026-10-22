@@ -104,9 +104,10 @@ new_run() {
   mkdir -p "$REPO/.claude"
   jq -n --arg close "$mode" --argjson par "$par" \
     '{base: "main", gates: ["node --test"], close: $close} + (if $par > 0 then {batch: {parallel: $par}} else {} end)' >"$REPO/.claude/veland.json"
-  # The worker: the same flags as turn(), before veland-batch's -p, output format, permission mode, session and
-  # `-- <prompt>`.
-  printf '#!/bin/bash\nexec %q --model sonnet --plugin-dir %q --setting-sources project --settings %q "$@"\n' \
+  # The worker: the flags of turn(), before veland-batch's -p, output format, permission mode, session and
+  # `-- <prompt>`, but opus, as real batches run on the default model: a sonnet worker given `/veland:work gh-5` in a
+  # new session re-fetches the ticket and starts the grill again instead of reading the approved plan.md.
+  printf '#!/bin/bash\nexec %q --model opus --plugin-dir %q --setting-sources project --settings %q "$@"\n' \
     "$CLAUDE_BIN" "$PLUGIN" "$E2E_SETTINGS" >"$RUN/claude-worker"
   chmod +x "$RUN/claude-worker"
   renv git -C "$REPO" init -q --initial-branch=main

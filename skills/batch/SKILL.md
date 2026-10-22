@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(veland-batch run *)
   - Bash(veland-batch status)
   - Bash(veland-batch drop *)
+  - Bash(veland-batch approve *)
 ---
 
 # Conduct a batch of tickets
@@ -39,12 +40,12 @@ A refused `veland-batch run` (a permission or the schedule) is reported to the u
 
 ## Step 2 — Rounds of answers
 
-When `status` lists `answer` lines, Read each such ticket's `.veland/_batch/<id>/turn.md` and show them all, grouped by ticket, in one message. Give the choices per ticket: answers to its questions, or, for an `approvable` one, `approve`, `revise <notes>` and `drop`. Wait for the reply; it may cover several tickets.
+When `status` lists `answer` lines, Read each such ticket's `.veland/_batch/<id>/turn.md` and show them all, grouped by ticket, in one message. For an `approvable` one, also Read `.veland/<id>/plan.md` and show it verbatim after its turn: the user approves the plan, not the worker's account of it. Give the choices per ticket: answers to its questions, or, for an `approvable` one, `approve`, `revise <notes>` and `drop`. Wait for the reply; it may cover several tickets.
 
 Write each ticket's reply to `.veland/_batch/<id>/reply.md`, then start `veland-batch run <id> reply` in the background (same flags as Step 1):
 
 - answers: the user's words for that ticket, verbatim.
-- `approve`: run `veland-land comment <id>` first when `.veland/<id>/comment.md` exists (left to the user's permissions), then write "Approved. Set `Status: approved` in plan.md and stop; the implementation runs in a new session."
+- `approve`: run `veland-land comment <id>` first when `.veland/<id>/comment.md` exists (left to the user's permissions), then `veland-batch approve <id>`, which records the approval and writes the reply itself. Only the user's `approve` for that ticket starts it.
 - `revise <notes>`: write "Revise the plan: <notes>". Show its next turn on its own, not in a round.
 - `drop`: run `veland-batch drop <id>`.
 
@@ -65,5 +66,6 @@ The final reply is the board.
 ## Never
 
 - Never run `/veland:work` or `/veland:close` yourself, and never edit anything but `.veland/_batch/<id>/reply.md`.
+- Never run `veland-batch approve` for a ticket the user did not approve in their own words.
 - Never use `CronCreate`, `ScheduleWakeup` or `/loop`; background runs wake you.
 - Never reply that something is unverified, unchecked or not yet confirmed: check it first. Only when a check is impossible, say so, naming what was tried and why it cannot be checked.
