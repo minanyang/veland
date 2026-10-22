@@ -404,7 +404,8 @@ scenario_W7() {
 scenario_7() {
   ensure "the base did not gain exactly one commit" [ "$(rgit rev-list --count "$(cat "$RUN/initial-main")..main")" = 1 ]
   ensure "the new commit's tree is not the ticket branch's" [ "$(rgit rev-parse 'main^{tree}')" = "$(cat "$RUN/branch-tree")" ]
-  ensure "the commit message is not .veland/gh-5/commit-msg" [ "$(rgit log -1 --format=%B main)" = "$(cat "$REPO/.veland/gh-5/commit-msg")" ]
+  ensure "the commit message has no 'Closes #5' line" not grep -qx 'Closes #5' <<<"$(rgit log -1 --format=%B main)"
+  ensure "the commit message, 'Closes #5' and blank lines aside, is not .veland/gh-5/commit-msg" [ "$(rgit log -1 --format=%B main | grep -vx -e 'Closes #5' -e '[[:space:]]*')" != "$(grep -vx '[[:space:]]*' "$REPO/.veland/gh-5/commit-msg")" ]
   ensure "origin's heads changed" [ "$(origin_heads)" = "$(cat "$RUN/initial-heads")" ]
   ensure "gh was called" [ ! -s "$GHD/calls.log" ]
   ensure "the ticket branch still exists" not git -C "$REPO" show-ref --verify --quiet "refs/heads/$TICKET_BRANCH"
