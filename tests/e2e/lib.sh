@@ -105,9 +105,8 @@ new_run() {
   jq -n --arg close "$mode" --argjson par "$par" \
     '{base: "main", gates: ["node --test"], close: $close} + (if $par > 0 then {batch: {parallel: $par}} else {} end)' >"$REPO/.claude/veland.json"
   # The worker: the flags of turn(), before veland-batch's -p, output format, permission mode, session and
-  # `-- <prompt>`, but opus, as real batches run on the default model: a sonnet worker given `/veland:work gh-5` in a
-  # new session re-fetches the ticket and starts the grill again instead of reading the approved plan.md.
-  printf '#!/bin/bash\nexec %q --model opus --plugin-dir %q --setting-sources project --settings %q "$@"\n' \
+  # `-- <prompt>`.
+  printf '#!/bin/bash\nexec %q --model sonnet --plugin-dir %q --setting-sources project --settings %q "$@"\n' \
     "$CLAUDE_BIN" "$PLUGIN" "$E2E_SETTINGS" >"$RUN/claude-worker"
   chmod +x "$RUN/claude-worker"
   renv git -C "$REPO" init -q --initial-branch=main
@@ -339,29 +338,10 @@ GH6_TITLE="Rename greet_line to format_greeting"
 # shellcheck disable=SC2016,SC2034  # backticks are markdown; used by scenarios.sh
 GH6_BODY='Rename `greet_line` to `format_greeting` everywhere it is named: the code, the tests and the docs.'
 
-# prep_ticket [blocker] — the state /veland:work leaves for /veland:close: worktree and branch with the fix committed,
-# ticket.md, an approved plan.md, review.md, evidence.md.
-prep_ticket() {
-  local wt="$REPO/.worktrees/gh-5"
-  inrepo veland-worktree add gh-5 --type fix --slug greet-twice --no-setup >/dev/null || { echo "prep: worktree add failed" >&2; return 1; }
-  cat >"$wt/scripts/lib.sh" <<'LIB'
-#!/bin/bash
-# Shared helpers for bin/greet. Sourced, never run.
-
-# greet_line <name> — the line greet prints for <name>.
-greet_line() {
-  local name="$1"
-  printf 'Hello, %s!\n' "$name"
-}
-LIB
-  cat >>"$wt/test/greet.test.mjs" <<'TEST'
-
-test('prints the greeting once', () => {
-  assert.equal(greet('Ann'), 'Hello, Ann!\n')
-})
-TEST
-  renv git -C "$wt" add -- scripts/lib.sh test/greet.test.mjs
-  renv git -C "$wt" commit -q -m "fix(greet): print the greeting once"
+# prep_plan — the state an approved plan leaves for a new /veland:work session: gh-5's ticket.md and approved plan.md,
+# no worktree.
+prep_plan() {
+  inrepo veland-worktree init gh-5 >/dev/null || { echo "prep: worktree init failed" >&2; return 1; }
   ticket_file gh-5 ticket.md <<TICKET
 # $GH5_TITLE
 
@@ -414,6 +394,32 @@ none
 ## Out of scope
 Other greetings.
 PLAN
+}
+
+# prep_ticket [blocker] — the state /veland:work leaves for /veland:close: worktree and branch with the fix committed,
+# ticket.md and an approved plan.md (prep_plan), review.md, evidence.md.
+prep_ticket() {
+  local wt="$REPO/.worktrees/gh-5"
+  inrepo veland-worktree add gh-5 --type fix --slug greet-twice --no-setup >/dev/null || { echo "prep: worktree add failed" >&2; return 1; }
+  cat >"$wt/scripts/lib.sh" <<'LIB'
+#!/bin/bash
+# Shared helpers for bin/greet. Sourced, never run.
+
+# greet_line <name> — the line greet prints for <name>.
+greet_line() {
+  local name="$1"
+  printf 'Hello, %s!\n' "$name"
+}
+LIB
+  cat >>"$wt/test/greet.test.mjs" <<'TEST'
+
+test('prints the greeting once', () => {
+  assert.equal(greet('Ann'), 'Hello, Ann!\n')
+})
+TEST
+  renv git -C "$wt" add -- scripts/lib.sh test/greet.test.mjs
+  renv git -C "$wt" commit -q -m "fix(greet): print the greeting once"
+  prep_plan || return 1
   if [ "${1:-}" = blocker ]; then
     ticket_file gh-5 review.md <<'REVIEW'
 ## Round 1 — full

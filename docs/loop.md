@@ -33,7 +33,7 @@ The ticket can be:
 | Ticket | Read with | Setup |
 |---|---|---|
 | a description in words | — | — |
-| a GitHub issue number or URL | `gh issue view` | `gh auth login` |
+| a GitHub issue number, `#<n>`, `gh-<n>` or URL | `gh issue view` | `gh auth login` |
 
 The ticket id is `gh-<n>` for an issue, else a slug. The branch type follows the ticket's label or issue type (`bug` → `fix/…`).
 

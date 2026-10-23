@@ -8,11 +8,11 @@ calls of the stream-json log (tool name, Bash command, `subagent_type`, `run_in_
 ## Run
 
 ```bash
-bash tests/e2e/run.sh              # all 40 scenarios
+bash tests/e2e/run.sh              # all 41 scenarios
 bash tests/e2e/run.sh 7 O2 C3      # only these (ids are case-sensitive; an unknown id exits 2 before any claude run)
 ```
 
-It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W7, C1–C3, B1–B6, R1–R5, then `total <seconds>s`:
+It prints one line per scenario, in the order 1–14, O1–O3, F1–F2, W1–W8, C1–C3, B1–B6, R1–R5, then `total <seconds>s`:
 
 ```
 pass  7  41s
@@ -60,6 +60,9 @@ model has to find out by itself because no command prints the answer:
   types `/veland:roadmap tickets <first version>` and approves (R4: one ticket file per item, linked into the row), each
   typed command in its own session. `roadmap-gh` starts from a prepared `roadmap.md` with one version of two items and
   runs `tickets v1` against the fake `gh` (R5: two issues, their `gh-<n>` linked into the row).
+- **`work-approved`** (W8) starts from an approved `plan.md` and `ticket.md` for gh-5 and no worktree (`prep_plan`), as an
+  earlier session leaves them, and types `/veland:work gh-5` once in a new session: Step 0 must go to the worktree
+  without fetching the ticket or grilling again.
 - **Close flows start from prepared state** (`prep_ticket`): the worktree, a committed fix, `ticket.md`, an approved
   `plan.md`, `review.md` and `evidence.md` — `/veland:work` is not run.
 - **Fake `gh`** (`bin/gh`) answers from `canned.json` and `state.json`, logs every call's argv to `calls.log`, and
