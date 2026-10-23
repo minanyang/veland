@@ -529,13 +529,13 @@ scenario_W7() {
   ensure "the main checkout has agent-memory changes" [ -z "$(rgit status --porcelain -- .claude/agent-memory)" ]
 }
 
-# ---------------------------------------------------------------- scenarios: close
-
 scenario_W8() {
   ensure "veland-worktree add gh-5 was not run" [ "$(tool_count '^veland-worktree add gh-5')" -ge 1 ]
   ensure "veland-ticket github was run for an approved plan" [ "$(tool_count '^veland-ticket github')" = 0 ]
   ensure "veland-grill was run for an approved plan" [ "$(tool_count '^veland-grill')" = 0 ]
 }
+
+# ---------------------------------------------------------------- scenarios: close
 
 scenario_7() {
   ensure "the base did not gain exactly one commit" [ "$(rgit rev-list --count "$(cat "$RUN/initial-main")..main")" = 1 ]
