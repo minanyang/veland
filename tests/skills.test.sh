@@ -6,6 +6,8 @@
 # The grill must always ask a ticket's own open questions, and work must post their answers through comment.md.
 # The skills and review agents that report on work must carry the verify-first rule.
 # work and close must resolve .veland/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
+# work's Step 0 must map a typed gh-<n> to its id and read an approved plan before any ticket text is fetched; close must
+# name the valid tickets values when check refuses one.
 # open, work, close, batch and roadmap must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
@@ -246,6 +248,27 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     !text.includes("`.veland/<id>/review.md` is missing")
     ? ok("close: runs check first and resolves .veland paths against ticket dir:")
     : bad("close: runs check first and resolves .veland paths against ticket dir:")
+}
+
+// work's Step 0 only names the ticket: a typed gh-<n> is its id, and an approved plan is read before Step 1 fetches
+// any ticket text, so a new session never re-plans an approved ticket.
+{
+  const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
+  const step = (n) => (new RegExp(`^## Step ${n}\\b[\\s\\S]*?(?=^## Step )`, "m").exec(text) || [""])[0]
+  step(0).split("\n").includes("| `gh-<n>` | `gh-<n>` |")
+    ? ok("work: Step 0 maps gh-<n> to its id") : bad("work: Step 0 maps gh-<n> to its id")
+  !step(0).includes("veland-ticket") && !step(0).includes("Ticket text") && step(0).includes("`Status: approved`") &&
+    step(1).includes("`veland-ticket github")
+    ? ok("work: Step 0 reads an approved plan before any ticket text is fetched")
+    : bad("work: Step 0 reads an approved plan before any ticket text is fetched")
+}
+
+// close names the valid tickets values when check refuses one.
+{
+  const step0 = (/^## Step 0\b[\s\S]*?(?=^## Step )/m.exec(fs.readFileSync(`${dir}/close/SKILL.md`, "utf8")) || [""])[0]
+  step0.includes("`tickets: <value>`") && step0.includes("`unknown tickets value") && step0.includes("`github` and `files`")
+    ? ok("close: names the valid tickets values on check's exit 2")
+    : bad("close: names the valid tickets values on check's exit 2")
 }
 
 for (const skill of ["open", "work", "close", "batch", "roadmap"])

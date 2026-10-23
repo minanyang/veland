@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sourced by run.sh: the 20 flows and the 40 scenario_<id> assertion functions.
+# Sourced by run.sh: the 21 flows and the 41 scenario_<id> assertion functions.
 #
 # A flow is one sequence of `claude -p` turns on one fixture; each scenario is an assertion function bound to a flow
 # and a checkpoint within it (`bindings`). Assertions go through lib.sh helpers that read files, git state, origin's
@@ -7,10 +7,10 @@
 
 # Report order.
 # shellcheck disable=SC2034  # used by run.sh and lib.sh
-ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 C1 C2 C3 B1 B2 B3 B4 B5 B6 R1 R2 R3 R4 R5"
+ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 W8 C1 C2 C3 B1 B2 B3 B4 B5 B6 R1 R2 R3 R4 R5"
 # Execution order.
 # shellcheck disable=SC2034  # used by run.sh
-FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two roadmap-files roadmap-gh"
+FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide work-approved close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two roadmap-files roadmap-gh"
 
 # bindings <id> — the "<flow>:<checkpoint>" pairs a scenario is judged at.
 bindings() {
@@ -25,6 +25,7 @@ bindings() {
     5 | W1) echo "work-bug:plan" ;;
     W3) echo "work-bug:plan work-wide:plan" ;;
     6 | W2 | W4 | W5 | W6 | W7) echo "work-bug:end" ;;
+    W8) echo "work-approved:end" ;;
     7) echo "close-local:end" ;;
     8 | 12) echo "close-pr:opened" ;;
     10) echo "close-pr:end" ;;
@@ -150,6 +151,16 @@ flow_work_wide() {
   canned "$(canned_work)"
   drive "/veland:work gh-6" "$REPLY" 6 has_plan
   check_scenarios plan
+}
+
+# An approved plan from an earlier session, no worktree: one /veland:work turn in a new session.
+flow_work_approved() {
+  TICKET=gh-5
+  new_run 1 pr
+  canned "$(canned_work)"
+  prep_plan
+  drive "/veland:work gh-5" "$REPLY" 1 never
+  check_scenarios end
 }
 
 flow_close_local() {
@@ -516,6 +527,12 @@ scenario_W7() {
   ensure "the memory file is not on the branch" rgit cat-file -e "$branch:$f"
   ensure "the main checkout still has the memory file" [ ! -e "$REPO/$f" ]
   ensure "the main checkout has agent-memory changes" [ -z "$(rgit status --porcelain -- .claude/agent-memory)" ]
+}
+
+scenario_W8() {
+  ensure "veland-worktree add gh-5 was not run" [ "$(tool_count '^veland-worktree add gh-5')" -ge 1 ]
+  ensure "veland-ticket github was run for an approved plan" [ "$(tool_count '^veland-ticket github')" = 0 ]
+  ensure "veland-grill was run for an approved plan" [ "$(tool_count '^veland-grill')" = 0 ]
 }
 
 # ---------------------------------------------------------------- scenarios: close
