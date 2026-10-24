@@ -1,6 +1,6 @@
 {
   "name": "veland",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Your agent says it's done. veland checks, then lands it.",
   "author": { "name": "Min-An Yang (minanyang)", "url": "https://github.com/minanyang" },
   "homepage": "https://github.com/minanyang/veland",

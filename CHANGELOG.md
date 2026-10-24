@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-24
 
 - `/veland:batch <tickets>` works through many tickets from one terminal: each runs `/veland:work` and `/veland:close` in its own background `claude -p` worker, plans are collected and answered in rounds, and `veland-batch` schedules, records (`.veland/_batch/board.md`) and lands them one at a time. `batch.parallel` caps the implementation workers (default `1`).
 - `/veland:roadmap [requirements]` keeps `.veland/roadmap.md` — versions in order, each with the reason for its place, and what is not yet assigned, later or decided against. New requirements are merged in only after you approve the draft, and `veland-roadmap` keeps every existing row and entry unless you asked to change it. `/veland:roadmap tickets <version>` opens one ticket per item, and `/veland:batch <version>` works them and marks the version `Done <date>` once they have all landed.
