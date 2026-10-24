@@ -269,6 +269,68 @@ git -C "$wtrp" rm -q tests/b.test.sh && git -C "$wtrp" commit -qm "test: drop b"
 expect "red-proof: shell test goes RED" 0 veland-red-proof RP1
 expect "rm RP1" 0 veland-worktree rm RP1
 
+# veland-test: node --test on the changed test files, or on the files given; the tree is left as it is
+echo '{}' >.claude/veland.json
+expect "worktree add VT" 0 veland-worktree add VT --no-setup
+wtv="$tmp/repo/.worktrees/VT"
+pass_test() { printf '%s\n' "import { test } from 'node:test'" "import assert from 'node:assert'" "test('ok', () => assert.equal(1, 1))" >"$1"; }
+pass_test "$wtv/src/a.test.mjs"; echo 'export const c = 1' >"$wtv/src/c.mjs"
+git -C "$wtv" add -A && git -C "$wtv" commit -qm "test: a"
+pass_test "$wtv/src/s.test.mjs"; git -C "$wtv" add src/s.test.mjs
+mkdir "$wtv/src/new"; pass_test "$wtv/src/new/u.test.mjs"
+st_before="$(git -C "$wtv" status --porcelain)"
+veland-test VT >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && [ "$(head -n 1 "$tmp/out")" = "VT · veland-test · runner: node-test · 3 file(s)" ] &&
+  [ "$(grep -E '^(pass|FAIL) ' "$tmp/out")" = "$(printf 'pass src/a.test.mjs\npass src/new/u.test.mjs\npass src/s.test.mjs')" ] &&
+  [ "$(git -C "$wtv" status --porcelain)" = "$st_before" ] && [ ! -e .veland/VT/lock ] &&
+  ok "veland-test: runs the changed and untracked test files" || { bad "veland-test: runs the changed and untracked test files"; cat "$tmp/out"; }
+printf '%s\n' "import { test } from 'node:test'" "import assert from 'node:assert'" "test('no', () => assert.equal(1, 2))" >"$wtv/src/f.test.mjs"
+veland-test VT >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -qxF 'FAIL src/f.test.mjs' "$tmp/out" && grep -qxF 'pass src/a.test.mjs' "$tmp/out" &&
+  ok "veland-test: a failing test exits 1" || { bad "veland-test: a failing test exits 1 (exit $rc)"; cat "$tmp/out"; }
+rm "$wtv/src/f.test.mjs"
+veland-test VT src/new/u.test.mjs src/c.mjs src/new/u.test.mjs >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && [ "$(head -n 1 "$tmp/out")" = "VT · veland-test · runner: node-test · 2 file(s)" ] &&
+  [ "$(grep -E '^(pass|FAIL) ' "$tmp/out")" = "$(printf 'pass src/new/u.test.mjs\npass src/c.mjs')" ] &&
+  ok "veland-test: runs only the files given" || { bad "veland-test: runs only the files given"; cat "$tmp/out"; }
+vt_out=0
+for arg in ../VT/src/a.test.mjs src/../../x.test.mjs "$wtv/src/a.test.mjs" src/missing.test.mjs; do
+  veland-test VT src/a.test.mjs "$arg" >"$tmp/out" 2>&1; rc=$?
+  { [ "$rc" = 2 ] && grep -qF -- "$arg" "$tmp/out" && ! grep -q '^pass ' "$tmp/out"; } || { vt_out=1; echo "      $arg: exit $rc"; cat "$tmp/out"; }
+done
+[ "$vt_out" = 0 ] && ok "veland-test: refuses a path outside the worktree" || bad "veland-test: refuses a path outside the worktree"
+expect "worktree add VT2" 0 veland-worktree add VT2 --no-setup
+echo 'export const d = 1' >"$tmp/repo/.worktrees/VT2/src/d.mjs"
+veland-test VT2 >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 2 ] && grep -qF 'VT2: no changed test file — name the files to run' "$tmp/out" &&
+  ok "veland-test: no test file exits 2" || { bad "veland-test: no test file exits 2 (exit $rc)"; cat "$tmp/out"; }
+rm "$tmp/repo/.worktrees/VT2/src/d.mjs"
+expect "rm VT2" 0 veland-worktree rm VT2
+mkdir .veland/VT/lock
+veland-test VT src/a.test.mjs >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 2 ] && grep -qF "ticket VT's tree is in use by veland-verify, veland-red-proof or veland-test" "$tmp/out" && ! grep -q '^pass ' "$tmp/out" && [ -d .veland/VT/lock ] &&
+  ok "veland-test: refuses while the ticket lock is held" || { bad "veland-test: refuses while the ticket lock is held (exit $rc)"; cat "$tmp/out"; }
+rmdir .veland/VT/lock
+git -C "$wtv" rm -qf src/s.test.mjs; rm -r "$wtv/src/new"
+expect "rm VT" 0 veland-worktree rm VT
+
+# veland-test with a declared runner: each changed file matching redProof.tests, through redProof.command
+expect "worktree add VC" 0 veland-worktree add VC --no-setup
+wtc="$tmp/repo/.worktrees/VC"
+git -C "$wtc" rm -q package.json
+mkdir "$wtc/tests"
+printf '%s\n' '[ 1 = 1 ]' >"$wtc/tests/a.test.sh"
+printf '%s\n' 'exit 0' >"$wtc/tests/helper.sh"
+git -C "$wtc" add -A && git -C "$wtc" commit -qm "test: a"
+printf '%s\n' 'echo b-ran; [ 1 = 2 ]' >"$wtc/tests/b test.test.sh"
+echo '{ "redProof": { "command": "bash {file}", "tests": ["tests/*.test.sh"] } }' >.claude/veland.json
+veland-test VC >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && [ "$(head -n 1 "$tmp/out")" = "VC · veland-test · runner: custom · 2 file(s)" ] && grep -qxF 'b-ran' "$tmp/out" &&
+  [ "$(grep -E '^(pass|FAIL) ' "$tmp/out")" = "$(printf 'pass tests/a.test.sh\nFAIL tests/b test.test.sh')" ] &&
+  ok "veland-test: redProof.command runs each file" || { bad "veland-test: redProof.command runs each file (exit $rc)"; cat "$tmp/out"; }
+rm "$wtc/tests/b test.test.sh"
+expect "rm VC" 0 veland-worktree rm VC
+
 git -C "$wt" rev-parse HEAD >.veland/T1/review-head
 rh="$(cat .veland/T1/review-head)"
 echo '{ "preReviewGates": ["echo gate-ran", "echo gate-broke-it; false"] }' >.claude/veland.json

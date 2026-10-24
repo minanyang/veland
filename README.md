@@ -127,7 +127,7 @@ Details: [docs/hooks.md](docs/hooks.md).
 - **Public writes always ask.** Creating an issue and posting the planning comment are not in any skill's `allowed-tools`, so each asks for your permission even after you approved the draft. In auto mode the classifier decides instead of a prompt.
 - **Writes take only the ticket id.** Pushing, opening and merging the PR go through `veland-land`, which builds each command from the ticket id, so no settings rule should allow `gh pr merge` or `git push`.
 - **Grants last for the session you typed the skill in.** [The grant hook](docs/hooks.md#grant) allows a single command matching the skill's grants, never in subagents, and runs veland's scripts only for the ticket you typed the skill for.
-- **Some scripts run project code.** `veland-verify`, `veland-red-proof` and `veland-worktree add` run the project's gates, setup and tests, so granting them is as strong as letting the agent write files in the repo.
+- **Some scripts run project code.** `veland-verify`, `veland-red-proof`, `veland-test` and `veland-worktree add` run the project's gates, setup and tests, so granting them equals letting the agent write files in the repo.
 
 ## License
 

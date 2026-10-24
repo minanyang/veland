@@ -10,6 +10,7 @@ allowed-tools:
   - Bash(veland-ticket *)
   - Bash(veland-plan-check *)
   - Bash(veland-red-proof *)
+  - Bash(veland-test *)
   - Bash(veland-review-packet *)
   - Bash(veland-verify *)
   - Bash(git fetch)
@@ -28,7 +29,7 @@ One ticket per session. Everything the next session needs lives in `.veland/<id>
 
 `veland-worktree init <id>` and `veland-worktree add <id>` print `ticket dir: <path>` and `base: <branch> (<ref>)`. Every `.veland/<id>/` path in this skill means that ticket dir — in the main checkout, never under the worktree — and every path handed to an agent (`plan.md`, `ticket.md`, the packets) is the absolute one built from it. `<base>` is the branch on the `base:` line; never assume `main`.
 
-The scripts below (`veland-worktree`, `veland-ticket`, `veland-grill`, `veland-plan-check`, `veland-land`, `veland-red-proof`, `veland-verify`, `veland-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves. Run one command per Bash call — no `&&`, `;` or `|`.
+The scripts below (`veland-worktree`, `veland-ticket`, `veland-grill`, `veland-plan-check`, `veland-land`, `veland-red-proof`, `veland-test`, `veland-verify`, `veland-review-packet`) are on the Bash tool's PATH while the plugin is enabled. Run them from the project; they find the main checkout themselves. Run one command per Bash call — no `&&`, `;` or `|`.
 
 ## Step 0 — Which ticket, which phase
 
@@ -150,7 +151,9 @@ Choose the path by size:
 
 When in doubt, take the direct path: escalating later is cheap, a wasted agent run is not.
 
-Delegated: spawn `veland:frontend-engineer`, `veland:backend-engineer` or `veland:devops-engineer` by what the files are. Give it the absolute paths of `plan.md` and the worktree, and: *"Implement only what the plan binds, in this worktree. Write the tests the plan names, so they fail without your change. Run the affected test files while iterating, the full gate once at the end. Do not commit, push or merge."* Independent parts in different areas can go to two agents in one message.
+Edit files only with Edit and Write — never `sed`, a heredoc or another shell command — and run tests while iterating only through `veland-test <id> [test file…]`, one command per call, naming the files, not a glob: a `/veland:batch` worker runs where no one can approve any other command.
+
+Delegated: spawn `veland:frontend-engineer`, `veland:backend-engineer` or `veland:devops-engineer` by what the files are. Give it the absolute paths of `plan.md` and the worktree, and: *"Implement only what the plan binds, in this worktree. Write the tests the plan names, so they fail without your change. Edit files only with Edit and Write. Run the affected test files with `veland-test <id> <file>…` while iterating, and `veland-test <id>` once at the end. Do not commit, push or merge."*, with `<id>` filled in. Independent parts in different areas can go to two agents in one message.
 
 Before implementing, write `.veland/<id>/evidence.md` with one line per criterion of the plan, `- AC<n> — pending`. The later steps rewrite each line as they establish it:
 

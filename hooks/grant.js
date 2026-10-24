@@ -38,6 +38,7 @@ const ID_WORD = {
   'veland-worktree': 2,
   'veland-verify': 1,
   'veland-red-proof': 1,
+  'veland-test': 1,
   'veland-review-packet': 1,
   'veland-plan-check': 1,
 }

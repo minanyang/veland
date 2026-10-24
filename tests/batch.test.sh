@@ -583,6 +583,22 @@ need "the others stay schedulable" acts_are "plan t6"
 end
 
 reset; ticket t1 t2
+begin "waiting: an asked line with a criterion still pending"
+vb init t1 t2
+approved t1 a; row t1 implement implement 0; evidence t1 "- AC1 — pending" "- asked: Keep the old name?"; mkdir -p .worktrees/t1
+echo 'Keep the old name?' >"$B/t1/turn.md"
+# t2's plan has two criteria: AC2 is asked while AC1 is still pending.
+two_ac() { plan_md t2 "$1" b; awk '{ print } /^- AC1 — the change works$/ { print "- AC2 — the old name is kept" } /^\| AC1 \|/ { print "| AC2 | `tests/x.sh` | `keeps` |" }' .veland/t2/plan.md >"$tmp/plan" && cp "$tmp/plan" .veland/t2/plan.md; }
+row t2 plan plan 0; two_ac draft; veland-batch approve t2 >/dev/null; rm -f "$B/t2/reply.md"; two_ac approved
+row t2 implement implement 0; evidence t2 "- AC1 — pending" "- AC2 — asked: Keep the old name?"; mkdir -p .worktrees/t2
+echo 'Keep the old name?' >"$B/t2/turn.md"
+need "a free asked line: waiting" phase_is t1 waiting
+need "an asked criterion: waiting" phase_is t2 waiting
+need "the evidence is its turn.md" grep -qxF "| 1 | t1 | waiting | $(field t1 2 3) | — | .veland/_batch/t1/turn.md |" "$B/board.md"
+need "and t2's" grep -qF "| t2 | waiting | $(field t2 2 3) | — | .veland/_batch/t2/turn.md |" "$B/board.md"
+end
+
+reset; ticket t1 t2
 begin "denial: a run that exits 0 is judged by its files, its denials shown as evidence"
 vb init t1 t2
 cat >"$tmp/denied.jsonl" <<'EOF'

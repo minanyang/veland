@@ -448,7 +448,7 @@ function derive(id) {
     const gate = failedGate(id)
     if (gate) return set('failed', `gate FAIL: ${gate}`)
     const ev = evidence(id, planText)
-    if (ev.open) return set('failed', `open criterion: ${ev.open}`)
+    if (ev.open && !ev.asked) return set('failed', `open criterion: ${ev.open}`)
     return set(ev.asked ? 'waiting' : 'implemented')
   }
   if (last.session_kind === 'close') {

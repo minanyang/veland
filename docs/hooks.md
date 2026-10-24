@@ -26,9 +26,9 @@ When you type `/veland:open`, `/veland:work`, `/veland:close`, `/veland:batch` o
 
 Only a skill you typed (or passed to `claude -p`) counts: the hook confirms the prompt against the session's transcript before its first grant, so a prompt you did not type — a scheduled (`CronCreate`) one naming the skill, say — grants nothing.
 
-A veland script run on a ticket (`veland-land`, `veland-worktree`, `veland-verify`, `veland-red-proof`, `veland-review-packet`, `veland-plan-check`) is allowed only for the ticket you typed the skill for — `/veland:work 53` binds `gh-53`; a task in words binds the first ticket the skill works on.
+A veland script run on a ticket (`veland-land`, `veland-worktree`, `veland-verify`, `veland-red-proof`, `veland-review-packet`, `veland-plan-check`, `veland-test`) is allowed only for the ticket you typed the skill for — `/veland:work 53` binds `gh-53`; a task in words binds the first ticket the skill works on.
 
-`veland-verify`, `veland-review-packet` and `veland-red-proof` run the commands in that worktree's `.claude/veland.json`, so an edit to that file runs without a prompt the next time they run in the session; likewise, with veland loaded through `--plugin-dir` from a checkout inside the working directory, an edit to its `bin/` scripts runs unprompted under the grants.
+`veland-verify`, `veland-review-packet`, `veland-red-proof` and `veland-test` run the commands in that worktree's `.claude/veland.json`, so an edit to that file runs without a prompt the next time they run in the session; likewise, with veland loaded through `--plugin-dir` from a checkout inside the working directory, an edit to its `bin/` scripts runs unprompted under the grants.
 
 "Typed" means what the transcript records as your input: a prompt another program types into the session's terminal, or the opening prompt of a teammate session a model starts, counts as typed if Claude Code records it so.
 

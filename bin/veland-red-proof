@@ -39,15 +39,7 @@ id="${1:-}"; [ -n "$id" ] || die "usage: veland-red-proof <id>"
 check_id "$id"
 path="$(wt_path "$id")"
 [ -z "$(tree_status "$path")" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
-rp_cmd="$(wt_cfg "$path" redProof.command)"
-rp_globs=()
-if [ -n "$rp_cmd" ]; then
-  while IFS= read -r g; do [ -n "$g" ] && rp_globs+=(":(glob)$g"); done < <(wt_cfg "$path" redProof.tests)
-  [ ${#rp_globs[@]} -gt 0 ] || die "redProof.command is set but redProof.tests is missing (git pathspec globs naming the test files)"
-  [[ "$rp_cmd" == *'{file}'* ]] || die "redProof.command has no {file} placeholder"
-elif [ ! -f "$path/package.json" ]; then
-  die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) out of the box; for another stack set redProof.command and redProof.tests in .claude/veland.json"
-fi
+rp_config "$path"
 base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
 
 cmd_tests=""
@@ -96,23 +88,8 @@ restore() {
 }
 trap restore EXIT
 
-pm="$(package_manager "$path")"
-exec_cmd=("$pm" exec); [ "$pm" = npm ] && exec_cmd=(npx --no-install)
-if [ -n "$rp_cmd" ]; then
-  runner=custom
-elif ls "$path"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
-  runner=jest
-elif ls "$path"/vitest.config.* >/dev/null 2>&1 || node -e 'const p = require(process.argv[1]); process.exit({ ...p.dependencies, ...p.devDependencies }.vitest ? 0 : 1)' "$path/package.json" 2>/dev/null; then
-  runner=vitest
-else
-  runner=node-test
-fi
-
-fill_file() { # <path> — redProof.command with every {file} replaced by the shell-quoted path
-  local c=$rp_cmd q; q="$(printf %q "$1")"
-  while [[ "$c" == *'{file}'* ]]; do c="${c%%'{file}'*}$q${c#*'{file}'}"; done
-  printf '%s' "$c"
-}
+runner_exec "$path"
+runner="$(test_runner "$path")"
 
 run_tests() { # <json> <log> — run the changed test files, write a jest-shaped report
   local json=$1 log=$2 t st sep=''
@@ -124,7 +101,7 @@ run_tests() { # <json> <log> — run the changed test files, write a jest-shaped
       : >"$log"
       printf '{"testResults":[' >"$json"
       for t in "${tests[@]}"; do
-        ( cd "$path" && bash -c "$(fill_file "$t")" ) >>"$log" 2>&1 && st=passed || st=failed
+        ( cd "$path" && bash -c "$(rp_fill "$t")" ) >>"$log" 2>&1 && st=passed || st=failed
         printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
       done
       printf ']}' >>"$json" ;;

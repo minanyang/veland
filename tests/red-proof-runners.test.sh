@@ -62,6 +62,11 @@ EOF
   ! grep -q '· mul multiplies' "$tmp/out" && ok "$runner: does not list the real test" || bad "$runner: does not list the real test"
   [ -z "$(git -C "$wt" status --porcelain)" ] && grep -q mul "$wt/src/calc.$ext" && ok "$runner: tree restored" || bad "$runner: tree restored"
 
+  veland-test T1 >"$tmp/out" 2>&1; local rc=$?
+  [ "$rc" = 0 ] && [ "$(head -n 1 "$tmp/out")" = "T1 · veland-test · runner: $runner · 1 file(s)" ] &&
+    [ "$(grep -E '^(pass|FAIL) ' "$tmp/out")" = "pass src/calc.test.$ext" ] &&
+    ok "$runner: veland-test runs the changed test file" || { bad "$runner: veland-test runs the changed test file (exit $rc)"; sed 's/^/      /' "$tmp/out"; }
+
   # a test that does not test the change
   cat >"$wt/src/noop.test.$ext" <<EOF
 $header

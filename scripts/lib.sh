@@ -161,6 +161,49 @@ package_manager() {
   fi
 }
 
+# rp_config <worktree> — sets rp_cmd (redProof.command) and rp_globs (redProof.tests as git pathspecs), or dies
+# when the declared runner is incomplete or the stack has no package.json and no declared runner.
+rp_config() {
+  local g
+  rp_cmd="$(wt_cfg "$1" redProof.command)"
+  rp_globs=()
+  if [ -n "$rp_cmd" ]; then
+    while IFS= read -r g; do [ -n "$g" ] && rp_globs+=(":(glob)$g"); done < <(wt_cfg "$1" redProof.tests)
+    [ ${#rp_globs[@]} -gt 0 ] || die "redProof.command is set but redProof.tests is missing (git pathspec globs naming the test files)"
+    [[ "$rp_cmd" == *'{file}'* ]] || die "redProof.command has no {file} placeholder"
+  elif [ ! -f "$1/package.json" ]; then
+    die "unsupported: red-proof runs JavaScript/TypeScript tests (jest, vitest, node --test) out of the box; for another stack set redProof.command and redProof.tests in .claude/veland.json"
+  fi
+}
+
+# test_runner <worktree> — custom (redProof.command, after rp_config), jest, vitest, else node-test.
+test_runner() {
+  if [ -n "${rp_cmd:-}" ]; then
+    echo custom
+  elif ls "$1"/jest.config.* >/dev/null 2>&1 || node -e 'process.exit(require(process.argv[1]).jest ? 0 : 1)' "$1/package.json" 2>/dev/null; then
+    echo jest
+  elif ls "$1"/vitest.config.* >/dev/null 2>&1 || node -e 'const p = require(process.argv[1]); process.exit({ ...p.dependencies, ...p.devDependencies }.vitest ? 0 : 1)' "$1/package.json" 2>/dev/null; then
+    echo vitest
+  else
+    echo node-test
+  fi
+}
+
+# runner_exec <worktree> — sets the array exec_cmd: `<pm> exec`, or `npx --no-install` for npm.
+runner_exec() {
+  local pm
+  pm="$(package_manager "$1")"
+  # shellcheck disable=SC2034  # read by the caller
+  if [ "$pm" = npm ]; then exec_cmd=(npx --no-install); else exec_cmd=("$pm" exec); fi
+}
+
+# rp_fill <path> — rp_cmd with every {file} replaced by the shell-quoted path.
+rp_fill() {
+  local c=$rp_cmd q; q="$(printf %q "$1")"
+  while [[ "$c" == *'{file}'* ]]; do c="${c%%'{file}'*}$q${c#*'{file}'}"; done
+  printf '%s' "$c"
+}
+
 has_script() { # <dir> <script>
   [ -f "$1/package.json" ] && node -e 'process.exit((require(process.argv[1]).scripts || {})[process.argv[2]] ? 0 : 1)' "$1/package.json" "$2"
 }
@@ -181,12 +224,12 @@ ensure_excluded() {
 MEMORY_EXCLUDE=':(exclude).claude/agent-memory'
 tree_status() { git -C "$1" status --porcelain -- . "$MEMORY_EXCLUDE"; } # <dir>
 
-# Ticket-level lock shared by verify and red-proof, so a test run never overlaps a tree rewrite.
+# Ticket-level lock shared by verify, red-proof and veland-test, so a test run never overlaps a tree rewrite.
 take_lock() { # <id>
   local lock
   lock="$(task_dir "$1")/lock"
   mkdir -p "$(task_dir "$1")"
-  mkdir "$lock" 2>/dev/null || die "ticket $1 is already being verified or red-proofed (lock: $lock, pid $(cat "$lock/pid" 2>/dev/null || echo '?')); remove the directory if that process is gone"
+  mkdir "$lock" 2>/dev/null || die "ticket $1's tree is in use by veland-verify, veland-red-proof or veland-test (lock: $lock, pid $(cat "$lock/pid" 2>/dev/null || echo '?')); remove the directory if that process is gone"
   echo $$ >"$lock/pid"
   LOCK_DIR="$lock"
 }

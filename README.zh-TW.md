@@ -127,7 +127,7 @@ skills 用到的 script 見 [docs/scripts.md](docs/scripts.md)（英文）。
 - **公開寫入一律會問。** 建立 issue 和貼規劃留言都不在任何 skill 的 `allowed-tools` 裡，所以就算你已經核准草稿，每次還是會跳出權限詢問。在 auto mode 下則由分類器決定，不會跳出詢問。
 - **寫入只吃 ticket id。** push、開 PR、合併 PR 都經過 `veland-land`，它只用 ticket id 組出每個指令，所以不應該在設定裡允許 `gh pr merge` 或 `git push`。
 - **授權只在你輸入 skill 的那個 session 有效。** [Grant hook](docs/hooks.md#grant) 只放行符合該 skill 授權的單一指令，subagent 裡不適用，而 veland 的 script 只能用在你輸入 skill 時指定的那張 ticket。
-- **有些 script 會執行專案的程式碼。** `veland-verify`、`veland-red-proof` 和 `veland-worktree add` 會跑專案的 gates、setup 和測試，所以授權它們，等同於讓 agent 可以寫入 repo 裡的檔案。
+- **有些 script 會執行專案的程式碼。** `veland-verify`、`veland-red-proof`、`veland-test` 和 `veland-worktree add` 會跑專案的 gates、setup 和測試，所以授權它們，等同於讓 agent 可以寫入 repo 裡的檔案。
 
 ## 授權
 
