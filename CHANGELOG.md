@@ -6,6 +6,7 @@
 - `/veland:roadmap [requirements]` keeps `.veland/roadmap.md` — versions in order, each with the reason for its place, and what is not yet assigned, later or decided against. New requirements are merged in only after you approve the draft, and `veland-roadmap` keeps every existing row and entry unless you asked to change it. `/veland:roadmap tickets <version>` opens one ticket per item, and `/veland:batch <version>` works them and marks the version `Done <date>` once they have all landed.
 - A `tickets` setting in `.claude/veland.json`, independent of `close`: `"github"` files `/veland:open`'s tickets as GitHub issues, `"files"` writes them to `.veland/<slug>/ticket.md` with no `gh` and no `origin` (`veland-land ticket`). Without it, a github.com `origin` means `github`, anything else `files`.
 - `/veland:work gh-<n>` in a new session goes straight to the worktree when the ticket's plan is already approved, on any model: Step 0 only names the ticket and reads the plan, and the ticket text is fetched in Step 1. `/veland:close` names the valid `tickets` values when `veland-land check` refuses one.
+- `/veland:batch` implement workers run tests through `veland-test <id> [test file…]`, a granted script that uses red-proof's runner, and edit with Edit and Write, so they need no settings rule for the test runner. A worker waiting on a question shows as `waiting`, not `failed`, even with criteria still pending.
 
 ## 0.1.0 — 2026-10-21
 

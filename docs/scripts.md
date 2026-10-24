@@ -38,6 +38,10 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 
 `veland-red-proof <id>` runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`, or the `redProof` command of any other stack); a test that fails at HEAD exits 2.
 
+## veland-test
+
+`veland-test <id> [test file…]` runs test files in the ticket's worktree with the runner `veland-red-proof` detects, without touching the tree: the files given (relative to the worktree root), or else every test file the branch changed — committed, uncommitted or untracked. It prints the runner's output, then `pass <file>` or `FAIL <file>` per file; exit 1 when a test fails, 2 when it cannot run (no test file, a path outside the worktree, an unsupported stack, or `veland-verify` or `veland-red-proof` holding the ticket's tree). `/veland:work` runs tests only through it, so a `/veland:batch` worker needs no settings rule for the project's test runner.
+
 ## veland-plan-check
 
 `veland-plan-check <id>` refuses `.veland/<id>/plan.md`, naming every line at fault, when:

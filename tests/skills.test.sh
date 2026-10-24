@@ -8,6 +8,7 @@
 # work and close must resolve .veland/<id>/ paths against the printed `ticket dir:` and take the base from `base:`.
 # work's Step 0 must map a typed gh-<n> to its id and read an approved plan before any ticket text is fetched; close must
 # name the valid tickets values when check refuses one.
+# work must grant veland-test and run tests only through it, editing only with Edit and Write.
 # open, work, close, batch and roadmap must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
@@ -269,6 +270,22 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
   step0.includes("`tickets: <value>`") && step0.includes("`unknown tickets value") && step0.includes("`github` and `files`")
     ? ok("close: names the valid tickets values on check's exit 2")
     : bad("close: names the valid tickets values on check's exit 2")
+}
+
+// work's implementer runs tests only through a granted veland-test and edits only with Edit and Write: a /veland:batch
+// worker runs where no one can approve a test runner or a shell edit.
+{
+  const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
+  const front = (/^---\n([\s\S]*?)\n---/.exec(text) || ["", ""])[1]
+  front.split("\n").includes("  - Bash(veland-test *)")
+    ? ok("work: grants veland-test") : bad("work: grants veland-test")
+  const step3 = (/^## Step 3\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  const delegated = (/^Delegated:.*$/m.exec(step3) || [""])[0]
+  step3.includes("`veland-test <id> [test file…]`") && step3.includes("only with Edit and Write") &&
+    delegated.includes("`veland-test <id>") && delegated.includes("only with Edit and Write") &&
+    !delegated.includes("the full gate once at the end")
+    ? ok("work: Step 3 runs tests only through veland-test and edits only with Edit and Write")
+    : bad("work: Step 3 runs tests only through veland-test and edits only with Edit and Write")
 }
 
 for (const skill of ["open", "work", "close", "batch", "roadmap"])

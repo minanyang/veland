@@ -1,7 +1,7 @@
 {
   "base": "main",
   "gates": [
-    "shellcheck bin/veland-grill bin/veland-land bin/veland-plan-check bin/veland-red-proof bin/veland-review-packet bin/veland-verify bin/veland-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
+    "shellcheck bin/veland-grill bin/veland-land bin/veland-plan-check bin/veland-red-proof bin/veland-review-packet bin/veland-test bin/veland-verify bin/veland-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
     "node --check bin/veland-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check scripts/issue-form.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js && node --check tests/e2e/fixture/test/greet.test.mjs && node --check bin/veland-batch && node --check bin/veland-roadmap && node --check scripts/roadmap.js",
     "bash tests/guard-bash.test.sh",
     "bash tests/context-gate.test.sh",
@@ -21,7 +21,7 @@
     "tests": ["tests/*.test.sh"]
   },
   "preReviewGates": [
-    "shellcheck bin/veland-grill bin/veland-land bin/veland-plan-check bin/veland-red-proof bin/veland-review-packet bin/veland-verify bin/veland-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
+    "shellcheck bin/veland-grill bin/veland-land bin/veland-plan-check bin/veland-red-proof bin/veland-review-packet bin/veland-test bin/veland-verify bin/veland-worktree scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/bin/ssh tests/e2e/fixture/bin/greet tests/e2e/fixture/scripts/*.sh",
     "node --check bin/veland-ticket && node --check hooks/context-gate.js && node --check hooks/stop-gate.js && node --check scripts/md-check.js && node --check scripts/issue-form.js && node --check hooks/grant.js && node --check tests/e2e/bin/gh && node --check tests/e2e/toollog.js && node --check tests/e2e/fixture/test/greet.test.mjs && node --check bin/veland-batch && node --check bin/veland-roadmap && node --check scripts/roadmap.js"
   ],
   "close": "pr-merge",

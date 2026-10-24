@@ -300,6 +300,8 @@ check "$T: a gh grant" allow "$(bash_ s30 "gh pr view 7")"
 prompt s30 "/veland:work gh-5" >/dev/null
 check "$T: work's packet for the ticket" allow "$(bash_ s30 "veland-review-packet gh-5 --fixes")" "granted by /veland:work"
 check "$T: work's plan check on another ticket" nothing "$(bash_ s30 "veland-plan-check gh-9")"
+check "veland-test on the typed ticket" allow "$(bash_ s30 "veland-test gh-5 src/a.test.mjs")" "granted by /veland:work"
+check "veland-test on another ticket" nothing "$(bash_ s30 "veland-test gh-9 src/a.test.mjs")"
 prompt s30 "/veland:close gh-9" >/dev/null
 check "$T: typing the skill again binds the new ticket" allow "$(bash_ s30 "veland-land merge gh-9")"
 check "$T: and not the old one" nothing "$(bash_ s30 "veland-land merge gh-5")"
