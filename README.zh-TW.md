@@ -4,7 +4,7 @@
 
 Agent 說做完了，veland 驗證過才合併。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
+[![Release](https://img.shields.io/github/v/release/minanyang/veland)](https://github.com/minanyang/veland/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
 
 [English](README.md) · **繁體中文**
 

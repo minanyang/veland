@@ -4,7 +4,7 @@
 
 Your agent says it's done. veland checks, then lands it.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
+[![Release](https://img.shields.io/github/v/release/minanyang/veland)](https://github.com/minanyang/veland/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
 
 **English** · [繁體中文](README.zh-TW.md)
 
