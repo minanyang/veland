@@ -1,9 +1,10 @@
 {
   "name": "veland",
+  "displayName": "veland",
   "version": "0.2.0",
   "description": "Your agent says it's done. veland checks, then lands it.",
-  "author": { "name": "Min-An Yang (minanyang)", "url": "https://github.com/minanyang" },
-  "homepage": "https://github.com/minanyang/veland",
+  "author": { "name": "Min-An Yang", "url": "https://github.com/minanyang" },
+  "homepage": "https://github.com/minanyang/veland#readme",
   "repository": "https://github.com/minanyang/veland",
   "license": "MIT",
   "keywords": ["claude-code", "workflow", "code-review", "worktree", "agents"]
