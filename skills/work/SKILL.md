@@ -188,7 +188,7 @@ Delegated: spawn `veland:frontend-engineer`, `veland:backend-engineer` or `velan
 When a locked test is itself wrong — not when the implementation cannot make it pass:
 
 1. Commit the implementation so far: red-proof needs a clean tree.
-2. Write `.veland/<id>/relock-request.md`, leaving the worktree unchanged. It holds the reason; the text of every criterion whose `## Tests` row names the file, with those rows; the locked file's path; and the proposed change as a unified diff.
+2. Write `.veland/<id>/relock-request.md`, leaving the worktree unchanged. It holds the reason; the text of every criterion whose `## Tests` row names a file it changes, with those rows; the locked files' paths; and the proposed change as a unified diff. One request may cover several wrong locked files.
 3. Spawn a fresh `veland:code-reviewer` with only the path of `.veland/<id>/relock-request.md` and: *"Read this relock request whole, and nothing of the implementation. Judge whether the proposed change fixes a defect in the test, or weakens or changes what the criterion requires. Answer with one line: `approved — <why>` or `rejected — <why>`."*
 4. Append the entry to `.veland/<id>/relock.md`, its ruling verbatim:
    ```markdown
@@ -197,7 +197,7 @@ When a locked test is itself wrong — not when the implementation cannot make i
    - ruling: approved — <the arbiter's words>
    - commit: <sha of the one test-only commit>
    ```
-5. If approved: apply the diff with Edit, commit only the locked files, add the `commit` line, and run `veland-red-proof <id>`: it accepts the change and moves the lock to that commit.
+5. If approved: apply the diff with Edit, commit only the locked files, add the `commit` line, and run `veland-red-proof <id>`: it accepts the change and moves the lock to that commit. Several relocks may be pending, each committed straight after the one before with no edit to a locked file between; red-proof accepts them together, in order.
 6. If rejected: no `commit` line. Write `- asked: <the arbiter's reason, and whether to keep the test or change the criterion>` to `evidence.md`, and stop.
 
 ## Step 4 — Commit

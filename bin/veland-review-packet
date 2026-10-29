@@ -31,8 +31,9 @@
 # level) by a `source "$(dirname …)/…"` or a relative `require` resolvable without running it; no such line otherwise.
 #
 # Both write a `## Relocks` section after it (`none` when .veland/<id>/relock.md is missing or empty): each entry's
-# `### Relock <n> — approved|rejected` heading, reason and ruling, and for an approved entry veland-red-proof accepted,
-# `git diff <the lock it replaced> <its commit>` of the locked files.
+# `### Relock <n> — approved|rejected` heading; for an approved entry veland-red-proof accepted, `git diff <the lock it
+# replaced> <its commit>` of the locked files, in a fence longer than any backtick run in it; then its reason and
+# ruling under `Written by the implementer, not verified:`.
 #
 # Both exit 2 before the gates when a file veland-red-proof --lock locked differs at HEAD from the lock: a change to
 # a locked test is accepted only by veland-red-proof, through a relock.
@@ -228,13 +229,20 @@ locked_files=()
 while IFS= read -r f; do [ -z "$f" ] || locked_files+=("$f"); done < <(lock_files "$path")
 while IFS=$'\x1f' read -r n verdict commit reason ruling; do
   [ -z "$relocks" ] || relocks+=$'\n'
-  relocks+="### Relock $n — ${verdict:-no ruling}"$'\n\n'"- reason: $reason"$'\n'"- ruling: $ruling"$'\n'
-  [ "$verdict" = approved ] && [ -n "$commit" ] || continue
-  sha="$(git -C "$path" rev-parse -q --verify "$commit^{commit}")" || continue
-  # Only a relock red-proof accepted is a lock commit; the one before it is the lock it replaced.
-  prev="$(printf '%s\n' "$lock_shas" | awk -v s="$sha" '$0 == s { print p; exit } { p = $0 }')"
-  [ -n "$prev" ] || continue
-  relocks+=$'\n```diff\n'"$(git -C "$path" diff "$prev" "$sha" -- "${locked_files[@]}")"$'\n```\n'
+  relocks+="### Relock $n — ${verdict:-no ruling}"$'\n\n'
+  sha=""; prev=""
+  if [ "$verdict" = approved ] && [ -n "$commit" ] && sha="$(git -C "$path" rev-parse -q --verify "$commit^{commit}")"; then
+    # Only a relock red-proof accepted is a lock commit; the one before it is the lock it replaced.
+    prev="$(printf '%s\n' "$lock_shas" | awk -v s="$sha" '$0 == s { print p; exit } { p = $0 }')"
+  fi
+  if [ -n "$prev" ]; then
+    d="$(git -C "$path" --literal-pathspecs diff "$prev" "$sha" -- "${locked_files[@]}")"
+    # A fence longer than any backtick run in the diff, so a ``` line in a test cannot close it.
+    ticks="$(printf '%s\n' "$d" | awk '{ while (match($0, /`+/)) { if (RLENGTH > m) m = RLENGTH; $0 = substr($0, RSTART + RLENGTH) } } END { print (m < 3 ? 3 : m + 1) }')"
+    fence="$(printf '%*s' "$ticks" '' | tr ' ' '`')"
+    relocks+="${fence}diff"$'\n'"$d"$'\n'"$fence"$'\n\n'
+  fi
+  relocks+="Written by the implementer, not verified:"$'\n\n'"- reason: $reason"$'\n'"- ruling: $ruling"$'\n'
 done < <(relock_entries "$dir/relock.md")
 relocks="${relocks%$'\n'}"
 

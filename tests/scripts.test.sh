@@ -609,6 +609,9 @@ refuses "red-proof --lock: refuses a Tests file the branch leaves out" src/cube.
 red_test src/cube.test.mjs; echo 'export const cube = (a) => a ** 3' >"$wtl/src/cube.mjs"; commit_tl "wip: cube"
 refuses "red-proof --lock: refuses a non-test file" src/cube.mjs TL --lock
 git -C "$wtl" rm -q src/cube.mjs
+echo '{ "name": "fixture", "private": true, "devDependencies": { "x": "1" } }' >"$wtl/package.json"; commit_tl "test: a dev dependency"
+refuses "red-proof --lock: refuses package.json" 'not one: package.json' TL --lock
+git -C "$wtl" checkout -q main -- package.json
 printf '%s\n' "import { test } from 'node:test'" "test('nothing yet', () => {})" >"$wtl/src/cube.test.mjs"; commit_tl "test: a passing cube test"
 refuses "red-proof --lock: refuses a test file that passes" 'src/cube.test.mjs: passes with no implementation' TL --lock
 red_test src/cube.test.mjs "test('later', { skip: 'not yet' }, () => {})"; commit_tl "test: a skipped case"
@@ -660,6 +663,7 @@ printf '## Relock 1\n- reason: cube(3) is not covered\n- ruling: Rejected — it
 refuses "relock: a rejected ruling is refused" 'relock 1 was rejected' TL
 printf '\n## Relock 2\n- reason: cube(3) is not covered\n- ruling: approved — the test missed a case\n- commit: %s\n' "$mixed" >>.veland/TL/relock.md
 refuses "relock: a commit touching an unlocked file is refused" 'changes files that are not locked: src/cube.mjs' TL
+cp "$tmp/cube.locked" "$wtl/src/cube.test.mjs"; commit_tl "test: back to the lock"
 red_test src/cube.test.mjs "test('cube 3 is 27', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(3), 27) })"; commit_tl "test: relock"
 relock2="$(git -C "$wtl" rev-parse HEAD)"
 printf '## Relock 1\n- reason: cube(3) is not covered\n- ruling: Rejected — it changes what AC1 requires\n\n## Relock 2\n- reason: cube(3) is not covered\n- ruling: approved — the test missed a case\n- commit: %s\n' "${relock2:0:9}" >.veland/TL/relock.md
@@ -682,6 +686,55 @@ expect "packet TL without relock.md" 0 veland-review-packet TL
 [ "$(awk '/^## Relocks/ { on = 1; next } on && /^## / { exit } on && NF' .veland/TL/review-packet.md)" = none ] &&
   ok "review-packet: no relock.md lists none" || { bad "review-packet: no relock.md lists none"; cat .veland/TL/review-packet.md; }
 expect "rm TL" 0 veland-worktree rm TL
+
+# consecutive relocks: two wrong locked tests, each fixed by its own approved relock, accepted in one run
+expect "worktree add TR" 0 veland-worktree add TR --no-setup
+wtl="$tmp/repo/.worktrees/TR"; lockf="$(git -C "$wtl" rev-parse --absolute-git-dir)/veland-lock"
+mkdir -p .veland/TR
+printf '# TR — fixture\n\n## Tests\n| AC | Test file | Case |\n|---|---|---|\n| AC1 | `src/a.test.mjs` | `cube` |\n| AC2 | `src/b.test.mjs` | `cube` |\n' >.veland/TR/plan.md
+cube_test() { # <file> <cube(3)>
+  printf '%s\n' "import { test } from 'node:test'" "import assert from 'node:assert'" \
+    "test('cube', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(3), $2) })" >"$wtl/$1"
+}
+cube_test src/a.test.mjs 28; cube_test src/b.test.mjs 28
+mkdir -p "$wtl/src/fixtures"; printf '%s\n' '```' one '```' >"$wtl/src/fixtures/doc.md"; echo q >"$wtl/src/fixtures/q\"uote.txt"
+commit_tl "test: cube"
+expect "red-proof --lock TR" 0 veland-red-proof TR --lock
+grep -qxF "file $(git -C "$wtl" rev-parse 'HEAD:src/fixtures/q"uote.txt') src/fixtures/q\"uote.txt" "$lockf" &&
+  veland-red-proof TR >"$tmp/out" 2>&1 &&
+  ok "lock: a locked file whose name git quotes keeps its blob and is not changed" || { bad "lock: a locked file whose name git quotes keeps its blob and is not changed"; cat "$lockf" "$tmp/out"; }
+lock0="$(git -C "$wtl" rev-parse HEAD)"
+echo 'export const cube = (a) => a ** 3' >"$wtl/src/cube.mjs"; commit_tl "feat: cube"
+cube_test src/a.test.mjs 27; printf '%s\n' '```' two '```' >"$wtl/src/fixtures/doc.md"; commit_tl "test: relock a"
+ra="$(git -C "$wtl" rev-parse HEAD)"
+cube_test src/b.test.mjs 27; commit_tl "test: relock b"
+rb="$(git -C "$wtl" rev-parse HEAD)"
+entry() { printf '## Relock %s\n- reason: %s\n- ruling: approved — the test expected the wrong cube\n- commit: %s\n\n' "$@"; } # <n> <reason> <commit>
+entry 1 '' "$ra" >.veland/TR/relock.md
+refuses "relock: an approved entry with no reason is refused" 'relock 1 has no reason' TR
+{ entry 1 'cube(3) is 27' "$ra"; entry 2 'cube(3) is 27' "$rb"; } >.veland/TR/relock.md
+veland-red-proof TR >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -qxF "relocked at $(git -C "$wtl" rev-parse --short "$ra")" "$tmp/out" &&
+  grep -qxF "relocked at $(git -C "$wtl" rev-parse --short "$rb")" "$tmp/out" &&
+  [ "$(grep '^lock ' "$lockf")" = "$(printf 'lock %s\nlock %s\nlock %s' "$lock0" "$ra" "$rb")" ] &&
+  grep -qxF "file $(git -C "$wtl" rev-parse "$rb:src/a.test.mjs") src/a.test.mjs" "$lockf" &&
+  grep -qxF "file $(git -C "$wtl" rev-parse "$rb:src/b.test.mjs") src/b.test.mjs" "$lockf" &&
+  ok "relock: two consecutive approved relocks are accepted in one run" || { bad "relock: two consecutive approved relocks are accepted in one run (exit $rc)"; cat "$tmp/out" "$lockf"; }
+expect "packet TR" 0 veland-review-packet TR
+awk '/^## Relocks/ { on = 1; next } on && /^## / { exit } on' .veland/TR/review-packet.md | awk '
+  /^### Relock 1 — approved$/ { r = 1; next } /^### Relock 2/ { r = 0 }
+  r && !open && /^````diff$/ { open = 1; next }
+  r && open && !shut && /^ ```$/ { inside = 1 }
+  r && open && /^````$/ { shut = 1; next }
+  r && shut && /^Written by the implementer, not verified:$/ { label = 1 }
+  r && label && /^- reason: cube\(3\) is 27$/ { reason = 1 }
+  END { exit !(inside && shut && reason) }' &&
+  ok "review-packet: a diff holding a \`\`\` line stays inside a longer fence, the reason below it" || { bad "review-packet: a diff holding a \`\`\` line stays inside a longer fence, the reason below it"; cat .veland/TR/review-packet.md; }
+echo '// weaker' >>"$wtl/src/b.test.mjs"; echo '// more' >>"$wtl/src/cube.mjs"; commit_tl "feat: an implementation commit that edits a locked test"
+echo '// relock' >>"$wtl/src/b.test.mjs"; commit_tl "test: relock b again"
+entry 3 'b again' "$(git -C "$wtl" rev-parse HEAD)" >>.veland/TR/relock.md
+refuses "relock: a locked file changed before the relock commit is refused" 'src/b.test.mjs changed before relock 3' TR
+expect "rm TR" 0 veland-worktree rm TR
 
 # remove
 expect "rm keeps an unmerged branch" 0 veland-worktree rm T1

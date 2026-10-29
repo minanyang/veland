@@ -263,11 +263,11 @@ lock_write() {
   local f paths p
   f="$(lock_path "$1")"
   if [ -f "$f" ]; then paths="$(lock_files "$1")"
-  else paths="$(git -C "$1" -c core.quotePath=false diff --name-only --no-renames --diff-filter=d "$(git -C "$1" merge-base "$(base_ref)" "$2")" "$2" -- . "$MEMORY_EXCLUDE")"; fi
+  else paths="$(git -C "$1" diff -z --name-only --no-renames --diff-filter=d "$(git -C "$1" merge-base "$(base_ref)" "$2")" "$2" -- . "$MEMORY_EXCLUDE" | tr '\0' '\n')"; fi
   {
     [ ! -f "$f" ] || grep '^lock ' "$f"
     printf 'lock %s\n' "$(git -C "$1" rev-parse "$2")"
-    while IFS= read -r p; do [ -z "$p" ] || printf 'file %s %s\n' "$(git -C "$1" rev-parse "$2:$p")" "$p"; done <<<"$paths"
+    while IFS= read -r p; do [ -z "$p" ] || printf 'file %s %s\n' "$(git -C "$1" rev-parse -q --verify "$2:$p")" "$p"; done <<<"$paths"
   } >"$f.new" && mv "$f.new" "$f"
 }
 # relock_entries <relock.md> — one line per `## Relock <n>` entry, fields split by \x1f: n, approved|rejected (empty

@@ -313,7 +313,7 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     : bad("work: qa-engineer writes the tests half before the engineer is spawned")
   relock.includes("Spawn a fresh `veland:code-reviewer` with only the path of `.veland/<id>/relock-request.md`") &&
     relock.includes("Read this relock request whole, and nothing of the implementation.") &&
-    ["the reason", "the text of every criterion whose `## Tests` row names the file", "the locked file's path", "unified diff"].every((s) => relock.includes(s)) &&
+    ["the reason", "the text of every criterion whose `## Tests` row names a file it changes", "the locked files' paths", "unified diff", "One request may cover several wrong locked files", "Several relocks may be pending"].every((s) => relock.includes(s)) &&
     relock.includes("If rejected: no `commit` line. Write `- asked: <the arbiter's reason")
     ? ok("work: a relock goes to a fresh code-reviewer arbiter")
     : bad("work: a relock goes to a fresh code-reviewer arbiter")
