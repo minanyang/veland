@@ -20,7 +20,8 @@
 # other value; scripts/lib.sh tickets_mode has the default). In pr or pr-merge mode with a github.com origin it then prints the branch's PR,
 # `pr: <STATE> <url>`, or `pr: none` when gh finds none, and in pr or pr-merge mode the PR/MR template the body must
 # follow, `pr template: <path>` relative to the worktree, or `pr template: none`. It exits 1 and lists the files when the
-# ticket's worktree has uncommitted changes.
+# ticket's worktree has uncommitted changes. After `clean: <worktree>` it exits 1 with one `locked test changed: <path>`
+# line per file veland-red-proof --lock locked whose blob at HEAD differs from the lock.
 # The template is looked up in the worktree: on a GitLab origin in .gitlab/merge_request_templates/, otherwise
 # .github/pull_request_template.md, pull_request_template.md, docs/pull_request_template.md, then
 # .github/PULL_REQUEST_TEMPLATE/; first found wins. Names match in any case; a symlink anywhere on the way does not
@@ -352,6 +353,11 @@ case "$cmd" in
       say "uncommitted changes in $path:"; say "$dirty"; exit 1
     fi
     say "clean: $path"
+    locked="$(lock_changed "$path")"
+    if [ -n "$locked" ]; then
+      while IFS= read -r p; do say "locked test changed: $(shown "$p")"; done <<<"$locked"
+      exit 1
+    fi
     ;;
 
   rebase)

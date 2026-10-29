@@ -234,3 +234,57 @@ take_lock() { # <id>
   LOCK_DIR="$lock"
 }
 release_lock() { [ -n "${LOCK_DIR:-}" ] && rm -r "$LOCK_DIR" 2>/dev/null; return 0; }
+
+# The tests-half lock (veland-red-proof --lock), in the worktree's own git dir so it goes with the worktree:
+# one `lock <sha>` line per lock, the last current, and one `file <blob> <path>` line per locked file. Blob ids,
+# not the commit alone: a rebase changes the shas but not the blobs.
+lock_path() { printf '%s/veland-lock\n' "$(git -C "$1" rev-parse --absolute-git-dir)"; } # <worktree>
+lock_commits() { # <worktree>
+  local f; f="$(lock_path "$1")"
+  [ ! -f "$f" ] || sed -n 's/^lock //p' "$f"
+}
+lock_files() { local f; f="$(lock_path "$1")"; [ ! -f "$f" ] || sed -n 's/^file [^ ]* //p' "$f"; } # <worktree>
+# lock_changed <worktree> — each locked path whose blob at HEAD differs from the record, a deleted one included;
+# nothing without a record.
+lock_changed() {
+  local f line rest now
+  f="$(lock_path "$1")"
+  [ -f "$f" ] || return 0
+  while IFS= read -r line; do
+    [[ "$line" == "file "* ]] || continue
+    rest="${line#file }"
+    now="$(git -C "$1" rev-parse -q --verify "HEAD:${rest#* }")" || now=""
+    [ "$now" = "${rest%% *}" ] || printf '%s\n' "${rest#* }"
+  done <"$f"
+}
+# lock_write <worktree> <commit> — appends `lock <commit>` and rewrites the `file` lines from that commit's blobs:
+# the locked paths, or on a first lock every file the branch changed up to <commit>.
+lock_write() {
+  local f paths p
+  f="$(lock_path "$1")"
+  if [ -f "$f" ]; then paths="$(lock_files "$1")"
+  else paths="$(git -C "$1" diff -z --name-only --no-renames --diff-filter=d "$(git -C "$1" merge-base "$(base_ref)" "$2")" "$2" -- . "$MEMORY_EXCLUDE" | tr '\0' '\n')"; fi
+  {
+    [ ! -f "$f" ] || grep '^lock ' "$f"
+    printf 'lock %s\n' "$(git -C "$1" rev-parse "$2")"
+    while IFS= read -r p; do [ -z "$p" ] || printf 'file %s %s\n' "$(git -C "$1" rev-parse -q --verify "$2:$p")" "$p"; done <<<"$paths"
+  } >"$f.new" && mv "$f.new" "$f"
+}
+# relock_entries <relock.md> — one line per `## Relock <n>` entry, fields split by \x1f: n, approved|rejected (empty
+# when the ruling begins with neither), commit, reason, ruling.
+relock_entries() {
+  [ -f "$1" ] || return 0
+  awk '
+    function flush() { if (on) print n "\037" verdict "\037" commit "\037" reason "\037" ruling; on = 0 }
+    function value(s) { sub(/^-[ \t]*[a-z]+:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); return s }
+    /^## / { flush() }
+    /^## Relock/ { on = 1; n = $3 == "" ? "?" : $3; reason = ruling = commit = verdict = ""; next }
+    on && /^- reason:/ { reason = value($0) }
+    on && /^- commit:/ { commit = value($0) }
+    on && /^- ruling:/ {
+      ruling = value($0); r = tolower(ruling)
+      if (r ~ /^approved[ \t]*(—|-|:)/) verdict = "approved"; else if (r ~ /^rejected[ \t]*(—|-|:)/) verdict = "rejected"
+    }
+    END { flush() }
+  ' "$1"
+}

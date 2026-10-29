@@ -79,4 +79,21 @@ function files(text) {
   return out
 }
 
-module.exports = { blank, bannedHits, phrases, sections, criteria, files }
+// The test files a plan's `## Tests` table names: the second cell of each row after the header, its code span
+// unquoted; a cell of dashes is no file. Each once, in order.
+function testFiles(text) {
+  const lines = text.split('\n'), b = blank(lines)
+  const sec = sections(text).find((s) => s.name.toLowerCase() === 'tests')
+  if (!sec) return []
+  const rows = []
+  for (let k = sec.from; k < sec.to; k++) if (b[k] !== null && /^\s*\|/.test(lines[k]) && !/^\s*\|[\s:|-]+$/.test(lines[k])) rows.push(lines[k])
+  const out = []
+  for (const r of rows.slice(1)) {
+    const c = r.trim().replace(/^\||\|$/g, '').split('|').map((s) => s.trim())
+    const f = (c[1] || '').replace(/^`+|`+$/g, '').trim()
+    if (f && !/^[—–-]+$/.test(f) && !out.includes(f)) out.push(f)
+  }
+  return out
+}
+
+module.exports = { blank, bannedHits, phrases, sections, criteria, files, testFiles }

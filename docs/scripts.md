@@ -18,7 +18,7 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 
 `veland-land check|rebase|push|merge|wait|squash|pr|comment <id>`, `veland-land issue|ticket <slug>` — the writes `/veland:close`, `/veland:open` and `/veland:work` need, each built from the ticket id or draft slug alone.
 
-- `check` prints the configured close mode (`mode: <close>`, refusing any value but `pr`, `pr-merge`, `local`), then, before looking for the worktree, `ticket dir: <path>`, `base: <branch> (<ref>)`, `review: <path>` or `review: missing` and `tickets: <github|files>` (refusing any other value), and lists uncommitted changes. In `pr`/`pr-merge` mode on GitHub it prints the branch's PR state (`pr: MERGED <url>` sends `/veland:close` to cleanup), and in `pr`/`pr-merge` mode the repo's PR/MR template in the worktree (`pr template: <path>`, or `none`).
+- `check` prints the configured close mode (`mode: <close>`, refusing any value but `pr`, `pr-merge`, `local`), then, before looking for the worktree, `ticket dir: <path>`, `base: <branch> (<ref>)`, `review: <path>` or `review: missing` and `tickets: <github|files>` (refusing any other value), and lists uncommitted changes. In `pr`/`pr-merge` mode on GitHub it prints the branch's PR state (`pr: MERGED <url>` sends `/veland:close` to cleanup), and in `pr`/`pr-merge` mode the repo's PR/MR template in the worktree (`pr template: <path>`, or `none`). Then one `locked test changed: <path>` line, and exit 1, per file `veland-red-proof --lock` locked whose content at HEAD is no longer the locked one.
 - `rebase` rebases onto the base (conflicts left for you).
 - `push` pushes the ticket branch (lease only if origin has it).
 - `merge` squash-merges the open PR/MR into the configured base, pinned to origin's repo and the verified head commit, never a fork's PR/MR, and on GitHub only when the PR's head is the worktree's HEAD, the branch contains `origin/<base>` (exit 4 if it moved) and its checks are green (exit 3 when they are only still running).
@@ -37,6 +37,10 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 ## veland-red-proof
 
 `veland-red-proof <id>` runs the changed tests at HEAD, then reverts the implementation and checks they go red (jest, vitest, `node --test`, or the `redProof` command of any other stack); a test that fails at HEAD exits 2.
+
+`veland-red-proof <id> --lock` is `/veland:work`'s tests half. It exits 2, naming the file, when the branch changes a file that is neither a test nor a test helper (`package.json` and lockfiles included), leaves out a test file `## Tests` names, has a test file that passes at HEAD, has a test the runner reports skipped or todo, or adds an unconditional skip (`.skip(`, `xit(`, `it.todo(`, `{ skip: true }`). Otherwise it records the lock in the worktree's git directory, `veland-lock`: the commit, and the blob of every file the branch changed, test helpers included. It refuses a second lock: a change to a locked file goes through a relock.
+
+With a lock, `veland-red-proof <id>` exits 2 naming each locked file whose blob at HEAD differs from the lock, unless the relocks not yet taken in `.veland/<id>/relock.md` account for it. They are checked in file order, and each must be an entry with a `reason`, an `approved` ruling and a `commit` that is an ancestor of HEAD and changes only locked files, whose parent holds the locked files as the lock before it left them; HEAD must hold them as the last one left them. Several relocks may be pending at once, and one relock may cover several locked files. When every test file then goes red, it moves the lock through each relock commit in order (`relocked at <sha>`). A test file the lock does not hold, changed or new, is free. With TDD on, it refuses to run without a lock while `## Tests` names a test file; with `"tdd": false` ([configuration](configuration.md)) it runs without a lock, and `--lock` is refused.
 
 ## veland-test
 
@@ -59,6 +63,8 @@ On the Bash tool's PATH while the plugin is enabled (not in a plain terminal). T
 
 - It adds `security review: required` with the reasons when the diff touches a script a skill grants in `allowed-tools`, a skill's or agent's frontmatter, `hooks/hooks.json`, a script it registers, or a file such a script or hook loads (one level, by a static `source` or relative `require`).
 - `--fixes` covers only the commits since the last review, with its findings (the plan checks still read the whole branch).
+- Before the gates, it exits 2 naming each locked file that changed since the lock: run `veland-red-proof <id>`, where a relock is accepted.
+- `## Relocks` lists every entry of `.veland/<id>/relock.md`: its heading; for each relock red-proof accepted, the diff of the locked files between the two locks, in a fence longer than any backtick run in it; then its reason and ruling, labelled as written by the implementer and not verified.
 
 ## veland-batch
 

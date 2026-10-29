@@ -9,6 +9,7 @@
 # work's Step 0 must map a typed gh-<n> to its id and read an approved plan before any ticket text is fetched; close must
 # name the valid tickets values when check refuses one.
 # work must grant veland-test and run tests only through it, editing only with Edit and Write.
+# work must lock the tests half before the implementation half, and send a relock to a fresh code-reviewer.
 # open, work, close, batch and roadmap must each have a `## Replies` section.
 # SKILLS_DIR overrides the skills directory (used to show the test red against another tree).
 set -uo pipefail
@@ -286,6 +287,39 @@ for (const f of ["skills/open/SKILL.md", "skills/work/SKILL.md", "skills/close/S
     !delegated.includes("the full gate once at the end")
     ? ok("work: Step 3 runs tests only through veland-test and edits only with Edit and Write")
     : bad("work: Step 3 runs tests only through veland-test and edits only with Edit and Write")
+}
+
+// work writes, commits and locks the tests before any implementation, delegates the tests half to qa-engineer, and
+// sends a locked test's change to a cold code-reviewer that sees only the relock request.
+{
+  const text = fs.readFileSync(`${dir}/work/SKILL.md`, "utf8")
+  const step3 = (/^## Step 3\b[\s\S]*?(?=^## Step )/m.exec(text) || [""])[0]
+  const at = (s) => step3.indexOf(s)
+  const tests = step3.slice(at("### Tests half"), at("### Implementation half"))
+  const impl = step3.slice(at("### Implementation half"), at("### Relock"))
+  const relock = step3.slice(at("### Relock"))
+  const lock = at("veland-red-proof <id> --lock")
+  at("### Tests half") !== -1 && at("### Tests half") < at("Commit them as in Step 4, test files and test helpers only") &&
+    at("Commit them as in Step 4, test files and test helpers only") < lock && lock < at("### Implementation half") &&
+    tests.includes("Write only the test files `## Tests` names") && tests.includes("```bash\nveland-red-proof <id> --lock\n```")
+    ? ok("work: the tests half is committed and locked before the implementation")
+    : bad("work: the tests half is committed and locked before the implementation")
+  const qa = at("spawn `veland:qa-engineer`")
+  const delegated = (/^Delegated:.*$/m.exec(impl) || [""])[0]
+  qa !== -1 && tests.includes("spawn `veland:qa-engineer`") && qa < lock && lock < at("Delegated: spawn `veland:frontend-engineer`") &&
+    impl.includes("Only after `veland-red-proof <id> --lock` passes") &&
+    delegated.includes("The tests the plan names are written and locked: never edit them; make them pass.")
+    ? ok("work: qa-engineer writes the tests half before the engineer is spawned")
+    : bad("work: qa-engineer writes the tests half before the engineer is spawned")
+  relock.includes("Spawn a fresh `veland:code-reviewer` with only the path of `.veland/<id>/relock-request.md`") &&
+    relock.includes("Read this relock request whole, and nothing of the implementation.") &&
+    ["the reason", "the text of every criterion whose `## Tests` row names a file it changes", "the locked files' paths", "unified diff", "One request may cover several wrong locked files", "Several relocks may be pending"].every((s) => relock.includes(s)) &&
+    relock.includes("If rejected: no `commit` line. Write `- asked: <the arbiter's reason")
+    ? ok("work: a relock goes to a fresh code-reviewer arbiter")
+    : bad("work: a relock goes to a fresh code-reviewer arbiter")
+  tests.includes("Skipped when `tdd` is `false` in the main checkout's `.claude/veland.json`, or when every `## Tests` row has `—` as test file")
+    ? ok("work: tdd false and an all-— Tests table skip the tests half")
+    : bad("work: tdd false and an all-— Tests table skip the tests half")
 }
 
 for (const skill of ["open", "work", "close", "batch", "roadmap"])

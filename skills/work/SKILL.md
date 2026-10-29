@@ -153,8 +153,6 @@ When in doubt, take the direct path: escalating later is cheap, a wasted agent r
 
 Edit files only with Edit and Write — never `sed`, a heredoc or another shell command — and run tests while iterating only through `veland-test <id> [test file…]`, one command per call, naming the files, not a glob: a `/veland:batch` worker runs where no one can approve any other command.
 
-Delegated: spawn `veland:frontend-engineer`, `veland:backend-engineer` or `veland:devops-engineer` by what the files are. Give it the absolute paths of `plan.md` and the worktree, and: *"Implement only what the plan binds, in this worktree. Write the tests the plan names, so they fail without your change. Edit files only with Edit and Write. Run the affected test files with `veland-test <id> <file>…` while iterating, and `veland-test <id>` once at the end. Do not commit, push or merge."*, with `<id>` filled in. Independent parts in different areas can go to two agents in one message.
-
 Before implementing, write `.veland/<id>/evidence.md` with one line per criterion of the plan, `- AC<n> — pending`. The later steps rewrite each line as they establish it:
 
 - `- AC<n> — met: <evidence>` — the command and its decisive output line, the commit and the test case, or, for a criterion no test covers, the review verdict and the method;
@@ -162,6 +160,45 @@ Before implementing, write `.veland/<id>/evidence.md` with one line per criterio
 - `- AC<n> — asked: <question>` — while it waits on the user.
 
 A question not tied to a criterion is a line `- asked: <question>`, removed once answered. The last line for a criterion wins. Whenever this skill stops to ask the user something, write its `asked` line first and put the question, word for word, in the message that ends the turn: until the worktree is removed, a Stop hook refuses to end a turn while a criterion is missing or `pending`, or an `asked` question is not in that message.
+
+The tests are written, committed and locked before any implementation file: the tests half, then the implementation half, each on the path chosen above.
+
+### Tests half
+
+Skipped when `tdd` is `false` in the main checkout's `.claude/veland.json`, or when every `## Tests` row has `—` as test file: go to the implementation half. Otherwise:
+
+- Write only the test files `## Tests` names, plus any helper they need: no implementation file, no skipped test. Write them in the project's formatting: a later reformat of a locked file needs a relock.
+- On the delegated path, spawn `veland:qa-engineer` with the absolute paths of `plan.md` and the worktree, and: *"Write only the tests `## Tests` names, in this worktree, so each fails until the plan is implemented; no implementation file, no skipped test. Edit files only with Edit and Write. Run them with `veland-test <id> <file>…`. Do not commit, push or merge."*, with `<id>` filled in.
+- Commit them as in Step 4, test files and test helpers only, then lock them:
+
+```bash
+veland-red-proof <id> --lock
+```
+
+It refuses a changed file that is neither a test nor a test helper, a `## Tests` file the branch leaves out, a test file that passes, and a test that is skipped or todo. Exit 2 names what to fix: fix it, commit, and run it again. Once it prints `locked`, every file the branch changed so far is locked.
+
+### Implementation half
+
+Only after `veland-red-proof <id> --lock` passes, or when the tests half is skipped. Locked files are never edited outside a relock.
+
+Delegated: spawn `veland:frontend-engineer`, `veland:backend-engineer` or `veland:devops-engineer` by what the files are. Give it the absolute paths of `plan.md` and the worktree, and: *"Implement only what the plan binds, in this worktree. The tests the plan names are written and locked: never edit them; make them pass. Edit files only with Edit and Write. Run the affected test files with `veland-test <id> <file>…` while iterating, and `veland-test <id>` once at the end. Do not commit, push or merge."*, with `<id>` filled in. When the tests half was skipped, its second and third sentences read *"Write the tests the plan names, so they fail without your change."* instead. Independent parts in different areas can go to two agents in one message.
+
+### Relock
+
+When a locked test is itself wrong — not when the implementation cannot make it pass:
+
+1. Commit the implementation so far: red-proof needs a clean tree.
+2. Write `.veland/<id>/relock-request.md`, leaving the worktree unchanged. It holds the reason; the text of every criterion whose `## Tests` row names a file it changes, with those rows; the locked files' paths; and the proposed change as a unified diff. One request may cover several wrong locked files.
+3. Spawn a fresh `veland:code-reviewer` with only the path of `.veland/<id>/relock-request.md` and: *"Read this relock request whole, and nothing of the implementation. Judge whether the proposed change fixes a defect in the test, or weakens or changes what the criterion requires. Answer with one line: `approved — <why>` or `rejected — <why>`."*
+4. Append the entry to `.veland/<id>/relock.md`, its ruling verbatim:
+   ```markdown
+   ## Relock <n>
+   - reason: <why the locked test is wrong>
+   - ruling: approved — <the arbiter's words>
+   - commit: <sha of the one test-only commit>
+   ```
+5. If approved: apply the diff with Edit, commit only the locked files, add the `commit` line, and run `veland-red-proof <id>`: it accepts the change and moves the lock to that commit. Several relocks may be pending, each committed straight after the one before with no edit to a locked file between; red-proof accepts them together, in order.
+6. If rejected: no `commit` line. Write `- asked: <the arbiter's reason, and whether to keep the test or change the criterion>` to `evidence.md`, and stop.
 
 ## Step 4 — Commit
 
@@ -178,13 +215,13 @@ git -C <worktree> commit -m "<message>"
 veland-red-proof <id>
 ```
 
-Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs jest, vitest and `node --test` out of the box, and any other test runner the project declares as `redProof.command` / `redProof.tests` in `.claude/veland.json`; without either it says unsupported — then ask the user whether to go on without it, as an `asked` line.) Exit 2 naming test files that do not pass at HEAD is not a pass either: the test is broken, its environment is missing, or the runner is one red-proof does not support — fix it, or ask the user, as an `asked` line naming why red-proof could not run.
+Every changed test file must go **red** with the implementation reverted. A `GREEN` file does not test the change: fix the test, commit, run again. Never send a diff to review with a `GREEN` in it. (It runs jest, vitest and `node --test` out of the box, and any other test runner the project declares as `redProof.command` / `redProof.tests` in `.claude/veland.json`; without either it says unsupported — then ask the user whether to go on without it, as an `asked` line.) Exit 2 naming test files that do not pass at HEAD is not a pass either: the test is broken, its environment is missing, or the runner is one red-proof does not support — fix it, or ask the user, as an `asked` line naming why red-proof could not run. Exit 2 naming a locked file means a relock is missing: restore the file from the lock, or go through Step 3's relock.
 
 Once each test file is `RED`, mark the criteria its `## Tests` rows cover `met`, with the commit and the case.
 
 ## Step 6 — Verify and review, concurrently
 
-Build the packet. It runs the project's `preReviewGates` first: exit 1 means one failed (it is named, with its log tail) — fix, commit and rebuild, before verify and the reviewers start. Then, in **one message**: start `veland-verify <id>` in the background and spawn the reviewers.
+Build the packet. It runs the project's `preReviewGates` first: exit 1 means one failed (it is named, with its log tail) — fix, commit and rebuild, before verify and the reviewers start. Exit 2 naming a locked file means it changed after red-proof last ran: run `veland-red-proof <id>`, where a relock is accepted, as in Step 5, then rebuild. Then, in **one message**: start `veland-verify <id>` in the background and spawn the reviewers.
 
 ```bash
 veland-review-packet <id>
@@ -237,7 +274,7 @@ Applies only when the user approves a change to `plan.md`: a new or changed crit
 1. Act on the current round's findings and record them under its `### Fixes applied`. A pending fixes round is skipped, because the new full round reads the whole branch.
 2. Edit the plan, add new criteria to `evidence.md` as `pending`, and run `veland-plan-check`.
 3. Show the change, and any product answers written to `comment.md`. On approval, post the comment, and keep `Status: approved`.
-4. Continue from Step 3 in the existing worktree; a new session gets there through Step 0 → Step 2, and `veland-worktree add` re-runs.
+4. Continue from Step 3's implementation half in the existing worktree; a new session gets there through Step 0 → Step 2, and `veland-worktree add` re-runs.
 5. Run a new full round (Step 6, next number), then at most one fixes round (Step 7a).
 
 Without an approved plan change, there is no further full round.

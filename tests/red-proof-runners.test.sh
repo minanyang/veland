@@ -1,7 +1,7 @@
 #!/bin/bash
 # veland-red-proof with real jest and vitest, on throwaway repositories with an origin.
 # Installs jest and vitest once per run (npm's cache makes repeat runs fast); skips when it cannot, fails under CI=true.
-# shellcheck disable=SC2015  # `cond && ok || bad` is safe: ok always returns 0
+# shellcheck disable=SC2015,SC2016  # `cond && ok || bad` is safe: ok always returns 0; backticks in patterns are literal Markdown
 set -uo pipefail
 BIN="$(cd "$(dirname "$0")/.." && pwd)/bin"
 export PATH="$BIN:$PATH"
@@ -76,6 +76,22 @@ EOF
   expect "$runner: unrelated test stays green" 1 veland-red-proof T1
   grep -q "^GREEN  src/noop.test.$ext" "$tmp/out" && ok "$runner: names the green file" || bad "$runner: names the green file"
   [ -z "$(git -C "$wt" status --porcelain)" ] && ok "$runner: tree restored after GREEN" || bad "$runner: tree restored after GREEN"
+
+  # the tests half: a todo the runner reports, though no skip pattern names it
+  expect "$runner: worktree add T2" 0 veland-worktree add T2 --no-setup
+  wt="$repo/.worktrees/T2"
+  ln -s "$tmp/deps/node_modules" "$wt/node_modules"
+  mkdir -p "$repo/.veland/T2"
+  printf '## Tests\n| AC | Test file | Case |\n|---|---|---|\n| AC1 | `src/skip.test.%s` | `mul` |\n' "$ext" >"$repo/.veland/T2/plan.md"
+  cat >"$wt/src/skip.test.$ext" <<EOF
+$header
+test('mul multiplies', () => expect(mul(2, 3)).toBe(6))
+test.todo('mul by zero')
+EOF
+  git -C "$wt" add -A && git -C "$wt" commit -qm "test: mul"
+  veland-red-proof T2 --lock >"$tmp/out" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -qF "src/skip.test.$ext: 1 test(s) skipped or todo" "$tmp/out" && [ ! -e "$(git -C "$wt" rev-parse --absolute-git-dir)/veland-lock" ] &&
+    ok "$runner: --lock refuses a skipped test" || { bad "$runner: --lock refuses a skipped test (exit $rc)"; sed 's/^/      /' "$tmp/out"; }
 }
 
 case_runner jest '{ "name": "fixture", "private": true, "jest": {} }' js \

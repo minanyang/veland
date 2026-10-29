@@ -2,6 +2,8 @@
 # README.md must open with a centred header (name, the plugin.json tagline, license and Claude Code badges, the
 # language links) and keep its prose — outside fences and tables — to 900 words.
 # README.md must document /veland:roadmap — a commands-fence line naming /veland:batch <version>, and a Skills table row.
+# docs/loop.md, docs/scripts.md, docs/configuration.md and both READMEs must name `tdd` and the relock, and loop.md and
+# scripts.md `--lock`.
 # README.zh-TW.md must have the same ## / ### headings, level by level, and the two READMEs must link to each other.
 # Every relative link in README.md, README.zh-TW.md and docs/*.md must resolve to a file, and an anchor to a heading
 # of that file as GitHub slugs it.
@@ -91,6 +93,19 @@ if (readme === null) { bad("README.md exists"); process.exit(1) }
       "a commands-fence line for /veland:roadmap naming /veland:batch <version>"],
     [fenced.some((s) => s !== null && s.startsWith("| `/veland:roadmap` |")), "a Skills table row for /veland:roadmap"],
   ].filter(([c]) => !c).map(([, w]) => w)
+  missing.length ? bad(name, `missing: ${missing.join("; ")}`) : ok(name)
+}
+
+// gh-87 AC10 — the tests half, the lock, the relock arbiter and `tdd: false`.
+{
+  const name = "docs describe the tests half, the lock, the relock arbiter and tdd: false"
+  const missing = []
+  for (const f of ["docs/loop.md", "docs/scripts.md", "docs/configuration.md", "README.md", "README.zh-TW.md"]) {
+    const text = read(f)
+    if (text === null) { missing.push(`${f}: missing`); continue }
+    const want = ["tdd", "relock", ...(f === "docs/loop.md" || f === "docs/scripts.md" ? ["--lock"] : [])]
+    for (const w of want) if (!text.includes(w)) missing.push(`${f}: ${w}`)
+  }
   missing.length ? bad(name, `missing: ${missing.join("; ")}`) : ok(name)
 }
 
