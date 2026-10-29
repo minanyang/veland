@@ -102,6 +102,10 @@ if [ -n "$lock" ]; then
   [ ! -f "$(lock_path "$path")" ] || die "$id is already locked; a change to a locked file goes through a relock"
   [ ${#tests[@]} -gt 0 ] || die "$id: the branch changes no test file — write the tests ## Tests names first"
   [ -n "$named" ] || die "$id: ## Tests of $plan names no test file"
+  # The lock record holds one path per line.
+  for f in "${changed[@]}"; do
+    [[ "$f" != *[[:cntrl:]]* ]] || die "$id: a changed path has a control character, which the lock cannot record: $(shown "$f")"
+  done
   [ $(( ${#revert[@]} + ${#remove[@]} + ${#pinned[@]} )) -eq 0 ] ||
     die "$id: the tests half changes only test files and test helpers; not one:$(printf ' %s' "${revert[@]:-}" "${remove[@]:-}" "${pinned[@]:-}" | tr -s ' ')"
   missing=()
@@ -141,9 +145,8 @@ else
         printf '%s %s\n' "$(git -C "$path" rev-parse -q --verify "$1:$p")" "$p"
       done <<<"$state"
     }
-    why=""; last_n=""; last_verdict=""; p_n=""
+    why=""; p_n=""
     while IFS=$'\x1f' read -r n verdict commit reason _; do
-      last_n=$n; last_verdict=$verdict
       [ -n "$commit" ] || continue
       sha="$(git -C "$path" rev-parse -q --verify "$commit^{commit}")" || sha="$commit"
       ! printf '%s\n' "$lock_shas" | grep -qxF -- "$sha" || continue
@@ -167,7 +170,8 @@ else
       fi
     fi
     if [ -n "$why" ]; then
-      [ "$last_verdict" != rejected ] || why+=" (relock $last_n was rejected)"
+      IFS=$'\x1f' read -r last_n last_verdict _ < <(relock_entries "$(task_dir "$id")/relock.md" | tail -n 1)
+      [ "${last_verdict:-}" != rejected ] || why+=" (relock $last_n was rejected)"
       die "$id: locked file(s) changed since the lock: ${locked//$'\n'/ } — $why"
     fi
   fi

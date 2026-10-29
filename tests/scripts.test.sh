@@ -612,6 +612,9 @@ git -C "$wtl" rm -q src/cube.mjs
 echo '{ "name": "fixture", "private": true, "devDependencies": { "x": "1" } }' >"$wtl/package.json"; commit_tl "test: a dev dependency"
 refuses "red-proof --lock: refuses package.json" 'not one: package.json' TL --lock
 git -C "$wtl" checkout -q main -- package.json
+mkdir -p "$wtl/src/fixtures" && echo x >"$wtl/src/fixtures/a"$'\n'"b.txt"; commit_tl "test: a fixture with a newline in its name"
+refuses "red-proof --lock: refuses a path with a newline" 'a changed path has a control character' TL --lock
+git -C "$wtl" rm -q "src/fixtures/a"$'\n'"b.txt"
 printf '%s\n' "import { test } from 'node:test'" "test('nothing yet', () => {})" >"$wtl/src/cube.test.mjs"; commit_tl "test: a passing cube test"
 refuses "red-proof --lock: refuses a test file that passes" 'src/cube.test.mjs: passes with no implementation' TL --lock
 red_test src/cube.test.mjs "test('later', { skip: 'not yet' }, () => {})"; commit_tl "test: a skipped case"
