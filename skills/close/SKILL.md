@@ -50,6 +50,7 @@ Stop and say why if any of these holds:
 - only in `pr` or `pr-merge` mode (`local` never calls `gh` or `glab`, not even to check): the PR tool is missing or logged out — check with `gh auth status` (or `glab auth status`) **before** rebasing or pushing, so a failure never leaves a pushed branch without a PR. Command not found → install it (https://cli.github.com, https://gitlab.com/gitlab-org/cli); non-zero exit → `gh auth login` / `glab auth login`. Mention that `"close": "local"` in `.claude/veland.json` needs neither;
 - no worktree for `<id>`: look for an open PR of the branch instead (the second run of `pr` mode, Step 4);
 - uncommitted changes in the worktree;
+- `check` printed `locked test changed: <path>` lines: a locked test changed without a relock that red-proof accepted — that is `/veland:work`'s job;
 - `review: missing`, or the review it names lists a `blocker` / `major` with neither a fix nor a reason — each round's in that round's `### Fixes applied` — that is `/veland:work`'s job.
 
 `pr: MERGED <url>` means the PR was merged since the last run: once the `gh auth status` and uncommitted-changes checks pass, go straight to Step 4 (`sync-base`, then `rm`) — no `review.md` check, rebase, verify, push or `veland-land pr`. Any other `pr:` line (`OPEN`, `CLOSED`, `none`) goes on as below.

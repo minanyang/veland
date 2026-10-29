@@ -33,7 +33,7 @@ veland turns each ticket into a loop that does not take the agent's word:
 
 ```
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
-/veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
+/veland:work <ticket>   →  plan  ─(you approve)→  worktree → tests → commit → red-proof --lock → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
 /veland:roadmap [reqs]  →  order requirements into versions; /veland:batch <version> runs one
 /veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
@@ -41,7 +41,7 @@ veland turns each ticket into a loop that does not take the agent's word:
 
 **`/veland:open <idea>`** turns an idea, a bug or an improvement into a GitHub issue in the repo's own issue forms, labels and types — or, with `tickets: files`, into a ticket file under `.veland/` that stays on your machine. It asks you the product questions the idea leaves open, shows you the draft, and creates the ticket only when you approve.
 
-**`/veland:work <ticket>`** takes an issue or a task in words. First it plans: it asks the technical questions, writes a plan with acceptance criteria, the files it binds and the test proving each criterion, and stops for your approval. Then it builds in a worktree: implement, commit, prove the new tests go red without the change, run the gates and a cold review together, fix what the review finds, and report.
+**`/veland:work <ticket>`** takes an issue or a task in words. It asks the technical questions, plans acceptance criteria, the files it binds and a test per criterion, and stops for your approval. Then, in a worktree, it commits and locks failing tests, implements, runs the gates and a cold review together, fixes the findings, and reports. A locked test changes only through a relock a fresh reviewer approves; `"tdd": false` disables it.
 
 **`/veland:close <id>`** rebases, verifies again and lands the branch as one squash commit — a PR you merge, a PR it merges once checks pass, or a local merge — then cleans up.
 

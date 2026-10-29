@@ -33,7 +33,7 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 
 ```
 /veland:open <idea>     →  draft a ticket ─(you approve)→ GitHub issue gh-<n>, or .veland/<slug>/ticket.md
-/veland:work <ticket>   →  plan  ─(you approve)→  worktree → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
+/veland:work <ticket>   →  plan  ─(you approve)→  worktree → tests → commit → red-proof --lock → implement → commit → red-proof → pre-review gates → verify + cold review → fix → review the fixes
 /veland:close <id>      →  rebase → verify → PR / merge → clean up
 /veland:roadmap [reqs]  →  order requirements into versions; /veland:batch <version> runs one
 /veland:batch <tickets> →  work and close many tickets from one terminal, each in a background worker
@@ -41,7 +41,7 @@ veland 把每張 ticket 變成一個不靠 agent 自述的流程：
 
 **`/veland:open <idea>`** 把一個想法、bug 或改進變成 GitHub issue，套用 repo 自己的 issue form、label 和 issue type；設定 `tickets: files` 時，則變成 `.veland/` 底下的 ticket 檔案，只留在你的電腦上。它會先問清楚這個想法沒交代的產品問題，把草稿給你看，你核准後才建立 ticket。
 
-**`/veland:work <ticket>`** 可以接一個 issue，或一段文字描述的任務。它先規劃：問技術問題，寫出計畫，包含驗收條件、會動到的檔案、證明每個條件的測試，然後停下來等你核准。接著在 worktree 裡實作：寫程式、commit、證明新測試在拿掉改動後會失敗、同時跑 gates 和冷審查、修正審查找到的問題，最後回報。
+**`/veland:work <ticket>`** 可以接一個 issue，或一段文字描述的任務。它先規劃：問技術問題，寫出計畫，包含驗收條件、會動到的檔案、證明每個條件的測試，然後停下來等你核准。接著在 worktree 裡先 commit 會失敗的測試並鎖定，再實作、同時跑 gates 和冷審查、修正審查找到的問題，最後回報。鎖定的測試只能透過全新 context 的審查者核准的 relock 修改；設定 `"tdd": false` 即可關閉鎖定。
 
 **`/veland:close <id>`** rebase、再驗證一次，然後把整個 branch 壓成一個 squash commit 落地：開 PR 讓你合併、開 PR 並在 checks 通過後自己合併，或在本機合併，最後清理現場。
 

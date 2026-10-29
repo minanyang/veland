@@ -30,6 +30,13 @@
 # hooks/hooks.json, a file its commands name under ${CLAUDE_PLUGIN_ROOT}, or a file one of those scripts loads (one
 # level) by a `source "$(dirname …)/…"` or a relative `require` resolvable without running it; no such line otherwise.
 #
+# Both write a `## Relocks` section after it (`none` when .veland/<id>/relock.md is missing or empty): each entry's
+# `### Relock <n> — approved|rejected` heading, reason and ruling, and for an approved entry veland-red-proof accepted,
+# `git diff <the lock it replaced> <its commit>` of the locked files.
+#
+# Both exit 2 before the gates when a file veland-red-proof --lock locked differs at HEAD from the lock: a change to
+# a locked test is accepted only by veland-red-proof, through a relock.
+#
 # Before anything is built, the `preReviewGates` commands from .claude/veland.json run in the
 # worktree (logs in .veland/<id>/pre-review/). The first that fails exits 1, naming it and printing
 # the log tail; no packet and no review-head are written. Fix, commit, rebuild.
@@ -49,6 +56,8 @@ case "${2:-}" in "") ;; --fixes) fixes=1 ;; *) die "$usage" ;; esac
 path="$(wt_path "$id")"
 dir="$(task_dir "$id")"
 mkdir -p "$dir"
+locked="$(lock_changed "$path")"
+[ -z "$locked" ] || die "locked file(s) changed since the lock: ${locked//$'\n'/ } — run veland-red-proof $id (a relock is accepted there)"
 
 pre_review() { # run the preReviewGates in the worktree; the first failure exits 1
   local n=0 c log
@@ -213,6 +222,22 @@ security="$(node -e '
   console.log(reasons.join("; "))
 ' "$path" "$base")" || die "could not work out whether a security review is required"
 
+relocks=""
+lock_shas="$(lock_commits "$path")"
+locked_files=()
+while IFS= read -r f; do [ -z "$f" ] || locked_files+=("$f"); done < <(lock_files "$path")
+while IFS=$'\x1f' read -r n verdict commit reason ruling; do
+  [ -z "$relocks" ] || relocks+=$'\n'
+  relocks+="### Relock $n — ${verdict:-no ruling}"$'\n\n'"- reason: $reason"$'\n'"- ruling: $ruling"$'\n'
+  [ "$verdict" = approved ] && [ -n "$commit" ] || continue
+  sha="$(git -C "$path" rev-parse -q --verify "$commit^{commit}")" || continue
+  # Only a relock red-proof accepted is a lock commit; the one before it is the lock it replaced.
+  prev="$(printf '%s\n' "$lock_shas" | awk -v s="$sha" '$0 == s { print p; exit } { p = $0 }')"
+  [ -n "$prev" ] || continue
+  relocks+=$'\n```diff\n'"$(git -C "$path" diff "$prev" "$sha" -- "${locked_files[@]}")"$'\n```\n'
+done < <(relock_entries "$dir/relock.md")
+relocks="${relocks%$'\n'}"
+
 {
   if [ -n "$fixes" ]; then echo "# Review packet — $id, fix commits"; else echo "# Review packet — $id"; fi
   echo
@@ -226,6 +251,10 @@ security="$(node -e '
   echo "## Plan checks"
   echo
   echo "${plan_checks:-none}"
+  echo
+  echo "## Relocks"
+  echo
+  echo "${relocks:-none}"
   echo
   echo "## Read these first, in one message"
   echo

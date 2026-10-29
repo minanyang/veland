@@ -588,6 +588,101 @@ grep -qF "$m/kept.md" "$tmp/out" && [ "$(cat "$m/kept.md")" = stale-edit ] && [ 
 git checkout -q -- "$m/kept.md"
 expect "rm T8" 0 veland-worktree rm T8
 
+# the tests half: red-proof --lock locks the tests ## Tests names; red-proof, the packet and check hold the lock
+expect "worktree add TL" 0 veland-worktree add TL --no-setup
+wtl="$tmp/repo/.worktrees/TL"
+mkdir -p .veland/TL
+printf '# TL — fixture\n\n## Tests\n| AC | Test file | Case |\n|---|---|---|\n| AC1 | `src/cube.test.mjs` | `cube` |\n| AC2 | — | read the diff |\n' >.veland/TL/plan.md
+red_test() { # <file> [extra line] — a node:test file that fails until src/cube.mjs exports cube
+  printf '%s\n' "import { test } from 'node:test'" "import assert from 'node:assert'" \
+    "test('cube', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(2), 8) })" ${2+"$2"} >"$wtl/$1"
+}
+commit_tl() { git -C "$wtl" add -A && git -C "$wtl" commit -qm "$1"; }
+# refuses <case> <text> <args…> — veland-red-proof exits 2 and its output names <text>
+refuses() {
+  local c=$1 want=$2; shift 2
+  veland-red-proof "$@" >"$tmp/out" 2>&1; local rc=$?
+  [ "$rc" = 2 ] && grep -qF -- "$want" "$tmp/out" && ok "$c" || { bad "$c (exit $rc)"; cat "$tmp/out"; }
+}
+red_test src/other.test.mjs; commit_tl "test: other"
+refuses "red-proof --lock: refuses a Tests file the branch leaves out" src/cube.test.mjs TL --lock
+red_test src/cube.test.mjs; echo 'export const cube = (a) => a ** 3' >"$wtl/src/cube.mjs"; commit_tl "wip: cube"
+refuses "red-proof --lock: refuses a non-test file" src/cube.mjs TL --lock
+git -C "$wtl" rm -q src/cube.mjs
+printf '%s\n' "import { test } from 'node:test'" "test('nothing yet', () => {})" >"$wtl/src/cube.test.mjs"; commit_tl "test: a passing cube test"
+refuses "red-proof --lock: refuses a test file that passes" 'src/cube.test.mjs: passes with no implementation' TL --lock
+red_test src/cube.test.mjs "test('later', { skip: 'not yet' }, () => {})"; commit_tl "test: a skipped case"
+refuses "red-proof --lock: refuses a test node --test reports skipped" 'src/cube.test.mjs: 1 test(s) skipped or todo' TL --lock
+red_test src/cube.test.mjs "test.skip('later', () => {})"; commit_tl "test: an unconditional skip"
+refuses "red-proof --lock: refuses an added unconditional skip" "src/cube.test.mjs: test.skip('later'" TL --lock
+red_test src/cube.test.mjs; commit_tl "test: cube"
+lockf="$(git -C "$wtl" rev-parse --absolute-git-dir)/veland-lock"
+refuses "red-proof refuses to run without a lock when tdd is on" 'run the tests half first: veland-red-proof TL --lock' TL
+echo '{ "tdd": false }' >.claude/veland.json
+veland-red-proof TL >"$tmp/out" 2>&1; rc=$?
+veland-red-proof TL --lock >"$tmp/out2" 2>&1; rc2=$?
+[ "$rc" = 0 ] && grep -q 'changes only tests' "$tmp/out" && [ "$rc2" = 2 ] && grep -q 'tdd is false' "$tmp/out2" && [ ! -e "$lockf" ] &&
+  ok "tdd false: red-proof runs without a lock and refuses --lock" || { bad "tdd false: red-proof runs without a lock and refuses --lock ($rc, $rc2)"; cat "$tmp/out" "$tmp/out2"; }
+rm .claude/veland.json
+lock1="$(git -C "$wtl" rev-parse HEAD)"
+veland-red-proof TL --lock >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -qxF "locked 2 file(s) at $(git -C "$wtl" rev-parse --short HEAD)" "$tmp/out" &&
+  [ "$(grep '^lock ' "$lockf")" = "lock $lock1" ] &&
+  grep -qxF "file $(git -C "$wtl" rev-parse HEAD:src/cube.test.mjs) src/cube.test.mjs" "$lockf" &&
+  grep -qxF "file $(git -C "$wtl" rev-parse HEAD:src/other.test.mjs) src/other.test.mjs" "$lockf" && [ "$(wc -l <"$lockf" | tr -d ' ')" = 3 ] &&
+  ok "red-proof --lock: records the lock" || { bad "red-proof --lock: records the lock (exit $rc)"; cat "$tmp/out" "$lockf"; }
+echo 'export const cube = (a) => a ** 3' >"$wtl/src/cube.mjs"; commit_tl "feat: cube"
+expect "red-proof after the lock" 0 veland-red-proof TL
+# a locked file changed outside a relock
+cp "$wtl/src/cube.test.mjs" "$tmp/cube.locked"
+echo '// edited' >>"$wtl/src/cube.test.mjs"; commit_tl "test: edit a locked test"
+refuses "lock: red-proof refuses a changed locked file" 'locked file(s) changed since the lock: src/cube.test.mjs' TL
+veland-review-packet TL >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 2 ] && grep -qF 'src/cube.test.mjs' "$tmp/out" && grep -qF 'run veland-red-proof TL' "$tmp/out" && [ ! -e .veland/TL/review-packet.md ] &&
+  ok "lock: review-packet refuses a changed locked file" || { bad "lock: review-packet refuses a changed locked file (exit $rc)"; cat "$tmp/out"; }
+veland-land check TL >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q '^clean: ' "$tmp/out" && [ "$(tail -n 1 "$tmp/out")" = 'locked test changed: src/cube.test.mjs' ] &&
+  ok "lock: check refuses a changed locked file" || { bad "lock: check refuses a changed locked file (exit $rc)"; cat "$tmp/out"; }
+cp "$tmp/cube.locked" "$wtl/src/cube.test.mjs"; commit_tl "test: undo the edit"
+red_test src/extra.test.mjs; commit_tl "test: extra"
+red_test src/extra.test.mjs "test('cube 3', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(3), 27) })"; commit_tl "test: extra again"
+veland-red-proof TL >"$tmp/out" 2>&1; rc=$?
+veland-review-packet TL >"$tmp/out2" 2>&1; rc2=$?
+veland-land check TL >"$tmp/out3" 2>&1; rc3=$?
+[ "$rc" = 0 ] && grep -q '^RED    src/extra.test.mjs' "$tmp/out" && [ "$rc2" = 0 ] && [ "$rc3" = 0 ] && ! grep -q 'locked test changed' "$tmp/out3" &&
+  ok "lock: an unlocked test may change and a new test file may be added" || { bad "lock: an unlocked test may change and a new test file may be added ($rc, $rc2, $rc3)"; cat "$tmp/out" "$tmp/out2" "$tmp/out3"; }
+# relock: the locked test changes in one approved commit that red-proof re-proves
+echo '// relock 1' >>"$wtl/src/cube.mjs"
+red_test src/cube.test.mjs "test('cube 3', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(3), 27) })"; commit_tl "test: relock with an implementation edit"
+mixed="$(git -C "$wtl" rev-parse --short HEAD)"
+refuses "relock: a missing entry is refused" 'src/cube.test.mjs' TL
+printf '## Relock 1\n- reason: cube(3) is not covered\n- ruling: Rejected — it changes what AC1 requires\n' >.veland/TL/relock.md
+refuses "relock: a rejected ruling is refused" 'relock 1 was rejected' TL
+printf '\n## Relock 2\n- reason: cube(3) is not covered\n- ruling: approved — the test missed a case\n- commit: %s\n' "$mixed" >>.veland/TL/relock.md
+refuses "relock: a commit touching an unlocked file is refused" 'changes files that are not locked: src/cube.mjs' TL
+red_test src/cube.test.mjs "test('cube 3 is 27', async () => { const { cube } = await import('./cube.mjs'); assert.equal(cube(3), 27) })"; commit_tl "test: relock"
+relock2="$(git -C "$wtl" rev-parse HEAD)"
+printf '## Relock 1\n- reason: cube(3) is not covered\n- ruling: Rejected — it changes what AC1 requires\n\n## Relock 2\n- reason: cube(3) is not covered\n- ruling: approved — the test missed a case\n- commit: %s\n' "${relock2:0:9}" >.veland/TL/relock.md
+veland-red-proof TL >"$tmp/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -qxF "relocked at $(git -C "$wtl" rev-parse --short HEAD)" "$tmp/out" &&
+  [ "$(grep '^lock ' "$lockf")" = "$(printf 'lock %s\nlock %s' "$lock1" "$relock2")" ] &&
+  grep -qxF "file $(git -C "$wtl" rev-parse HEAD:src/cube.test.mjs) src/cube.test.mjs" "$lockf" &&
+  veland-land check TL >"$tmp/out2" 2>&1 &&
+  ok "relock: an approved entry moves the lock" || { bad "relock: an approved entry moves the lock (exit $rc)"; cat "$tmp/out" "$lockf" "$tmp/out2"; }
+expect "packet TL" 0 veland-review-packet TL
+rl="$(awk '/^## Relocks/ { on = 1; next } on && /^## / { exit } on' .veland/TL/review-packet.md)"
+[ "$(grep -n '^## Relocks' .veland/TL/review-packet.md | cut -d: -f1)" -gt "$(grep -n '^## Plan checks' .veland/TL/review-packet.md | cut -d: -f1)" ] &&
+  printf '%s\n' "$rl" | grep -qxF '### Relock 1 — rejected' && printf '%s\n' "$rl" | grep -qxF -- '- ruling: Rejected — it changes what AC1 requires' &&
+  printf '%s\n' "$rl" | grep -qxF '### Relock 2 — approved' && printf '%s\n' "$rl" | grep -qxF -- '- reason: cube(3) is not covered' &&
+  printf '%s\n' "$rl" | grep -qxF '```diff' && printf '%s\n' "$rl" | grep -qF "+test('cube 3 is 27'" &&
+  [ "$(printf '%s\n' "$rl" | grep -c '^```diff')" = 1 ] && ! printf '%s\n' "$rl" | grep -q 'src/cube.mjs' &&
+  ok "review-packet lists each relock with its diff" || { bad "review-packet lists each relock with its diff"; cat .veland/TL/review-packet.md; }
+rm .veland/TL/relock.md
+expect "packet TL without relock.md" 0 veland-review-packet TL
+[ "$(awk '/^## Relocks/ { on = 1; next } on && /^## / { exit } on && NF' .veland/TL/review-packet.md)" = none ] &&
+  ok "review-packet: no relock.md lists none" || { bad "review-packet: no relock.md lists none"; cat .veland/TL/review-packet.md; }
+expect "rm TL" 0 veland-worktree rm TL
+
 # remove
 expect "rm keeps an unmerged branch" 0 veland-worktree rm T1
 grep -q 'kept branch feat/T1-mul' "$tmp/out" && ok "unmerged branch kept" || bad "unmerged branch kept"

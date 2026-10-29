@@ -41,7 +41,9 @@
 // dropped and rewrites the board.
 //
 // A permission denial does not decide a phase: a run that exits 0 is judged by the ticket's files, and its denials are
-// added to the evidence and listed under `## Needs the human`.
+// added to the evidence and listed under `## Needs the human`. A ticket waiting on its implement session shows the
+// `asked` texts of evidence.md; each approved entry of .veland/<id>/relock.md adds `relocked: <reason>` to the evidence
+// and, until the ticket lands, under `## Needs the human`.
 //
 // Config (.claude/veland.json): `close`, `worktreeDir`, `batch.parallel` (implement runs at once, an integer ≥ 1,
 // default 1). Refusals print `veland-batch: <why>` and exit 2.
@@ -408,6 +410,11 @@ function deriveAll(ids) {
       }
     }
   })
+  // An approved relock changed a locked test: shown in every phase but dropped.
+  for (const r of rows) {
+    r.relocked = r.phase === 'dropped' ? [] : relocks(r.id)
+    if (r.relocked.length) r.evidence = [r.evidence, ...r.relocked.map((x) => `relocked: ${x}`)].filter(Boolean).join('; ')
+  }
   return rows
 }
 
@@ -449,7 +456,8 @@ function derive(id) {
     if (gate) return set('failed', `gate FAIL: ${gate}`)
     const ev = evidence(id, planText)
     if (ev.open && !ev.asked) return set('failed', `open criterion: ${ev.open}`)
-    return set(ev.asked ? 'waiting' : 'implemented')
+    if (ev.asked) return set('waiting', [...ev.asks, fs.existsSync(turn) ? rel(turn) : ''].filter(Boolean).join('; '))
+    return set('implemented')
   }
   if (last.session_kind === 'close') {
     if (!fs.existsSync(path.join(WT_DIR, id))) return set('landed', (readOr(path.join(bdir(id), `${pad(last.n)}-landed`)) || '').trim() || landedOn())
@@ -474,28 +482,42 @@ function failedGate(id) {
   return null
 }
 
-// The first criterion of the plan that evidence.md leaves neither met, deferred nor asked, and whether one is asked;
-// the last line for a criterion wins, as in hooks/stop-gate.js.
+// The first criterion of the plan that evidence.md leaves neither met, deferred nor asked, and the texts of its asked
+// lines; the last line for a criterion wins, as in hooks/stop-gate.js.
 function evidence(id, planText) {
   const crit = planText ? md.criteria(planText).map((c) => `AC${c.n}`) : []
   const raw = (readOr(path.join(tdir(id), 'evidence.md')) || '').split('\n')
   const outside = md.blank(raw, 0)
   const state = new Map()
-  let asked = false
+  const asks = []
   raw.forEach((line, k) => {
     if (outside[k] === null) return
     const ac = /^\s*[-*+]\s+(AC\d+)\s*[—–:-]\s*(.*?)\s*$/.exec(line)
     if (ac) state.set(ac[1], ac[2])
-    else if (/^\s*[-*+]\s+asked:\s*\S/.test(line)) asked = true
+    else if (/^\s*[-*+]\s+asked:\s*\S/.test(line)) asks.push(line.replace(/^\s*[-*+]\s+asked:\s*/, '').trim())
   })
   let open = null
   for (const ac of crit) {
     const v = state.get(ac)
     if (v === undefined) open ??= `${ac} has no line`
-    else if (/^asked:/.test(v)) asked = true
+    else if (/^asked:/.test(v)) asks.push(v.replace(/^asked:\s*/, ''))
     else if (!/^(met|deferred):\s*\S/.test(v)) open ??= `${ac} — ${v}`
   }
-  return { open, asked }
+  return { open, asked: asks.length > 0, asks }
+}
+
+// The reasons of relock.md's approved entries (`## Relock <n>` with a `reason` and an `approved` ruling), in order.
+function relocks(id) {
+  const raw = (readOr(path.join(tdir(id), 'relock.md')) || '').split('\n')
+  const outside = md.blank(raw, 0)
+  const entries = []
+  raw.forEach((line, k) => {
+    if (outside[k] === null) return
+    if (/^##\s+Relock\b/.test(line)) entries.push({})
+    const m = /^\s*[-*+]\s+(reason|ruling):\s*(.*?)\s*$/.exec(line)
+    if (m && entries.length) entries[entries.length - 1][m[1]] = m[2]
+  })
+  return entries.filter((e) => e.reason && /^approved\s*[—:-]/i.test(e.ruling || '')).map((e) => e.reason)
 }
 
 function landedOn() {
@@ -596,6 +618,7 @@ function board(rows) {
     else if (r.phase === 'failed' || r.phase === 'held') need.push(`- ${r.id} — ${r.phase}: ${flat(r.evidence)}`)
     else if (r.phase === 'pr-open') need.push(`- ${r.id} — merge ${flat(r.evidence)}`)
     else if (r.denied) need.push(`- ${r.id} — ${r.phase}: ${flat(r.denied)}`)
+    if (r.phase !== 'landed') for (const x of r.relocked) need.push(`- ${r.id} — relocked: ${flat(x)}`)
   }
   lines.push('', '## Needs the human', ...(need.length ? need : ['- none']))
   return lines.join('\n') + '\n'

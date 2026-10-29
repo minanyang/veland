@@ -594,8 +594,52 @@ row t2 implement implement 0; evidence t2 "- AC1 — pending" "- AC2 — asked: 
 echo 'Keep the old name?' >"$B/t2/turn.md"
 need "a free asked line: waiting" phase_is t1 waiting
 need "an asked criterion: waiting" phase_is t2 waiting
-need "the evidence is its turn.md" grep -qxF "| 1 | t1 | waiting | $(field t1 2 3) | — | .veland/_batch/t1/turn.md |" "$B/board.md"
-need "and t2's" grep -qF "| t2 | waiting | $(field t2 2 3) | — | .veland/_batch/t2/turn.md |" "$B/board.md"
+need "the evidence is its question and its turn.md" grep -qxF "| 1 | t1 | waiting | $(field t1 2 3) | — | Keep the old name?; .veland/_batch/t1/turn.md |" "$B/board.md"
+need "and t2's" grep -qF "| t2 | waiting | $(field t2 2 3) | — | Keep the old name?; .veland/_batch/t2/turn.md |" "$B/board.md"
+end
+
+# relock_md <id> <ruling> [<reason>] — a relock.md with one entry; an approved one has a commit line.
+relock_md() {
+  { printf '# Relocks\n\n## Relock 1\n- reason: %s\n- ruling: %s\n' "${3:-the test expects the old flag}" "$2"
+    case "$2" in [Aa]pproved*) printf -- '- commit: abc1234\n' ;; esac; } >".veland/$1/relock.md"
+}
+
+reset; ticket t1 t2
+begin "board: a rejected relock waits with its question"
+vb init t1 t2
+approved t1 a; row t1 implement implement 0; mkdir -p .worktrees/t1
+relock_md t1 "rejected — the change drops what AC1 requires"
+evidence t1 "- AC1 — met: x" "- asked: The arbiter rejected the relock of tests/x.sh: keep the test or change AC1?"
+echo 'Relock rejected.' >"$B/t1/turn.md"
+need "waiting" phase_is t1 waiting
+need "the question in the evidence" grep -qxF "| 1 | t1 | waiting | $(field t1 2 3) | — | The arbiter rejected the relock of tests/x.sh: keep the test or change AC1?; .veland/_batch/t1/turn.md |" "$B/board.md"
+need "and under Needs the human" grep -qxF -- "- t1 — waiting: The arbiter rejected the relock of tests/x.sh: keep the test or change AC1?; .veland/_batch/t1/turn.md" "$B/board.md"
+need "a rejected relock is not relocked" not grep -qF "relocked" "$B/board.md"
+evidence t1 "- AC1 — asked: Keep the test or change AC1?"; vb status
+need "an asked criterion's question too" grep -qF "| t1 | waiting | $(field t1 2 3) | — | Keep the test or change AC1?; .veland/_batch/t1/turn.md |" "$B/board.md"
+row t2 plan plan 0; plan_md t2 draft b; echo 'Which name?' >"$B/t2/turn.md"
+evidence t2 "- asked: not an implement session"; vb status
+need "a plan session's evidence stays its turn.md" grep -qF "| t2 | waiting | $(field t2 1 3) | — | .veland/_batch/t2/turn.md |" "$B/board.md"
+end
+
+reset; ticket t1 t2 t3
+begin "board: an approved relock shows relocked with its reason"
+vb init t1 t2 t3
+implemented t1 a
+relock_md t1 "APPROVED: the fixture's date was wrong" "the fixture's date was a Sunday"
+need "implemented" phase_is t1 implemented
+need "relocked in the evidence" grep -qxF "| 1 | t1 | implemented | $(field t1 2 3) | — | relocked: the fixture's date was a Sunday |" "$B/board.md"
+need "and under Needs the human" grep -qxF -- "- t1 — relocked: the fixture's date was a Sunday" "$B/board.md"
+approved t2 b; row t2 implement implement 0; mkdir -p .worktrees/t2
+relock_md t2 "approved — a typo in the expected output" "the expected output had a typo"
+evidence t2 "- AC1 — met: x" "- asked: Keep the old name?"; vb status
+need "a waiting and relocked row" grep -qxF "| 2 | t2 | waiting | $(field t2 2 3) | — | Keep the old name?; relocked: the expected output had a typo |" "$B/board.md"
+need "gets the waiting line" grep -qxF -- "- t2 — waiting: Keep the old name?; relocked: the expected output had a typo" "$B/board.md"
+need "and the relocked line" grep -qxF -- "- t2 — relocked: the expected output had a typo" "$B/board.md"
+landed t3 c
+relock_md t3 "approved - the regex was anchored wrong" "the regex was anchored wrong"; vb status
+need "a landed row keeps relocked in its evidence" grep -qF "| t3 | landed | $(field t3 3 3) | landed | landed on main at $(git rev-parse --short main); relocked: the regex was anchored wrong |" "$B/board.md"
+need "but is not under Needs the human" not grep -qF -- "- t3 — relocked" "$B/board.md"
 end
 
 reset; ticket t1 t2

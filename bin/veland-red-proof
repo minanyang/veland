@@ -1,7 +1,8 @@
 #!/bin/bash
 # Prove that a ticket's tests test the ticket: they must go red without the change.
 #
-#   veland-red-proof <id>
+#   veland-red-proof <id>            prove the changed tests go red without the implementation
+#   veland-red-proof <id> --lock     the tests half: prove the tests fail before any implementation, then lock them
 #
 # "The string appears in a test" is not "the string is tested". A test that never imports
 # the unit it names, or asserts a constant equals itself, stays green whatever the
@@ -30,17 +31,40 @@
 # or restored: agents may write it while red-proof runs.
 # Exit: 0 every changed test file went red · 1 at least one stayed green · 2 could not run
 # (including: a changed test file does not pass at HEAD).
+#
+# --lock (refused when the main checkout's .claude/veland.json has "tdd": false, or a lock exists) runs on a branch
+# that holds only the tests half. It exits 2, naming what is wrong, when the branch changes no test file, a file that
+# is neither a test file nor a test helper, or leaves out a test file `## Tests` of .veland/<id>/plan.md names; when
+# its added lines in a test file hold an unconditional skip (`.skip(`, `xit(`, `it.todo(`, `{ skip: true }`); or when,
+# run at HEAD, a changed test file passes or the runner reports a test skipped or todo (jest, vitest, node --test;
+# a file missing from the report has not loaded yet and counts as failing). Report: red-proof/lock.json. Otherwise it
+# records the lock in the worktree's git dir (scripts/lib.sh lock_write): the lock commit and the blob of every file
+# the branch changed.
+#
+# With TDD on, the default mode exits 2 while there is no lock and `## Tests` names a test file. When a locked file
+# differs from the lock it exits 2 unless .veland/<id>/relock.md has one pending entry (its commit not yet a lock)
+# that is `approved`, whose commit is an ancestor of HEAD, changes only locked files, and holds the locked files as
+# they are at HEAD. After such a relock every file must still go red; the lock then moves to the relock commit.
 
 set -uo pipefail
 # shellcheck source=../scripts/lib.sh
 source "$(dirname "$(readlink -f "$0")")/../scripts/lib.sh"
 
-id="${1:-}"; [ -n "$id" ] || die "usage: veland-red-proof <id>"
+usage="usage: veland-red-proof <id> [--lock]"
+id="${1:-}"; [ -n "$id" ] || die "$usage"
 check_id "$id"
+lock=""
+case "${2:-}" in "") ;; --lock) lock=1 ;; *) die "$usage" ;; esac
+[ $# -le 2 ] || die "$usage"
 path="$(wt_path "$id")"
 [ -z "$(tree_status "$path")" ] || die "the worktree has uncommitted changes; commit first (red-proof rewrites the tree)"
 rp_config "$path"
 base="$(git -C "$path" merge-base "$(base_ref)" HEAD)" || die "no merge base with $(base_ref)"
+tdd=on; [ "$(cfg tdd)" != false ] || tdd=off
+plan="$(task_dir "$id")/plan.md"
+named=""
+[ ! -f "$plan" ] || named="$(node -e 'console.log(require(process.argv[1]).testFiles(require("fs").readFileSync(process.argv[2], "utf8")).join("\n"))' \
+  "$(dirname "$(readlink -f "$0")")/../scripts/md-check.js" "$plan")" || die "could not read the ## Tests table of $plan"
 
 cmd_tests=""
 [ -z "$rp_cmd" ] || cmd_tests="$(git -C "$path" diff --name-only "$base" HEAD -- "${rp_globs[@]}")"
@@ -52,9 +76,10 @@ is_helper() { [[ "$1" =~ (^|/)(__tests__|__mocks__|test|tests|fixtures|e2e)/ || 
 is_pinned() { [[ "$1" =~ (^|/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$ ]]; }
 adds_case() { git -C "$path" diff "$base" HEAD -- "$1" | grep -qE '^\+.*\b(it|test|describe)(\.(each|only|skip|concurrent))?\('; }
 
-tests=(); added_tests=(); no_case=(); revert=(); remove=()
+tests=(); added_tests=(); no_case=(); revert=(); remove=(); changed=()
 while IFS=$'\t' read -r status file; do
   [ -n "$file" ] || continue
+  changed+=("$file")
   if is_test "$file"; then
     [ "$status" = D ] && continue
     tests+=("$file")
@@ -68,12 +93,74 @@ while IFS=$'\t' read -r status file; do
   fi
 done < <(git -C "$path" diff --name-status --no-renames "$base" HEAD -- . "$MEMORY_EXCLUDE")
 
+relock=""
+if [ -n "$lock" ]; then
+  [ "$tdd" = on ] || die "tdd is false in $CONFIG: there is no tests half to lock"
+  [ ! -f "$(lock_path "$path")" ] || die "$id is already locked; a change to a locked file goes through a relock"
+  [ ${#tests[@]} -gt 0 ] || die "$id: the branch changes no test file — write the tests ## Tests names first"
+  [ -n "$named" ] || die "$id: ## Tests of $plan names no test file"
+  [ $(( ${#revert[@]} + ${#remove[@]} )) -eq 0 ] ||
+    die "$id: the tests half changes only test files and test helpers; not one:$(printf ' %s' "${revert[@]:-}" "${remove[@]:-}" | tr -s ' ')"
+  missing=()
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    printf '%s\n' "${changed[@]}" | grep -qxF -- "$f" || missing+=("$f")
+  done <<<"$named"
+  [ ${#missing[@]} -eq 0 ] || die "$id: ## Tests names test files the branch does not change: ${missing[*]}"
+  skips=""
+  for t in "${tests[@]}"; do
+    hits="$(git -C "$path" diff "$base" HEAD -- "$t" | awk '/^@@/ { h = 1; next } h && /^\+/' |
+      grep -E '\.skip\(|(^|[^[:alnum:]_$])xit\(|(^|[^[:alnum:]_$.])it\.todo\(|\{ *skip: *true *\}' | sed 's/^+//')" &&
+      skips+="$(printf '%s\n' "$hits" | awk -v t="$t" '{ print "  " t ": " $0 }')"$'\n'
+  done
+  [ -z "$skips" ] || { printf '%s' "$skips" >&2; die "$id: an unconditional skip in the tests half — every test must run and fail"; }
+else
+  if [ "$tdd" = on ] && [ ! -f "$(lock_path "$path")" ] && [ -n "$named" ]; then
+    die "$id has no lock: run the tests half first: veland-red-proof $id --lock"
+  fi
+  locked="$(lock_changed "$path")"
+  if [ -n "$locked" ]; then
+    lock_shas="$(lock_commits "$path")"
+    pending=""; p_verdict=""; p_n=""; last_n=""; last_verdict=""
+    while IFS=$'\x1f' read -r n verdict commit _; do
+      last_n=$n; last_verdict=$verdict
+      [ -n "$commit" ] || continue
+      sha="$(git -C "$path" rev-parse -q --verify "$commit^{commit}")" || sha="$commit"
+      ! printf '%s\n' "$lock_shas" | grep -qxF -- "$sha" || continue
+      if [ -n "$pending" ]; then
+        [ "$verdict" != approved ] || die "relocks $p_n and $n are both pending: run veland-red-proof after each relock"
+        continue
+      fi
+      pending=$sha; p_verdict=$verdict; p_n=$n
+    done < <(relock_entries "$(task_dir "$id")/relock.md")
+    why=""
+    if [ -z "$pending" ]; then why="no pending relock entry with a commit in $(task_dir "$id")/relock.md"
+    elif [ "$p_verdict" != approved ]; then why="relock $p_n is not approved"
+    elif ! git -C "$path" merge-base --is-ancestor "$pending" HEAD 2>/dev/null; then why="relock $p_n's commit $pending is not an ancestor of HEAD"
+    else
+      outside="$(comm -23 <(git -C "$path" -c core.quotePath=false diff --name-only --no-renames "$pending^" "$pending" -- . "$MEMORY_EXCLUDE" | sort) <(lock_files "$path" | sort))"
+      if [ -n "$outside" ]; then why="relock $p_n's commit ${pending:0:9} changes files that are not locked: ${outside//$'\n'/ }"
+      else
+        while IFS= read -r f; do
+          [ "$(git -C "$path" rev-parse -q --verify "HEAD:$f")" = "$(git -C "$path" rev-parse -q --verify "$pending:$f")" ] ||
+            why+="$f differs from relock $p_n's commit ${pending:0:9}; "
+        done <<<"$locked"
+      fi
+    fi
+    if [ -n "$why" ]; then
+      [ "$last_verdict" != rejected ] || why+=" (relock $last_n was rejected)"
+      die "$id: locked file(s) changed since the lock: ${locked//$'\n'/ } — $why"
+    fi
+    relock=$pending
+  fi
+fi
+
 if [ ${#tests[@]} -eq 0 ]; then
   say "$id: the branch adds or modifies no test file — nothing to prove."
   say "  (If the plan names behaviour to verify, that is itself a finding for the reviewer.)"
   exit 0
 fi
-if [ $(( ${#revert[@]} + ${#remove[@]} )) -eq 0 ]; then
+if [ -z "$lock" ] && [ $(( ${#revert[@]} + ${#remove[@]} )) -eq 0 ]; then
   say "$id: the branch changes only tests and test helpers — there is no implementation to take away."
   exit 0
 fi
@@ -81,6 +168,7 @@ fi
 out="$(task_dir "$id")/red-proof"
 mkdir -p "$out"
 take_lock "$id"
+# shellcheck disable=SC2329  # run by the EXIT trap below
 restore() {
   git -C "$path" restore --source=HEAD --staged --worktree -- . "$MEMORY_EXCLUDE" 2>/dev/null
   release_lock
@@ -109,12 +197,40 @@ run_tests() { # <json> <log> — run the changed test files, write a jest-shaped
       : >"$log"
       printf '{"testResults":[' >"$json"
       for t in "${tests[@]}"; do
-        ( cd "$path" && node --test "$t" ) >>"$log" 2>&1 && st=passed || st=failed
-        printf '%s{"name":"%s","status":"%s","assertionResults":[]}' "$sep" "$path/$t" "$st" >>"$json"; sep=','
+        ( cd "$path" && node --test --test-reporter=tap "$t" ) >"$log.tap" 2>&1 && st=passed || st=failed
+        cat "$log.tap" >>"$log"
+        printf '%s{"name":"%s","status":"%s","skipped":%s,"assertionResults":[]}' "$sep" "$path/$t" "$st" \
+          "$(awk '/^# (skipped|todo) [0-9]+$/ { n += $3 } END { print n + 0 }' "$log.tap")" >>"$json"; sep=','
       done
+      rm -f "$log.tap"
       printf ']}' >>"$json" ;;
   esac
 }
+
+if [ -n "$lock" ]; then
+  # The tests half: no implementation yet, so every changed test file must fail as it stands, and none may skip.
+  run_tests "$out/lock.json" "$out/lock.log"
+  [ -s "$out/lock.json" ] || { tail -20 "$out/lock.log" >&2; die "the runner ($runner) produced no report — see $out/lock.log"; }
+  node - "$out/lock.json" "$path" "${tests[@]}" <<'NODE' || die "$id: the tests half must fail before any implementation, and run every test (log: $out/lock.log)"
+const [, , jsonPath, root, ...expected] = process.argv
+const path = require('path')
+const report = JSON.parse(require('fs').readFileSync(jsonPath, 'utf8'))
+const byFile = new Map((report.testResults || []).map((r) => [path.relative(root, r.name), r]))
+let bad = 0
+for (const f of expected) {
+  const r = byFile.get(f)
+  if (!r) continue
+  const tests = r.assertionResults || []
+  const skipped = tests.filter((t) => t.status !== 'passed' && t.status !== 'failed').length + (r.skipped || 0)
+  if (skipped) { bad++; console.error(`  ${f}: ${skipped} test(s) skipped or todo`) }
+  if (r.status !== 'failed' && !tests.some((t) => t.status === 'failed')) { bad++; console.error(`  ${f}: passes with no implementation`) }
+}
+process.exit(bad ? 1 : 0)
+NODE
+  lock_write "$path" HEAD
+  say "locked $(lock_files "$path" | wc -l | tr -d ' ') file(s) at $(git -C "$path" rev-parse --short HEAD)"
+  exit 0
+fi
 
 # At HEAD first: a file that cannot pass with the change would go red without it too.
 run_tests "$out/head.json" "$out/head.log"
@@ -179,3 +295,9 @@ console.log()
 console.log(green ? `${green} changed test file(s) stayed GREEN without the change.` : `Every test file that adds a case went red without the change.${note ? ` (${note} fixture-only edit(s) noted.)` : ''}`)
 process.exit(green ? 1 : 0)
 NODE
+rc=$?
+if [ "$rc" -eq 0 ] && [ -n "$relock" ]; then
+  lock_write "$path" "$relock"
+  say "relocked at $(git -C "$path" rev-parse --short "$relock")"
+fi
+exit "$rc"

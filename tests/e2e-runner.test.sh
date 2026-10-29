@@ -72,7 +72,7 @@ fi
 if runner 2 "ids are case-sensitive" -- o1; then
   [ ! -s "$tmp/mark" ] && ok "ids are case-sensitive: o1 exits 2" || bad "ids are case-sensitive: o1 exits 2 (claude ran)"
 fi
-if runner 2 "one unknown id among known ones" -- 3 W9; then
+if runner 2 "one unknown id among known ones" -- 3 W10; then
   [ ! -s "$tmp/out" ] && [ ! -s "$tmp/mark" ] && ok "an unknown id exits 2 before any scenario runs" || bad "an unknown id exits 2 before any scenario runs"
 fi
 

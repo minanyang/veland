@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sourced by run.sh: the 21 flows and the 41 scenario_<id> assertion functions.
+# Sourced by run.sh: the 21 flows and the 42 scenario_<id> assertion functions.
 #
 # A flow is one sequence of `claude -p` turns on one fixture; each scenario is an assertion function bound to a flow
 # and a checkpoint within it (`bindings`). Assertions go through lib.sh helpers that read files, git state, origin's
@@ -7,7 +7,7 @@
 
 # Report order.
 # shellcheck disable=SC2034  # used by run.sh and lib.sh
-ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 W8 C1 C2 C3 B1 B2 B3 B4 B5 B6 R1 R2 R3 R4 R5"
+ALL_IDS="1 2 3 4 5 6 7 8 9 10 11 12 13 14 O1 O2 O3 F1 F2 W1 W2 W3 W4 W5 W6 W7 W8 W9 C1 C2 C3 B1 B2 B3 B4 B5 B6 R1 R2 R3 R4 R5"
 # Execution order.
 # shellcheck disable=SC2034  # used by run.sh
 FLOWS="open-bug open-type open-dup open-nogh open-forms open-files work-bug work-wide work-approved close-local close-pr close-reuse close-pr-merge close-nogh close-blocker close-checks-fail close-base-moved close-pending batch-two roadmap-files roadmap-gh"
@@ -24,7 +24,7 @@ bindings() {
     F2) echo "open-files:plan" ;;
     5 | W1) echo "work-bug:plan" ;;
     W3) echo "work-bug:plan work-wide:plan" ;;
-    6 | W2 | W4 | W5 | W6 | W7) echo "work-bug:end" ;;
+    6 | W2 | W4 | W5 | W6 | W7 | W9) echo "work-bug:end" ;;
     W8) echo "work-approved:end" ;;
     7) echo "close-local:end" ;;
     8 | 12) echo "close-pr:opened" ;;
@@ -533,6 +533,23 @@ scenario_W8() {
   ensure "veland-worktree add gh-5 was not run" [ "$(tool_count '^veland-worktree add gh-5')" -ge 1 ]
   ensure "veland-ticket github was run for an approved plan" [ "$(tool_count '^veland-ticket github')" = 0 ]
   ensure "veland-grill was run for an approved plan" [ "$(tool_count '^veland-grill')" = 0 ]
+}
+
+# The tests half: the branch's first commit holds only test/, and no file outside test/ (agent memory aside) is written
+# in the worktree before the first `veland-red-proof gh-5 --lock`.
+scenario_W9() {
+  local branch first files lock early
+  branch="$(rgit for-each-ref --format='%(refname:short)' 'refs/heads/fix/gh-5-*' | head -n 1)"
+  ensure "there is no fix/gh-5-* branch" [ -n "$branch" ]
+  first="$(rgit rev-list --reverse "main..${branch:-main}" | head -n 1)"
+  ensure "the branch has no commit beyond main" [ -n "$first" ]
+  files="$(rgit diff-tree --no-commit-id --name-only -r "${first:-main}")"
+  ensure "the branch's first commit touches no file" [ -n "$files" ]
+  ensure "the branch's first commit touches a path outside test/: $(grep -v '^test/' <<<"$files" | tr '\n' ' ')" not grep -qv '^test/' <<<"$files"
+  lock="$(tool_calls | jq -s '[.[] | select(.name == "Bash" and .denied == false and ((.command // "") | test("^veland-red-proof gh-5 --lock\\b"))) | .seq] | min // -1')"
+  ensure "veland-red-proof gh-5 --lock was not run" [ "$lock" -ge 0 ]
+  early="$(tool_calls | jq -rs --argjson lock "$lock" '.[] | select((.name == "Write" or .name == "Edit") and .seq < $lock and ((.file_path // "") | test("/\\.worktrees/gh-5/"))) | .file_path | sub("^.*/\\.worktrees/gh-5/"; "") | select((startswith("test/") or startswith(".claude/agent-memory/")) | not)')"
+  ensure "written in the worktree before veland-red-proof gh-5 --lock: $(tr '\n' ' ' <<<"$early")" [ -z "$early" ]
 }
 
 # ---------------------------------------------------------------- scenarios: close
